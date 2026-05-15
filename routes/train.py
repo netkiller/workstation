@@ -14,7 +14,7 @@ import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, status
@@ -24,7 +24,7 @@ from starlette.background import BackgroundTask
 
 from routes.dataset import count_dataset_split, normalize_console_log, read_deploy_tasks
 from routes.project import header_context
-from routes.resources import find_resource, ssh_connect_kwargs
+from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 
 
 router = APIRouter()
@@ -334,7 +334,7 @@ def display_project_name(workspace: Path, project: str):
 
 
 def expected_run_dir(task):
-    return project_runs_dir(task["project"]) / task["name"]
+    return project_runs_dir(task["project"]) / str(task.get("run_name") or task["name"])
 
 
 def task_run_dir(task):
@@ -502,8 +502,13 @@ def task_card_view(task: dict):
     epoch_snapshot = task_epoch_snapshot(task)
     is_remote = task.get("train_scope") == "remote"
     resource_id = str(task.get("resource_id") or "")
-    resource_url = f"/resources/{task.get('project', '')}/server/{resource_id}" if is_remote and resource_id else ""
+    project_name = str(task.get("project") or "")
+    dataset_name = str(task.get("dataset") or "")
+    project_path = quote(project_name, safe="")
+    dataset_path = quote(dataset_name, safe="")
+    resource_url = f"/resources/{project_path}/server/{quote(resource_id, safe='')}" if is_remote and resource_id else ""
     status_value = str(task.get("status") or "")
+    early_stopped = status_value == COMPLETE_STATUS and task_has_early_stopping(str(task.get("id") or ""))
     dataset_distribution = task_dataset_distribution(task)
     params = []
     for key, label in (
@@ -535,17 +540,19 @@ def task_card_view(task: dict):
         "is_completed": status_value == COMPLETE_STATUS,
         "show_progress": status_value in ACTIVE_STATUSES,
         "status_class": {
-            COMPLETE_STATUS: "completed",
+            COMPLETE_STATUS: "early-completed" if early_stopped else "completed",
             "失败": "failed",
             "取消": "cancelled",
             "进行中": "running",
             "排队中": "queued",
             "演示模式": "demo",
         }.get(status_value, "default"),
+        "display_status": "提前完成" if early_stopped else status_value,
         "is_remote": is_remote,
         "scope_label": "远程" if is_remote else "本地",
         "resource_url": resource_url,
         "resource_name": task.get("resource_name") or "算力服务器",
+        "dataset_url": f"/dataset/{project_path}/{dataset_path}" if project_name and dataset_name else "",
         "remote_dataset_path": task.get("remote_dataset_path", ""),
         "dataset_distribution": dataset_distribution,
     }
@@ -580,7 +587,47 @@ def task_dataset_distribution(task: dict):
     }
 
 
-def train_overview(tasks: list[dict]):
+def compute_distribution(tasks: list[dict], workspace: Path):
+    palette = ["#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#ef4444", "#64748b", "#0f766e"]
+    items = []
+    index_by_key = {}
+    local_count = sum(1 for task in tasks if task.get("train_scope") != "remote")
+    if local_count:
+        index_by_key["local"] = len(items)
+        items.append({"key": "local", "label": "本地", "count": local_count})
+    for resource in read_resources(workspace):
+        key = str(resource.get("id") or resource.get("name") or "")
+        if not key:
+            continue
+        index_by_key[key] = len(items)
+        items.append({"key": key, "label": resource.get("name") or "未命名算力", "count": 0})
+    for task in tasks:
+        if task.get("train_scope") != "remote":
+            continue
+        key = str(task.get("resource_id") or "")
+        if key not in index_by_key:
+            index_by_key[key] = len(items)
+            items.append({"key": key, "label": task.get("resource_name") or "未指定算力", "count": 0})
+        items[index_by_key[key]]["count"] += 1
+    total = sum(item["count"] for item in items)
+    cursor = 0
+    segments = []
+    for index, item in enumerate(items):
+        item["color"] = palette[index % len(palette)]
+        item["percent"] = round(item["count"] / total * 100) if total else 0
+        if item["count"] and total:
+            start = cursor
+            end = cursor + item["count"] / total * 100
+            segments.append(f"{item['color']} {start:.2f}% {end:.2f}%")
+            cursor = end
+    return {
+        "items": items,
+        "total": total,
+        "chart_style": f"conic-gradient({', '.join(segments)})" if segments else "#e2e8f0",
+    }
+
+
+def train_overview(tasks: list[dict], workspace: Path):
     total = len(tasks)
     completed = sum(1 for task in tasks if task.get("status") == COMPLETE_STATUS)
     failed = sum(1 for task in tasks if task.get("status") == "失败")
@@ -599,6 +646,7 @@ def train_overview(tasks: list[dict]):
         "failed_percent": round(failed / total * 100) if total else 0,
         "remote_percent": round(remote / total * 100) if total else 0,
         "local_percent": round(local / total * 100) if total else 0,
+        "compute_distribution": compute_distribution(tasks, workspace),
     }
 
 
@@ -617,6 +665,17 @@ def read_results_csv(path: Path, max_rows: int = 80):
     if not rows:
         return {"headers": [], "rows": []}
     return {"headers": rows[0], "rows": rows[1:max_rows + 1]}
+
+
+def read_metric_rows(path: Path):
+    if not path.is_file():
+        return []
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        return [
+            {str(key or "").strip(): str(value or "").strip() for key, value in row.items()}
+            for row in csv.DictReader(handle)
+            if row
+        ]
 
 
 def parse_args_text(text: str):
@@ -663,16 +722,84 @@ def format_metric(value: str):
         return value
 
 
+def format_epoch_metric(value: str):
+    value = (value or "").strip()
+    if not value:
+        return "-"
+    try:
+        return f"{float(value):.6f}"
+    except ValueError:
+        return value
+
+
 def clean_console_line(text: str):
     return normalize_console_log(text).strip()
 
 
+def validation_metrics_from_summary(summary_line: str):
+    parts = (summary_line or "").split()
+    if not parts or parts[0] != "all" or len(parts) < 7:
+        return {}
+    return {
+        "precision": parts[3],
+        "recall": parts[4],
+        "map50": parts[5],
+        "map5095": parts[6],
+    }
+
+
+def train_metrics_from_line(train_line: str):
+    parts = (train_line or "").split()
+    if len(parts) < 5 or not re.match(r"^\d+/\d+$", parts[0]):
+        return {}
+    return {
+        "gpu_mem": parts[1],
+        "box_loss": parts[2],
+        "cls_loss": parts[3],
+        "dfl_loss": parts[4],
+    }
+
+
+def epoch_metric_items(row: dict | None, log_snapshot: dict | None):
+    log_metrics = validation_metrics_from_summary((log_snapshot or {}).get("summary_line", ""))
+    train_metrics = train_metrics_from_line((log_snapshot or {}).get("train_line", ""))
+    has_row = bool(row)
+    if not has_row and not log_metrics and not train_metrics:
+        return []
+    items = []
+    items.extend(
+        [
+            {"label": "GPU_mem", "value": train_metrics.get("gpu_mem") or (log_snapshot or {}).get("gpu_mem") or "-"},
+            {"label": "box_loss", "value": format_epoch_metric(train_metrics.get("box_loss") or (row or {}).get("train/box_loss", ""))},
+            {"label": "cls_loss", "value": format_epoch_metric(train_metrics.get("cls_loss") or (row or {}).get("train/cls_loss", ""))},
+            {"label": "dfl_loss", "value": format_epoch_metric(train_metrics.get("dfl_loss") or (row or {}).get("train/dfl_loss", ""))},
+        ]
+    )
+    items.extend(
+        [
+            {
+                "label": "Precision",
+                "value": format_epoch_metric(log_metrics.get("precision") or (row or {}).get("metrics/precision(B)") or (row or {}).get("metrics/precision")),
+            },
+            {
+                "label": "Recall",
+                "value": format_epoch_metric(log_metrics.get("recall") or (row or {}).get("metrics/recall(B)") or (row or {}).get("metrics/recall")),
+            },
+            {
+                "label": "mAP50",
+                "value": format_epoch_metric(log_metrics.get("map50") or (row or {}).get("metrics/mAP50(B)") or (row or {}).get("metrics/mAP50")),
+            },
+            {
+                "label": "mAP50-95",
+                "value": format_epoch_metric(log_metrics.get("map5095") or (row or {}).get("metrics/mAP50-95(B)") or (row or {}).get("metrics/mAP50-95")),
+            },
+        ]
+    )
+    return items
+
+
 def metric_row_from_results(run_dir: Path):
-    path = run_dir / "results.csv"
-    if not path.is_file():
-        return None
-    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-        rows = [row for row in csv.DictReader(handle) if row]
+    rows = read_metric_rows(run_dir / "results.csv")
     return rows[-1] if rows else None
 
 
@@ -700,32 +827,75 @@ def last_epoch_from_log(task_id: str):
     lines = [clean_console_line(line) for line in text.splitlines()]
     lines = [line for line in lines if line]
     last = None
+    last_summary = ""
+    for line in lines:
+        if line.lstrip().startswith("all "):
+            last_summary = line
     for index, line in enumerate(lines):
         match = re.match(r"^\s*(\d+)/(\d+)\s+", line)
-        if not match or "100%" not in line:
+        if not match:
             continue
         validation = ""
         summary = ""
-        for next_line in lines[index + 1:index + 8]:
-            if next_line.startswith("Class") or next_line.lstrip().startswith("Class"):
-                validation = next_line
-            elif next_line.lstrip().startswith("all "):
-                summary = next_line
-                break
+        if "100%" in line:
+            for next_line in lines[index + 1:index + 8]:
+                if next_line.startswith("Class") or next_line.lstrip().startswith("Class"):
+                    validation = next_line
+                elif next_line.lstrip().startswith("all "):
+                    summary = next_line
+                    break
         last = {
             "epoch": int(match.group(1)),
             "total": int(match.group(2)),
+            "gpu_mem": line.split()[1] if len(line.split()) > 1 else "",
             "train_line": line,
             "validation_line": validation,
-            "summary_line": summary,
+            "summary_line": last_summary or summary,
         }
     return last
+
+
+def task_has_early_stopping(task_id: str):
+    path = log_file(task_id)
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return "EarlyStopping:" in text or "Training stopped early" in text
 
 
 def task_epoch_snapshot(task: dict):
     run_dir = task_run_dir(task)
     total = task_epoch_total(task)
+    if str(task.get("status") or "") == "排队中":
+        return {
+            "epoch": 0,
+            "total": total,
+            "progress": 0,
+            "progress_label": f"0/{total}" if total else "0",
+            "metrics": [],
+            "train_line": "",
+            "validation_line": "",
+            "summary_line": "",
+        }
     row = metric_row_from_results(run_dir)
+    log_snapshot = last_epoch_from_log(str(task.get("id") or ""))
+    if str(task.get("status") or "") in ACTIVE_STATUSES:
+        if log_snapshot or row:
+            epoch = int(log_snapshot.get("epoch") or 0) if log_snapshot else int(float(row.get("epoch") or 0))
+            snapshot_total = int((log_snapshot or {}).get("total") or total or 0)
+            train_line = (log_snapshot or {}).get("train_line", "")
+            if train_line and "100%" in train_line:
+                train_line = train_line.split(":", 1)[0].strip()
+            return {
+                "epoch": epoch,
+                "total": snapshot_total,
+                "progress": epoch_progress(task, epoch),
+                "progress_label": f"{epoch}/{snapshot_total}" if snapshot_total else str(epoch),
+                "metrics": epoch_metric_items(row, log_snapshot),
+                "train_line": train_line,
+                "validation_line": "",
+                "summary_line": "",
+            }
     if row:
         epoch = int(float(row.get("epoch") or 0))
         return {
@@ -733,15 +903,7 @@ def task_epoch_snapshot(task: dict):
             "total": total,
             "progress": epoch_progress(task, epoch),
             "progress_label": f"{epoch}/{total}" if total else str(epoch),
-            "metrics": [
-                {"label": "box_loss", "value": format_metric(row.get("train/box_loss", ""))},
-                {"label": "cls_loss", "value": format_metric(row.get("train/cls_loss", ""))},
-                {"label": "dfl_loss", "value": format_metric(row.get("train/dfl_loss", ""))},
-                {"label": "Precision", "value": format_metric(row.get("metrics/precision(B)") or row.get("metrics/precision"))},
-                {"label": "Recall", "value": format_metric(row.get("metrics/recall(B)") or row.get("metrics/recall"))},
-                {"label": "mAP50", "value": format_metric(row.get("metrics/mAP50(B)") or row.get("metrics/mAP50"))},
-                {"label": "mAP50-95", "value": format_metric(row.get("metrics/mAP50-95(B)") or row.get("metrics/mAP50-95"))},
-            ],
+            "metrics": epoch_metric_items(row, log_snapshot),
             "train_line": "",
             "validation_line": "",
             "summary_line": "",
@@ -755,16 +917,12 @@ def task_epoch_snapshot(task: dict):
         "total": int(log_snapshot.get("total") or total or 0),
         "progress": epoch_progress(task, epoch),
         "progress_label": f"{epoch}/{int(log_snapshot.get('total') or total or 0)}" if int(log_snapshot.get("total") or total or 0) else str(epoch),
-        "metrics": [],
+        "metrics": epoch_metric_items(None, log_snapshot),
     }
 
 
 def run_metrics_summary(run_dir: Path):
-    path = run_dir / "results.csv"
-    if not path.is_file():
-        return ""
-    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-        rows = [row for row in csv.DictReader(handle) if row]
+    rows = read_metric_rows(run_dir / "results.csv")
     if not rows:
         return ""
     last = rows[-1]
@@ -855,7 +1013,8 @@ def train_command(task):
         f"model={task['model']}",
         f"epochs={task['epochs']}",
         f"project={project_runs_dir(task['project'])}",
-        f"name={task['name']}",
+        f"name={task.get('run_name') or task['name']}",
+        "exist_ok=True",
     ]
     for key in YOLO_OPTION_KEYS:
         if key == "data":
@@ -875,7 +1034,7 @@ def remote_train_command(task, remote_yaml: str, remote_runs_root: str):
         f"model={task['model']}",
         f"epochs={task['epochs']}",
         f"project={remote_runs_root}",
-        f"name={task['name']}",
+        f"name={task.get('run_name') or task['name']}",
         "exist_ok=True",
     ]
     for key in YOLO_OPTION_KEYS:
@@ -1036,7 +1195,7 @@ def run_remote_task(task):
         remote_yaml = posixpath.join(remote_work_dir, f"{task_id}.yaml")
         remote_log = posixpath.join(remote_work_dir, f"{task_id}.log")
         remote_exit = posixpath.join(remote_work_dir, f"{task_id}.exit")
-        remote_run_dir = posixpath.join(remote_runs_root, task["name"])
+        remote_run_dir = posixpath.join(remote_runs_root, str(task.get("run_name") or task["name"]))
         append_log(task_id, f"准备远程工作目录：{remote_work_dir}\n")
         sftp_mkdirs(sftp, remote_work_dir)
         append_log(task_id, f"准备远程 runs 目录：{remote_runs_root}\n")
@@ -1187,13 +1346,39 @@ def train_name_exists(project: str, name: str, exclude_task_id: str = ""):
     )
 
 
-def train_new_context(request: Request, workspace: Path, project: str, dataset_key: str, is_remote: bool, error: str = "", name_value: str = ""):
-    dataset_options = remote_dataset_dirs(project) if is_remote else dataset_dirs(project)
-    locked_dataset = (
-        matched_remote_dataset(project, dataset_key)
-        if is_remote
-        else matched_dataset(project, dataset_key)
-    )
+def train_dataset_options(project: str):
+    options = []
+    for item in dataset_dirs(project):
+        options.append({**item, "key": f"local:{item['name']}", "source": "local", "scope_label": "本地"})
+    for item in remote_dataset_dirs(project):
+        options.append({**item, "key": f"remote:{item['key']}", "source": "remote", "scope_label": "远程"})
+    return options
+
+
+def matched_train_dataset(project: str, dataset_key: str, prefer_remote: bool = False):
+    dataset_key = (dataset_key or "").strip()
+    options = train_dataset_options(project)
+    if not dataset_key:
+        return None
+    for item in options:
+        if item["key"] == dataset_key:
+            return item
+    if prefer_remote:
+        for item in options:
+            if item["source"] == "remote" and (item["name"] == dataset_key or item.get("key", "").removeprefix("remote:") == dataset_key):
+                return item
+    for item in options:
+        if item["source"] == "local" and item["name"] == dataset_key:
+            return item
+    for item in options:
+        if item["source"] == "remote" and (item["name"] == dataset_key or item.get("key", "").removeprefix("remote:") == dataset_key):
+            return item
+    return None
+
+
+def train_new_context(request: Request, workspace: Path, project: str, dataset_key: str, is_remote: bool = False, error: str = "", name_value: str = ""):
+    dataset_options = train_dataset_options(project)
+    locked_dataset = matched_train_dataset(project, dataset_key, is_remote)
     dataset_item = locked_dataset or (dataset_options[0] if dataset_options else None)
     return {
         "request": request,
@@ -1201,7 +1386,7 @@ def train_new_context(request: Request, workspace: Path, project: str, dataset_k
         "dataset": dataset_item,
         "datasets": dataset_options,
         "dataset_locked": locked_dataset is not None,
-        "remote_train": is_remote,
+        "remote_train": bool(dataset_item and dataset_item.get("source") == "remote"),
         "model_versions": MODEL_VERSIONS,
         "model_sizes": MODEL_SIZES,
         "default_model_version": "YOLO26",
@@ -1236,7 +1421,7 @@ def train(request: Request, tab: str = "", queue: str = "all"):
         tasks = [task for task in tasks if task.get("project") == current_project]
     tasks = visible_train_tasks(tasks)
     queue_filter = train_queue_filter(queue)
-    overview = train_overview(tasks)
+    overview = train_overview(tasks, workspace)
     response = templates.TemplateResponse(
         request=request,
         name="train/index.html",
@@ -1491,11 +1676,24 @@ async def create_train(request: Request):
     form = await form_fields(request)
     project = form.get("project", [""])[0]
     dataset = form.get("dataset", [""])[0]
-    is_remote = form.get("train_scope", ["local"])[0] == "remote"
-    dataset_item = selected_remote_dataset(project, dataset) if is_remote else selected_dataset(project, dataset)
+    dataset_source = ""
+    dataset_value = dataset
+    if dataset.startswith("remote:"):
+        dataset_source = "remote"
+        dataset_value = dataset.removeprefix("remote:")
+    elif dataset.startswith("local:"):
+        dataset_source = "local"
+        dataset_value = dataset.removeprefix("local:")
+    is_remote = dataset_source == "remote" or (not dataset_source and form.get("train_scope", ["local"])[0] == "remote")
+    dataset_item = selected_remote_dataset(project, dataset_value) if is_remote else selected_dataset(project, dataset_value)
     if dataset_item is None:
         base_url = f"/model/{project}/train/new" if project else "/model/train/new"
-        suffix = "?remote=1" if is_remote else ""
+        params = []
+        if dataset:
+            params.append(("dataset", dataset))
+        if is_remote:
+            params.append(("remote", "1"))
+        suffix = "?" + urlencode(params) if params else ""
         return RedirectResponse(url=f"{base_url}{suffix}", status_code=status.HTTP_303_SEE_OTHER)
 
     model_version = clean_model_version(form.get("model_version", ["YOLO26"])[0])
@@ -1522,9 +1720,11 @@ async def create_train(request: Request):
         )
         response.set_cookie("current_project", dataset_item["project"], httponly=True, samesite="lax")
         return response
+    task_id = uuid4().hex[:12]
     task = {
-        "id": uuid4().hex[:12],
+        "id": task_id,
         "name": task_name,
+        "run_name": f"{task_name}-{task_id[:6]}",
         "project": dataset_item["project"],
         "dataset": dataset_item["name"],
         "dataset_path": str(dataset_item["path"]),
@@ -1658,6 +1858,7 @@ def rerun_task(task_id: str):
             return RedirectResponse(url=f"/model/{task.get('project', '')}/train", status_code=status.HTTP_303_SEE_OTHER)
         task["status"] = "排队中"
         task["created_at"] = datetime.now().isoformat(timespec="seconds")
+        task["run_name"] = f"{task.get('name', 'train')}-{task_id[:6]}-{int(time.time())}"
         for key in ("started_at", "finished_at", "run_path", "remote_run_path", "progress"):
             task.pop(key, None)
         save_tasks(tasks)
@@ -1682,7 +1883,7 @@ def train_with_project(request: Request, project: str, tab: str = "", queue: str
         tasks = [task for task in tasks if task.get("project") == current_project]
     tasks = visible_train_tasks(tasks)
     queue_filter = train_queue_filter(queue)
-    overview = train_overview(tasks)
+    overview = train_overview(tasks, workspace)
     response = templates.TemplateResponse(
         request=request,
         name="train/index.html",

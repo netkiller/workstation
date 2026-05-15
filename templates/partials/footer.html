@@ -84,6 +84,12 @@
           output.textContent = data.error || "控制台日志读取失败";
           return;
         }
+        if (typeof data.log === "string") {
+          const status = data.status ? [`状态：${data.status}`, `进度：${data.progress || 0}%`, ""].join("\n") : "";
+          output.textContent = `${status}${data.log || "暂无日志"}`;
+          output.scrollTop = output.scrollHeight;
+          return;
+        }
         const lines = data.lines || [];
         output.textContent = lines.length
           ? [`日志文件：${data.file}`, "", ...lines].join("\n")

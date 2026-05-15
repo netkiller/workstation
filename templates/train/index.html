@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260515-task-actions-clean">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260515-subcard-links">
 {% endblock %}
 
 {% block content %}
@@ -24,13 +24,18 @@
     <section class="train-overview" aria-label="训练概览">
       <div class="train-overview-card">
         <div class="overview-card-head">
-          <span>训练结果</span>
-          <strong>{{ models | length }}</strong>
+          <span>算力分布</span>
+          <strong>{{ compute_distribution.total }}</strong>
         </div>
-        <div class="overview-bar"><span style="width: {{ completed_percent }}%"></span></div>
-        <div>
-          <b>{{ completed_count }} 个完成任务</b>
-          <small>已生成 {{ models | length }} 个可查看模型</small>
+        <div class="overview-pie-layout">
+          <span class="overview-pie compute" style="background: {{ compute_distribution.chart_style }}"><b>{{ compute_distribution.total }}</b></span>
+          <div>
+            <small class="overview-legend vertical compute-legend">
+              {% for item in compute_distribution["items"] %}
+                <span><i class="legend-dot" style="background: {{ item.color }}"></i>{{ item.label }} {{ item.count }}</span>
+              {% endfor %}
+            </small>
+          </div>
         </div>
       </div>
       <div class="train-overview-card">
@@ -52,7 +57,7 @@
       <div class="train-overview-card">
         <div class="overview-card-head">
           <span>执行位置</span>
-          <strong>{{ "演示" if demo_mode else "可运行" }}</strong>
+          <strong>{{ "演示" if demo_mode else "" }}</strong>
         </div>
         <div class="overview-pie-layout">
           <span class="overview-pie scope" style="background: conic-gradient(#1667c7 0 {{ local_percent }}%, #16a34a {{ local_percent }}% 100%)"><b>{{ remote_percent }}%</b></span>
@@ -67,15 +72,14 @@
     </section>
 
     <section class="train-task-toolbar" aria-label="训练任务操作">
-      <div class="train-create-actions">
-        <a class="primary-link" href="{% if current_project %}/model/{{ current_project }}/train/new{% else %}/model/train/new{% endif %}">本地训练</a>
-        <a class="secondary-link" href="{% if current_project %}/model/{{ current_project }}/train/new?remote=1{% else %}/model/train/new?remote=1{% endif %}">远程训练</a>
-      </div>
       <nav class="queue-filter train-segmented" aria-label="训练队列筛选">
-        <a class="{% if queue_filter == 'all' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}?queue=all">全部</a>
-        <a class="{% if queue_filter == 'active' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}?queue=active">未完成</a>
-        <a class="{% if queue_filter == 'completed' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}?queue=completed">已完成</a>
+        <button type="button" class="{% if queue_filter == 'all' %}active{% endif %}" data-queue-filter="all">全部</button>
+        <button type="button" class="{% if queue_filter == 'active' %}active{% endif %}" data-queue-filter="active">未完成</button>
+        <button type="button" class="{% if queue_filter == 'completed' %}active{% endif %}" data-queue-filter="completed">已完成</button>
       </nav>
+      <div class="train-create-actions">
+        <a class="primary-link" href="{% if current_project %}/model/{{ current_project }}/train/new{% else %}/model/train/new{% endif %}">新建训练任务</a>
+      </div>
     </section>
 
     <section class="train-tab-content">
@@ -85,6 +89,7 @@
             <article
               class="task-card {{ 'remote-task' if task.is_remote else 'local-task' }}{% if task.is_completed %} completed-task{% endif %}"
               data-train-task
+              data-task-completed="{{ '1' if task.is_completed else '0' }}"
               data-task-id="{{ task.id }}"
               {% if task.is_completed %}data-model-url="/model/train/models/{{ task.id }}"{% endif %}
             >
@@ -96,7 +101,7 @@
                         <span class="task-name-text">{{ task.name }}</span>
                         <span class="task-badges">
                           <span class="train-scope {{ 'remote' if task.is_remote else 'local' }}">{{ task.scope_label }}</span>
-                          <span class="status {{ task.status_class }}" data-task-status>{{ task.status }}</span>
+                          <span class="status {{ task.status_class }}" data-task-status>{{ task.display_status or task.status }}</span>
                         </span>
                       </h2>
                       <time>{{ task.display_created_at or task.created_at }}</time>
@@ -108,46 +113,43 @@
                     <span><b>{{ param.label }}</b>{{ param.value }}</span>
                   {% endfor %}
                 </div>
-                <div class="task-info-grid">
-                  <div class="task-data-distribution" aria-label="数据分布">
-                    <strong>数据分布</strong>
-                    <span class="task-data-pie" style="background: {{ task.dataset_distribution.chart_style }}"><b>{{ task.dataset_distribution.total }}</b></span>
-                    <small>
-                      {% for split in task.dataset_distribution.splits %}
-                        <span><i class="legend-dot split-{{ split.name }}"></i>{{ split.label }} {{ split.count }}</span>
-                      {% endfor %}
-                    </small>
-                  </div>
-                  <div class="task-dataset-card" aria-label="训练数据集">
-                    <div>
+                <div class="task-dataset-summary" aria-label="训练数据集与数据分布">
+                  <div
+                    class="task-dataset-main"
+                    {% if task.dataset_url %}data-navigate-url="{{ task.dataset_url }}" role="link" tabindex="0"{% endif %}
+                  >
+                    <div class="task-dataset-info">
                       <span>数据集</span>
                       <strong>{{ task.dataset }}</strong>
                     </div>
+                    <div class="task-data-distribution">
+                      {% for split in task.dataset_distribution.splits %}
+                        <span class="task-split-chip split-{{ split.name }}">
+                          <i class="legend-dot split-{{ split.name }}"></i>
+                          <b>{{ split.label }}</b>
+                          <strong>{{ split.count }}</strong>
+                        </span>
+                      {% endfor %}
+                    </div>
+                  </div>
+                  <div
+                    class="task-compute-main"
+                    {% if task.resource_url %}data-navigate-url="{{ task.resource_url }}" role="link" tabindex="0"{% endif %}
+                  >
                     {% if task.is_remote %}
-                      <div>
-                        <span>算力</span>
-                        {% if task.resource_url %}
-                          <a class="task-resource-link" href="{{ task.resource_url }}">{{ task.resource_name }}</a>
-                        {% else %}
-                          <strong>{{ task.resource_name }}</strong>
-                        {% endif %}
-                      </div>
-                      {% if task.remote_dataset_path %}
-                        <p>{{ task.remote_dataset_path }}</p>
-                      {% endif %}
+                      <span>算力</span>
+                      <strong>{{ task.resource_name }}</strong>
                     {% else %}
-                      <div>
-                        <span>位置</span>
-                        <strong>本地</strong>
-                      </div>
+                      <span>位置</span>
+                      <strong>本地</strong>
                     {% endif %}
                   </div>
                 </div>
                 {% if task.epoch_snapshot %}
                   <div class="task-epoch-card" data-epoch-card>
                     <div class="task-epoch-head">
-                      <strong>Epoch {{ task.epoch_snapshot.epoch }}/{{ task.epoch_snapshot.total }}</strong>
-                      <span>{{ task.epoch_snapshot.progress_label }}</span>
+                      <strong>Epoch</strong>
+                      <span>{{ task.epoch_snapshot.epoch }}/{{ task.epoch_snapshot.total }}</span>
                     </div>
                     <div class="task-progress-track" aria-label="Epoch 进度 {{ task.epoch_snapshot.progress }}%">
                       <span style="width: {{ task.epoch_snapshot.progress }}%"></span>
@@ -167,22 +169,19 @@
                 {% endif %}
               </div>
               <div class="task-actions">
-                {% if not task.is_completed %}
-                  {% if task.is_active and task.is_remote and task.resource_url %}
-                    <a href="{{ task.resource_url }}">监控</a>
-                  {% endif %}
-                  <button type="button" data-view-train-log data-log-url="/model/train/tasks/{{ task.id }}/logs">查看</button>
-                  {% if task.is_active %}
-                    <form method="post" action="/model/train/tasks/{{ task.id }}/cancel">
-                      <button type="submit">停止</button>
-                    </form>
-                  {% endif %}
+                <button type="button" data-view-train-log data-log-url="/model/train/tasks/{{ task.id }}/logs">查看</button>
+                {% if task.is_active %}
+                  <form method="post" action="/model/train/tasks/{{ task.id }}/cancel">
+                    <button type="submit">停止</button>
+                  </form>
                 {% endif %}
-                {% if not task.is_active %}
+                {% if not task.is_active and not task.is_completed %}
                   <form method="post" action="/model/train/tasks/{{ task.id }}/rerun">
                     <button type="submit">重跑</button>
                   </form>
-                  <form method="post" action="/model/train/tasks/{{ task.id }}/delete">
+                {% endif %}
+                {% if not task.is_active %}
+                  <form method="post" action="/model/train/tasks/{{ task.id }}/delete" data-delete-train-task>
                     <button type="submit">删除</button>
                   </form>
                 {% endif %}
@@ -225,10 +224,10 @@
         const head = document.createElement("div");
         head.className = "task-epoch-head";
         const title = document.createElement("strong");
-        title.textContent = `Epoch ${snapshot.epoch || 0}/${snapshot.total || 0}`;
-        const percent = document.createElement("span");
-        percent.textContent = snapshot.progress_label || `${snapshot.epoch || 0}/${snapshot.total || 0}`;
-        head.append(title, percent);
+        title.textContent = "Epoch";
+        const label = document.createElement("span");
+        label.textContent = `${snapshot.epoch || 0}/${snapshot.total || 0}`;
+        head.append(title, label);
         const track = document.createElement("div");
         track.className = "task-progress-track";
         track.setAttribute("aria-label", `Epoch 进度 ${snapshot.progress || 0}%`);
@@ -255,6 +254,25 @@
       }
       function updateFooterConsole(text, status = "", progress = 0) {
         if (text) window.yoloutilsFooterConsole?.append(text);
+      }
+      function hasFinalValidationMetrics(snapshot) {
+        const metrics = snapshot?.metrics || [];
+        return metrics.some(metric => (
+          metric.label === "Precision" &&
+          metric.value &&
+          metric.value !== "-" &&
+          metric.value !== "0.000"
+        ));
+      }
+      function scheduleFinalEpochRefresh(button) {
+        let attempts = 0;
+        const timer = setInterval(async () => {
+          attempts += 1;
+          const latest = await loadTaskLog(button, false).catch(() => null);
+          if (hasFinalValidationMetrics(latest?.task?.epoch_snapshot) || attempts >= 8) {
+            clearInterval(timer);
+          }
+        }, 1000);
       }
       async function loadTaskLog(button, openConsole = true) {
         const requestStartedAt = Date.now();
@@ -283,7 +301,10 @@
         const card = button.closest("[data-train-task]");
         if (card) {
           const statusNode = card.querySelector("[data-task-status]");
-          if (statusNode) statusNode.textContent = task.status || "";
+          if (statusNode) {
+            statusNode.textContent = task.display_status || task.status || "";
+            statusNode.className = `status ${task.status_class || ""}`.trim();
+          }
           renderEpochCard(card, task.epoch_snapshot);
         }
         return data;
@@ -302,6 +323,7 @@
             const latest = await loadTaskLog(button, false).catch(() => null);
             const latestStatus = latest?.task?.status || "";
             if (latestStatus && !activeStatuses.has(latestStatus)) {
+              scheduleFinalEpochRefresh(button);
               stopLogFollow();
             }
           }, 1000);
@@ -313,9 +335,62 @@
       document.querySelectorAll("[data-view-train-log]").forEach(button => {
         button.addEventListener("click", () => watchTaskLog(button));
       });
+      function applyQueueFilter(filter) {
+        document.querySelectorAll("[data-queue-filter]").forEach(button => {
+          button.classList.toggle("active", button.dataset.queueFilter === filter);
+        });
+        document.querySelectorAll("[data-train-task]").forEach(card => {
+          const completed = card.dataset.taskCompleted === "1";
+          card.hidden = (filter === "active" && completed) || (filter === "completed" && !completed);
+        });
+        const url = new URL(window.location.href);
+        if (filter === "all") url.searchParams.delete("queue");
+        else url.searchParams.set("queue", filter);
+        history.replaceState(null, "", url);
+      }
+      document.querySelectorAll("[data-queue-filter]").forEach(button => {
+        button.addEventListener("click", () => applyQueueFilter(button.dataset.queueFilter || "all"));
+      });
+      document.querySelectorAll("[data-delete-train-task]").forEach(form => {
+        form.addEventListener("submit", event => {
+          if (!confirm("确认删除该训练任务？")) {
+            event.preventDefault();
+          }
+        });
+      });
+      document.querySelectorAll("[data-train-task]").forEach(card => {
+        const button = card.querySelector("[data-view-train-log]");
+        const status = (card.querySelector("[data-task-status]")?.textContent || "").trim();
+        if (!button || !activeStatuses.has(status)) return;
+        const refresh = async () => {
+          const data = await loadTaskLog(button, false).catch(() => null);
+          const latestStatus = data?.task?.status || "";
+          if (latestStatus && !activeStatuses.has(latestStatus)) {
+            clearInterval(timer);
+            scheduleFinalEpochRefresh(button);
+          }
+        };
+        const timer = setInterval(refresh, 1500);
+        refresh();
+      });
+      document.querySelectorAll("[data-navigate-url]").forEach(card => {
+        const navigate = event => {
+          if (window.getSelection()?.toString().trim()) return;
+          event.preventDefault();
+          event.stopPropagation();
+          window.location.assign(card.dataset.navigateUrl);
+        };
+        card.addEventListener("click", navigate);
+        card.addEventListener("keydown", event => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          navigate(event);
+        });
+      });
       document.querySelectorAll("[data-model-url]").forEach(card => {
         card.addEventListener("click", event => {
           if (event.target.closest("a, button, form, input, select, textarea")) return;
+          if (event.target.closest("[data-navigate-url]")) return;
+          if (window.getSelection()?.toString().trim()) return;
           window.location.assign(card.dataset.modelUrl);
         });
       });

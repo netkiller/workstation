@@ -75,6 +75,7 @@
                 {% endif %}
                 {% if dataset.build_status == "失败" %}
                   <div class="dataset-footer">
+                    <button class="download-button" type="button" data-watch-task-log data-log-url="/dataset/{{ dataset.project_dir }}/build/tasks/{{ dataset.build_task_id }}/log">日志</button>
                     <button class="download-button deploy-button" type="button" data-retry-build-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.build_task_id }}">重新创建</button>
                   </div>
                 {% endif %}
@@ -91,8 +92,12 @@
                     <b>{{ dataset.current_file }}</b>
                   </div>
                 {% endif %}
+                <div class="dataset-footer">
+                  <button class="download-button" type="button" data-watch-task-log data-log-url="/dataset/{{ dataset.project_dir }}/deploy/tasks/{{ dataset.deploy_task_id }}/log">日志</button>
+                </div>
               {% elif dataset.deploy_failed %}
                 <div class="dataset-footer dataset-failed-footer">
+                  <button class="download-button" type="button" data-watch-task-log data-log-url="/dataset/{{ dataset.project_dir }}/deploy/tasks/{{ dataset.deploy_task_id }}/log">日志</button>
                   <button class="delete-button" type="button" data-delete-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}">删除</button>
                   <button class="download-button deploy-button" type="button" data-retry-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}">部署</button>
                 </div>
@@ -224,7 +229,97 @@
       const deleteRemoteInput = document.querySelector("[data-delete-remote]");
       let deleteTarget = null;
       let datasetPollTimer = null;
+      let deployLogTimer = null;
+      const activeDeployStatuses = new Set(["排队中", "进行中"]);
+      const activeBuildStatuses = new Set(["排队中", "创建中"]);
       const close = () => dialog?.close();
+      function openFooterConsole(text, status = "", progress = 0) {
+        const timestamp = new Date().toLocaleString("sv-SE", {hour12: false}).replace("T", " ");
+        const header = status ? [
+          `[${timestamp}] 状态：${status}`,
+          `[${timestamp}] 进度：${progress || 0}%`,
+          "",
+        ].join("\n") : "";
+        const content = `${header}${text || "控制台暂无输出"}`;
+        if (window.yoloutilsFooterConsole) {
+          window.yoloutilsFooterConsole.open(content);
+          window.yoloutilsFooterConsole.setText?.(content);
+        } else {
+          alert(content);
+        }
+      }
+      function appendFooterConsole(text) {
+        if (text) window.yoloutilsFooterConsole?.append(text);
+      }
+      async function loadDeployLog(logUrl, offset = 0, openConsole = false) {
+        const url = new URL(logUrl, window.location.origin);
+        if (offset > 0) url.searchParams.set("offset", String(offset));
+        const response = await fetch(url, {cache: "no-store"});
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          if (openConsole) openFooterConsole(data.error || "部署日志读取失败");
+          else appendFooterConsole(data.error || "部署日志读取失败");
+          return null;
+        }
+        if (openConsole) openFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
+        else appendFooterConsole(data.log || "");
+        return data;
+      }
+      async function watchDeployLog(logUrl) {
+        if (!logUrl) return;
+        if (deployLogTimer) clearInterval(deployLogTimer);
+        let offset = 0;
+        const first = await loadDeployLog(logUrl, 0, true);
+        if (!first) return;
+        offset = Number(first.size || 0);
+        if (!activeDeployStatuses.has(first.status || "")) return;
+        deployLogTimer = setInterval(async () => {
+          if (!window.yoloutilsFooterConsole?.isOpen()) {
+            clearInterval(deployLogTimer);
+            deployLogTimer = null;
+            return;
+          }
+          const latest = await loadDeployLog(logUrl, offset, false).catch(() => null);
+          if (!latest) return;
+          offset = Number(latest.size || offset);
+          if (!activeDeployStatuses.has(latest.status || "")) {
+            clearInterval(deployLogTimer);
+            deployLogTimer = null;
+          }
+        }, 1000);
+      }
+      async function watchBuildLog(logUrl) {
+        if (!logUrl) return;
+        if (deployLogTimer) clearInterval(deployLogTimer);
+        let offset = 0;
+        const first = await loadDeployLog(logUrl, 0, true);
+        if (!first) return;
+        offset = Number(first.size || 0);
+        if (!activeBuildStatuses.has(first.status || "")) {
+          if (first.deploy_log_url) watchDeployLog(first.deploy_log_url);
+          return;
+        }
+        deployLogTimer = setInterval(async () => {
+          if (!window.yoloutilsFooterConsole?.isOpen()) {
+            clearInterval(deployLogTimer);
+            deployLogTimer = null;
+            return;
+          }
+          const latest = await loadDeployLog(logUrl, offset, false).catch(() => null);
+          if (!latest) return;
+          offset = Number(latest.size || offset);
+          if (latest.deploy_log_url) {
+            clearInterval(deployLogTimer);
+            deployLogTimer = null;
+            await watchDeployLog(latest.deploy_log_url);
+            return;
+          }
+          if (!activeBuildStatuses.has(latest.status || "")) {
+            clearInterval(deployLogTimer);
+            deployLogTimer = null;
+          }
+        }, 1000);
+      }
       function randomIcon() {
         if (!iconInput || !iconButton || !datasetIcons.length) return;
         const next = datasetIcons[Math.floor(Math.random() * datasetIcons.length)];
@@ -305,11 +400,18 @@
         close();
         form.reset();
         randomIcon();
+        watchBuildLog(payload.log_url);
         await refreshDatasetList();
+      });
+      document.addEventListener("click", event => {
+        const button = event.target.closest("[data-watch-task-log]");
+        if (!button) return;
+        watchDeployLog(button.dataset.logUrl || "");
       });
       document.addEventListener("click", event => {
         const card = event.target.closest("[data-card-url]");
         if (!card || event.target.closest("a, button, input, textarea, select, label")) return;
+        if (window.getSelection()?.toString().trim()) return;
         window.location.assign(card.dataset.cardUrl);
       });
       document.addEventListener("keydown", event => {
@@ -343,6 +445,7 @@
           button.textContent = "部署";
           return;
         }
+        watchDeployLog(payload.log_url);
         await refreshDatasetList();
       });
       document.addEventListener("click", async event => {
@@ -360,6 +463,7 @@
           button.textContent = "重新创建";
           return;
         }
+        watchBuildLog(`/dataset/${encodeURIComponent(button.dataset.project || "")}/build/tasks/${encodeURIComponent(button.dataset.taskId || "")}/log`);
         await refreshDatasetList();
       });
       document.addEventListener("click", async event => {
@@ -377,6 +481,7 @@
           button.textContent = "部署";
           return;
         }
+        watchDeployLog(`/dataset/${encodeURIComponent(button.dataset.project || "")}/deploy/tasks/${encodeURIComponent(button.dataset.taskId || "")}/log`);
         await refreshDatasetList();
       });
       document.addEventListener("click", async event => {

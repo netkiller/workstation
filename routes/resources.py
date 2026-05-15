@@ -421,6 +421,57 @@ def remote_metrics(resource: dict):
     }
 
 
+def empty_remote_metrics():
+    load_items = [
+        {"label": label, "value": 0.0, "percent": 0.0}
+        for label in ("1 分钟", "5 分钟", "15 分钟")
+    ]
+    return {
+        "ok": True,
+        "error": "",
+        "timestamp": time.time(),
+        "hostname": "",
+        "os_release": "",
+        "kernel": "",
+        "cpu_count": 0,
+        "cpu_items": [],
+        "cpu_counters": [],
+        "load": {
+            "values": [0.0, 0.0, 0.0],
+            "percent": 0.0,
+            "style": "width: 0%",
+            "items": load_items,
+        },
+        "uptime": "",
+        "memory": segmented_capacity_metric(
+            0,
+            [
+                ("已用", 0, "#1667c7"),
+                ("共享", 0, "#8b5cf6"),
+                ("缓存", 0, "#f59e0b"),
+                ("可用", 0, "#94a3b8"),
+            ],
+        ),
+        "disk": capacity_metric(0, 0, "#f97316"),
+        "disk_io": {
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "read_total": "0 B",
+            "write_total": "0 B",
+        },
+        "network": {
+            "rx_bytes": 0,
+            "tx_bytes": 0,
+            "rx_total": "0 B",
+            "tx_total": "0 B",
+        },
+        "gpu_count": 0,
+        "gpu_memory_total": "0 B",
+        "gpus": [],
+        "raw": {},
+    }
+
+
 def resource_summary(resource: dict):
     metrics = remote_metrics(resource)
     system = metrics["os_release"] or metrics["kernel"] or "未知"
@@ -707,7 +758,7 @@ def resource_detail(resource_id: str, request: Request, project: str = ""):
             "current_project": current_project,
             "resources_base": resources_base(current_project),
             "resource": resource,
-            "metrics": remote_metrics(resource),
+            "metrics": empty_remote_metrics(),
             **header_context(request, workspace),
         },
     )

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "annotate": {
+    "images": 0,
+    "labels": 0,
+    "txt_missing": 0,
+    "txt_empty": 0,
+    "txt_invalid": 0,
+    "txt_valid": 0,
+    "class_counts": {}
+  },
+  "test": {
+    "images": 0
+  },
+  "datasets": {
+    "count": 0
+  },
+  "models": {
+    "count": 0
+  },
+  "updated_at": "2026-05-15T23:12:54"
+}

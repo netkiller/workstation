@@ -326,6 +326,7 @@
       document.querySelectorAll("[data-href]").forEach(card => {
         card.addEventListener("click", event => {
           if (event.target.closest("[data-resource-action]")) return;
+          if (window.getSelection()?.toString().trim()) return;
           location.href = card.dataset.href;
         });
         card.addEventListener("keydown", event => {

@@ -16,23 +16,21 @@
       </div>
     </section>
 
-    {% if not metrics.ok %}
-      <section class="resource-alert" role="alert">
-        <strong>无法获取远程指标</strong>
-        <span>{{ metrics.error }}</span>
-      </section>
-    {% endif %}
+    <section class="resource-alert" role="status" data-resource-alert>
+        <strong data-resource-alert-title>正在加载远程指标</strong>
+        <span data-resource-alert-message>正在连接算力服务器并读取 CPU、内存、磁盘和 GPU 指标，请稍后。</span>
+    </section>
 
     <section class="resource-detail-wide" aria-label="服务器信息">
       <article class="resource-card metric-card cpu-wide-card">
         <div class="metric-head">
           <h2>CPU 负载</h2>
-          <strong>{{ metrics.load.percent }}%</strong>
+          <strong data-load-percent>{{ metrics.load.percent }}%</strong>
         </div>
-        <div class="metric-bar"><span style="{{ metrics.load.style }}"></span></div>
+        <div class="metric-bar"><span style="{{ metrics.load.style }}" data-load-bar></span></div>
         <div class="cpu-load-layout">
           <div class="cpu-load-left">
-            <div class="load-bars" aria-label="1、5、15 分钟 CPU 负载">
+            <div class="load-bars" aria-label="1、5、15 分钟 CPU 负载" data-load-bars>
               {% for load in metrics.load["items"] %}
                 <div class="load-bar-row">
                   <span>{{ load.label }}</span>
@@ -57,7 +55,7 @@
             </div>
           </div>
         </div>
-        <p class="resource-scroll-hint">CPU {{ metrics.cpu_count }} 核 使用率</p>
+        <p class="resource-scroll-hint" data-cpu-count-hint>CPU {{ metrics.cpu_count }} 核 使用率</p>
         <div class="cpu-bars-scroll" aria-label="每个 CPU 使用率横向滚动区域">
           <div class="cpu-vertical-bars" data-cpu-bars>
             {% for cpu in metrics.cpu_items %}
@@ -87,7 +85,7 @@
             <polyline data-line-memory-available points=""></polyline>
           </svg>
         </div>
-        <div class="chart-legend capacity-legend">
+        <div class="chart-legend capacity-legend" data-memory-legend>
           <span><i class="total-line"></i>总容量 <strong>{{ metrics.memory.total }}</strong></span>
           {% for item in metrics.memory["items"] %}
             <span><i style="background: {{ item.color }}"></i>{{ item.label }} <strong>{{ item.value }}</strong></span>
@@ -106,7 +104,7 @@
             <polyline data-line-disk points=""></polyline>
           </svg>
         </div>
-        <div class="chart-legend capacity-legend">
+        <div class="chart-legend capacity-legend" data-disk-legend>
           <span><i class="total-line"></i>总容量 <strong>{{ metrics.disk.total }}</strong></span>
           <span><i class="used-line"></i>已用 <strong>{{ metrics.disk.used }}</strong></span>
           <span><i class="free-line"></i>可用 <strong>{{ metrics.disk.available }}</strong></span>
@@ -148,40 +146,37 @@
       <div class="resource-card-head">
         <div>
           <h2 id="gpu-title">显卡</h2>
-          <p>{{ metrics.gpus | length }} 张 GPU</p>
+          <p data-gpu-count>{{ metrics.gpus | length }} 张 GPU</p>
         </div>
       </div>
-      {% if metrics.gpus %}
-        <div class="gpu-grid">
-          {% for gpu in metrics.gpus %}
-            <article class="gpu-card">
-              <div class="metric-head">
-                <h3>{{ gpu.name }}</h3>
-                <strong>{{ gpu.utilization }}%</strong>
+      <div class="gpu-grid" data-gpu-grid {% if not metrics.gpus %}hidden{% endif %}>
+        {% for gpu in metrics.gpus %}
+          <article class="gpu-card">
+            <div class="metric-head">
+              <h3>{{ gpu.name }}</h3>
+              <strong>{{ gpu.utilization }}%</strong>
+            </div>
+            <div class="metric-bar"><span style="width: {{ gpu.utilization }}%"></span></div>
+            <div class="metric-pie-row gpu-pie-row">
+              <span class="metric-pie small" style="background: {{ gpu.memory.style }}" aria-hidden="true"></span>
+              <dl class="metric-list">
+                <dt>显存</dt><dd>{{ gpu.memory.used }} / {{ gpu.memory.total }}</dd>
+              </dl>
+              <div class="gpu-temperature" aria-label="温度 {{ gpu.temperature }} ℃">
+                <span
+                  class="temperature-gauge"
+                  style="background: conic-gradient(#ef4444 0 {{ gpu.temperature_percent }}%, #e2e8f0 {{ gpu.temperature_percent }}% 100%);"
+                  aria-hidden="true"
+                >
+                  <span>{{ gpu.temperature | int }}℃</span>
+                </span>
+                <strong>温度</strong>
               </div>
-              <div class="metric-bar"><span style="width: {{ gpu.utilization }}%"></span></div>
-              <div class="metric-pie-row gpu-pie-row">
-                <span class="metric-pie small" style="background: {{ gpu.memory.style }}" aria-hidden="true"></span>
-                <dl class="metric-list">
-                  <dt>显存</dt><dd>{{ gpu.memory.used }} / {{ gpu.memory.total }}</dd>
-                </dl>
-                <div class="gpu-temperature" aria-label="温度 {{ gpu.temperature }} ℃">
-                  <span
-                    class="temperature-gauge"
-                    style="background: conic-gradient(#ef4444 0 {{ gpu.temperature_percent }}%, #e2e8f0 {{ gpu.temperature_percent }}% 100%);"
-                    aria-hidden="true"
-                  >
-                    <span>{{ gpu.temperature | int }}℃</span>
-                  </span>
-                  <strong>温度</strong>
-                </div>
-              </div>
-            </article>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="empty compact">未检测到 NVIDIA GPU 或 nvidia-smi 不可用</div>
-      {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+      <div class="empty compact" data-gpu-empty {% if metrics.gpus %}hidden{% endif %}>未检测到 NVIDIA GPU 或 nvidia-smi 不可用</div>
     </section>
   </main>
 
@@ -250,6 +245,112 @@
       function setText(selector, value) {
         const node = document.querySelector(selector);
         if (node) node.textContent = value;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, char => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        }[char]));
+      }
+
+      function setMetricsNotice(title, message, visible = true) {
+        const alert = document.querySelector("[data-resource-alert]");
+        const alertTitle = document.querySelector("[data-resource-alert-title]");
+        const alertMessage = document.querySelector("[data-resource-alert-message]");
+        if (!alert) return;
+        alert.hidden = !visible;
+        if (alertTitle) alertTitle.textContent = title || "";
+        if (alertMessage) alertMessage.textContent = message || "";
+      }
+
+      function renderLoad(current) {
+        const percent = Number(current.load?.percent || 0);
+        setText("[data-load-percent]", `${percent}%`);
+        const loadBar = document.querySelector("[data-load-bar]");
+        if (loadBar) loadBar.style.width = `${percent}%`;
+        const loadBars = document.querySelector("[data-load-bars]");
+        const items = current.load?.items || [];
+        if (loadBars) {
+          loadBars.innerHTML = items.map(load => `
+            <div class="load-bar-row">
+              <span>${escapeHtml(load.label)}</span>
+              <div class="metric-bar"><span style="width: ${Number(load.percent || 0)}%"></span></div>
+              <strong>${escapeHtml(load.value)}</strong>
+            </div>
+          `).join("");
+        }
+        setText("[data-cpu-count-hint]", `CPU ${current.cpu_count || 0} 核 使用率`);
+      }
+
+      function renderCapacityLegends(current) {
+        const memoryLegend = document.querySelector("[data-memory-legend]");
+        const memoryItems = current.memory?.items || [];
+        if (memoryLegend) {
+          memoryLegend.innerHTML = `
+            <span><i class="total-line"></i>总容量 <strong>${escapeHtml(current.memory?.total || "0 B")}</strong></span>
+            ${memoryItems.map(item => `
+              <span><i style="background: ${escapeHtml(item.color)}"></i>${escapeHtml(item.label)} <strong>${escapeHtml(item.value)}</strong></span>
+            `).join("")}
+          `;
+        }
+        const diskLegend = document.querySelector("[data-disk-legend]");
+        if (diskLegend) {
+          diskLegend.innerHTML = `
+            <span><i class="total-line"></i>总容量 <strong>${escapeHtml(current.disk?.total || "0 B")}</strong></span>
+            <span><i class="used-line"></i>已用 <strong>${escapeHtml(current.disk?.used || "0 B")}</strong></span>
+            <span><i class="free-line"></i>可用 <strong>${escapeHtml(current.disk?.available || "0 B")}</strong></span>
+          `;
+        }
+      }
+
+      function renderGpus(current) {
+        const gpus = current.gpus || [];
+        const grid = document.querySelector("[data-gpu-grid]");
+        const empty = document.querySelector("[data-gpu-empty]");
+        setText("[data-gpu-count]", `${gpus.length} 张 GPU`);
+        if (!grid) return;
+        grid.hidden = gpus.length === 0;
+        if (empty) empty.hidden = gpus.length > 0;
+        grid.innerHTML = gpus.map(gpu => {
+          const utilization = Number(gpu.utilization || 0);
+          const temperature = Number(gpu.temperature || 0);
+          const temperaturePercent = Number(gpu.temperature_percent || 0);
+          return `
+            <article class="gpu-card">
+              <div class="metric-head">
+                <h3>${escapeHtml(gpu.name)}</h3>
+                <strong>${utilization}%</strong>
+              </div>
+              <div class="metric-bar"><span style="width: ${utilization}%"></span></div>
+              <div class="metric-pie-row gpu-pie-row">
+                <span class="metric-pie small" style="background: ${escapeHtml(gpu.memory?.style || "#e2e8f0")}" aria-hidden="true"></span>
+                <dl class="metric-list">
+                  <dt>显存</dt><dd>${escapeHtml(gpu.memory?.used || "0 B")} / ${escapeHtml(gpu.memory?.total || "0 B")}</dd>
+                </dl>
+                <div class="gpu-temperature" aria-label="温度 ${temperature} ℃">
+                  <span
+                    class="temperature-gauge"
+                    style="background: conic-gradient(#ef4444 0 ${temperaturePercent}%, #e2e8f0 ${temperaturePercent}% 100%);"
+                    aria-hidden="true"
+                  >
+                    <span>${Math.round(temperature)}℃</span>
+                  </span>
+                  <strong>温度</strong>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join("");
+      }
+
+      function renderStaticMetrics(current) {
+        renderLoad(current);
+        renderCapacityLegends(current);
+        renderGpus(current);
       }
 
       function updateLines() {
@@ -332,6 +433,7 @@
         setText("[data-network-current]", formatRate(networkRx + networkTx));
       }
 
+      renderStaticMetrics(previous);
       updateRates(previous, null);
       updateCpu(previous, null);
 
@@ -339,7 +441,13 @@
         try {
           const response = await fetch(root.dataset.metricsUrl, {cache: "no-store"});
           const current = await response.json();
-          if (!response.ok || current.ok === false) return;
+          if (!response.ok || current.ok === false) {
+            const reason = current.error ? `原因：${current.error}` : "请检查 SSH 连接或稍后重试。";
+            setMetricsNotice("远程指标加载失败", `暂时无法读取服务器指标。${reason}`);
+            return;
+          }
+          setMetricsNotice("", "", false);
+          renderStaticMetrics(current);
           updateCpu(current, previous);
           updateRates(current, previous);
           previous = current;

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if remote_train %}远程训练{% else %}本地训练{% endif %}{% endblock %}
+{% block title %}新建训练任务{% endblock %}
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/train.css?v=20260515-unique-task-name">
@@ -12,15 +12,13 @@
     <dialog class="train-dialog" open>
       <form method="post" action="/model/train">
         <div class="dialog-head">
-          <h1>{% if remote_train %}远程训练{% else %}本地训练{% endif %}</h1>
-          <a href="/dataset" aria-label="关闭">×</a>
+          <h1>新建训练任务</h1>
+          <a href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}" aria-label="关闭">×</a>
         </div>
         {% if demo_mode %}
           <p class="demo-note">当前为演示模式，不会启动训练。</p>
         {% endif %}
-        {% if remote_train %}
-          <p class="remote-train-note">使用已部署的数据集，通过 SSH 在算力服务器上执行 YOLO 训练命令。</p>
-        {% endif %}
+        <p class="remote-train-note">选择本地数据集将在本机训练；选择已部署数据集将在对应算力服务器训练。</p>
         {% if train_error %}
           <p class="train-form-error">{{ train_error }}</p>
         {% endif %}
@@ -32,33 +30,33 @@
 
         <label>
           <span>数据集</span>
-          <select name="dataset" required {% if remote_train %}data-remote-dataset-select{% endif %} {% if dataset_locked %}disabled aria-describedby="datasetLockNote"{% endif %}>
+          <select name="dataset" required data-train-dataset-select {% if dataset_locked %}disabled aria-describedby="datasetLockNote"{% endif %}>
             {% for item in datasets %}
               <option
-                value="{{ item.key if remote_train else item.name }}"
-                {% if remote_train %}data-resource-id="{{ item.resource_id }}" data-resource-name="{{ item.resource_name }}" data-remote-path="{{ item.remote_path }}"{% endif %}
-                {% if dataset and ((remote_train and item.key == dataset.key) or (not remote_train and item.path == dataset.path)) %}selected{% endif %}
-              >{{ item.name }}</option>
+                value="{{ item.key }}"
+                data-source="{{ item.source }}"
+                data-project="{{ item.project }}"
+                {% if item.source == "remote" %}data-resource-id="{{ item.resource_id }}" data-resource-name="{{ item.resource_name }}" data-remote-path="{{ item.remote_path }}"{% endif %}
+                {% if dataset and item.key == dataset.key %}selected{% endif %}
+              >{{ item.name }} · {{ item.scope_label }}{% if item.source == "remote" %} · {{ item.resource_name }}{% endif %}</option>
             {% endfor %}
           </select>
           {% if dataset_locked and dataset %}
-            <input type="hidden" name="dataset" value="{{ dataset.key if remote_train else dataset.name }}">
+            <input type="hidden" name="dataset" value="{{ dataset.key }}">
             <span id="datasetLockNote" class="dataset-lock-note">已从数据集入口锁定</span>
           {% endif %}
         </label>
         {% if not datasets %}
-          <p class="empty-train-dataset">{% if remote_train %}暂无已部署的数据集。请先在数据集部署页完成部署。{% else %}暂无本地数据集。{% endif %}</p>
+          <p class="empty-train-dataset">暂无可训练数据集。请先创建本地数据集，或完成数据集部署。</p>
         {% endif %}
         <input type="hidden" name="project" value="{{ dataset.project if dataset else current_project }}">
-        <input type="hidden" name="train_scope" value="{{ 'remote' if remote_train else 'local' }}">
-        {% if remote_train %}
-          <input type="hidden" name="resource_id" value="{{ dataset.resource_id if dataset else '' }}" data-remote-resource-id>
-          <input type="hidden" name="remote_dataset_path" value="{{ dataset.remote_path if dataset else '' }}" data-remote-dataset-path>
-          <div class="remote-train-target" data-remote-train-target {% if not dataset %}hidden{% endif %}>
-            <span>算力服务器</span><strong data-remote-resource-name>{{ dataset.resource_name if dataset else "" }}</strong>
-            <span>部署位置</span><strong data-remote-path>{{ dataset.remote_path if dataset else "" }}</strong>
-          </div>
-        {% endif %}
+        <input type="hidden" name="train_scope" value="{{ dataset.source if dataset else 'local' }}" data-train-scope>
+        <input type="hidden" name="resource_id" value="{{ dataset.resource_id if dataset and dataset.source == 'remote' else '' }}" data-remote-resource-id>
+        <input type="hidden" name="remote_dataset_path" value="{{ dataset.remote_path if dataset and dataset.source == 'remote' else '' }}" data-remote-dataset-path>
+        <div class="remote-train-target" data-remote-train-target {% if not dataset or dataset.source != 'remote' %}hidden{% endif %}>
+          <span>算力服务器</span><strong data-remote-resource-name>{{ dataset.resource_name if dataset and dataset.source == "remote" else "" }}</strong>
+          <span>部署位置</span><strong data-remote-path>{{ dataset.remote_path if dataset and dataset.source == "remote" else "" }}</strong>
+        </div>
 
         <div class="form-grid">
           <label>
@@ -304,8 +302,8 @@
         </section>
 
         <div class="dialog-actions">
-          <a class="secondary-link" href="/dataset">放弃</a>
-          <button type="submit" {% if not datasets %}disabled{% endif %}>开始</button>
+          <a class="dialog-secondary-button" href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}">放弃</a>
+          <button class="dialog-primary-button" type="submit" {% if not datasets %}disabled{% endif %}>开始</button>
         </div>
       </form>
     </dialog>
@@ -329,26 +327,29 @@
       optionalToggle?.addEventListener("change", renderOptionalParams);
       renderOptionalParams();
     })();
-    {% if remote_train %}
-      (() => {
-        const select = document.querySelector("[data-remote-dataset-select]");
-        const target = document.querySelector("[data-remote-train-target]");
-        const resourceName = document.querySelector("[data-remote-resource-name]");
-        const remotePath = document.querySelector("[data-remote-path]");
-        const resourceIdInput = document.querySelector("[data-remote-resource-id]");
-        const remotePathInput = document.querySelector("[data-remote-dataset-path]");
-        function renderRemoteTarget() {
-          const option = select?.selectedOptions?.[0];
-          if (!option || !target) return;
-          if (resourceName) resourceName.textContent = option.dataset.resourceName || "算力服务器";
-          if (remotePath) remotePath.textContent = option.dataset.remotePath || "";
-          if (resourceIdInput) resourceIdInput.value = option.dataset.resourceId || "";
-          if (remotePathInput) remotePathInput.value = option.dataset.remotePath || "";
-          target.hidden = false;
-        }
-        select?.addEventListener("change", renderRemoteTarget);
-        renderRemoteTarget();
-      })();
-    {% endif %}
+    (() => {
+      const select = document.querySelector("[data-train-dataset-select]");
+      const target = document.querySelector("[data-remote-train-target]");
+      const resourceName = document.querySelector("[data-remote-resource-name]");
+      const remotePath = document.querySelector("[data-remote-path]");
+      const resourceIdInput = document.querySelector("[data-remote-resource-id]");
+      const remotePathInput = document.querySelector("[data-remote-dataset-path]");
+      const trainScopeInput = document.querySelector("[data-train-scope]");
+      const projectInput = document.querySelector('input[name="project"]');
+      function renderTrainTarget() {
+        const option = select?.selectedOptions?.[0];
+        if (!option) return;
+        const isRemote = option.dataset.source === "remote";
+        if (trainScopeInput) trainScopeInput.value = isRemote ? "remote" : "local";
+        if (projectInput) projectInput.value = option.dataset.project || projectInput.value;
+        if (resourceIdInput) resourceIdInput.value = isRemote ? (option.dataset.resourceId || "") : "";
+        if (remotePathInput) remotePathInput.value = isRemote ? (option.dataset.remotePath || "") : "";
+        if (resourceName) resourceName.textContent = option.dataset.resourceName || "算力服务器";
+        if (remotePath) remotePath.textContent = option.dataset.remotePath || "";
+        if (target) target.hidden = !isRemote;
+      }
+      select?.addEventListener("change", renderTrainTarget);
+      renderTrainTarget();
+    })();
   </script>
 {% endblock %}

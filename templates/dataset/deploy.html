@@ -86,7 +86,7 @@
                     </div>
                     <span class="deploy-task-time">时间 {{ task.created_at }}</span>
                   </div>
-                  <button type="button" data-view-task-log data-log-url="/dataset/{{ current_project }}/deploy/tasks/{{ task.id }}/log">查看</button>
+                  <button type="button" data-view-task-log data-log-url="/dataset/{{ current_project }}/deploy/tasks/{{ task.id }}/log">日志</button>
                 </div>
                 <div class="deploy-task-line">
                   <span class="deploy-detail deploy-mode-badge"><i aria-hidden="true">{{ task.mode_icon }}</i><b>{{ task.mode_label }}</b></span>
@@ -144,6 +144,7 @@
       const targetPath = form?.elements.target_path;
       const activeStatuses = new Set(["排队中", "进行中"]);
       let activeLogTimer = null;
+      const footerConsoleButton = document.querySelector("[data-footer-console-toggle]");
       const logOffsets = new Map();
 
       function syncDatasetName() {
@@ -209,7 +210,13 @@
           `[${timestamp}] 进度：${progress || 0}%`,
           "",
         ].join("\n") : "";
-        window.yoloutilsFooterConsole?.open(`${header}${text || "控制台暂无输出"}`);
+        const content = `${header}${text || "控制台暂无输出"}`;
+        if (window.yoloutilsFooterConsole) {
+          window.yoloutilsFooterConsole.open(content);
+          window.yoloutilsFooterConsole.setText?.(content);
+        } else {
+          alert(content);
+        }
       }
 
       function updateFooterConsole(text, status = "", progress = 0) {
@@ -308,6 +315,22 @@
         });
       }
 
+      footerConsoleButton?.addEventListener("click", () => {
+        setTimeout(() => {
+          if (!window.yoloutilsFooterConsole?.isOpen()) {
+            if (activeLogTimer) clearInterval(activeLogTimer);
+            activeLogTimer = null;
+            return;
+          }
+          const activeCard = Array.from(document.querySelectorAll("[data-deploy-task]")).find(card => {
+            const status = card.querySelector("[data-task-status]")?.textContent || "";
+            return activeStatuses.has(status);
+          });
+          const button = activeCard?.querySelector("[data-view-task-log]") || document.querySelector("[data-view-task-log]");
+          if (button) watchTaskLog(button);
+        }, 0);
+      });
+
       document.querySelectorAll("[data-deploy-task]").forEach(card => {
         card.querySelector("[data-view-task-log]")?.addEventListener("click", event => {
           event.stopPropagation();
@@ -321,6 +344,15 @@
           }, 1000);
         }
       });
+      const hashTaskId = decodeURIComponent((window.location.hash || "").replace(/^#task-/, ""));
+      if (hashTaskId) {
+        const card = document.getElementById(`task-${hashTaskId}`);
+        const button = card?.querySelector("[data-view-task-log]");
+        if (button) {
+          card.scrollIntoView({block: "center"});
+          watchTaskLog(button);
+        }
+      }
     })();
   </script>
 {% endblock %}

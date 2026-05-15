@@ -1662,6 +1662,7 @@ def dataset_deploy(request: Request, project: str, name: str = ""):
     datasets = dataset_select_items(workspace, project)
     selected = next((item for item in datasets if item["name"] == name), datasets[0] if datasets else None)
     tasks = [deploy_task_view(task) for task in read_deploy_tasks(current_project_path)]
+    latest_task = tasks[0] if tasks else None
     response = templates.TemplateResponse(
         request=request,
         name="dataset/deploy.html",
@@ -1677,6 +1678,7 @@ def dataset_deploy(request: Request, project: str, name: str = ""):
             "current_project_name": project_name(current_project_path),
             "deploy_modes": DEPLOY_MODES,
             "deploy_targets": DEPLOY_TARGETS,
+            "footer_console_url": f"/dataset/{project}/deploy/tasks/{latest_task['id']}/log" if latest_task else "",
             **header_context(request, workspace),
         },
     )
@@ -1857,6 +1859,7 @@ def dataset_build_task_log(project: str, task_id: str, offset: int = 0):
     task_status = task.get("status", "")
     task_progress = 100 if task_status == "完成" else task.get("progress", 0)
     current_file = current_copy_file_from_log(full_log_text) if task_status in {"排队中", "创建中"} else ""
+    deploy_task_id = str(task.get("deploy_task_id") or "")
     return {
         "ok": True,
         "status": task_status,
@@ -1866,6 +1869,8 @@ def dataset_build_task_log(project: str, task_id: str, offset: int = 0):
         "offset": start,
         "size": size,
         "current_file": current_file,
+        "deploy_task_id": deploy_task_id,
+        "deploy_log_url": f"/dataset/{project}/deploy/tasks/{deploy_task_id}/log" if deploy_task_id else "",
     }
 
 
@@ -1998,7 +2003,11 @@ async def create_dataset(request: Request):
         )
         if error:
             return JSONResponse({"ok": False, "error": error}, status_code=400)
-        return {"ok": True, "task": task}
+        return {
+            "ok": True,
+            "task": task,
+            "log_url": f"/dataset/{current_project}/build/tasks/{task['id']}/log",
+        }
     except Exception:
         return JSONResponse(
             {"ok": False, "error": "创建数据集失败"},
