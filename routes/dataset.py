@@ -33,6 +33,8 @@ ANNOTATE_DIR = "annotate"
 DEPLOY_MODES = {"full": "全量", "incremental": "增量", "sync": "同步", "diff": "同步"}
 DEPLOY_TARGETS = {"local": "本地", "remote": "远程"}
 DEFAULT_DATASET_ICON = "▦"
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))")
+CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 _UNICODE_SYMBOLS = tuple(
     symbol
     for codepoint in range(0x110000)
@@ -649,6 +651,18 @@ def append_deploy_log(log_path: Path, message: str):
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8", errors="replace") as output:
         output.write(f"[{timestamp}] {message}\n")
+
+
+def normalize_console_log(text: str):
+    text = ANSI_ESCAPE_PATTERN.sub("", text or "")
+    text = text.replace("\r\n", "\n")
+    cleaned_lines = []
+    for line in text.split("\n"):
+        if "\r" in line:
+            segments = [segment for segment in line.split("\r") if segment.strip()]
+            line = segments[-1] if segments else ""
+        cleaned_lines.append(CONTROL_CHAR_PATTERN.sub("", line))
+    return "\n".join(cleaned_lines)
 
 
 def current_copy_file_from_log(log_text: str):
@@ -1815,7 +1829,7 @@ def dataset_deploy_task_log(project: str, task_id: str, offset: int = 0):
         "status": task_status,
         "progress": task_progress,
         "error": normalize_task_error(str(task.get("error", ""))),
-        "log": log_text,
+        "log": normalize_console_log(log_text),
         "offset": start,
         "size": size,
         "current_file": current_file,
@@ -1848,7 +1862,7 @@ def dataset_build_task_log(project: str, task_id: str, offset: int = 0):
         "status": task_status,
         "progress": task_progress,
         "error": task.get("error", ""),
-        "log": log_text,
+        "log": normalize_console_log(log_text),
         "offset": start,
         "size": size,
         "current_file": current_file,

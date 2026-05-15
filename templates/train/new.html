@@ -3,7 +3,7 @@
 {% block title %}{% if remote_train %}远程训练{% else %}本地训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260515-page-width-uniform">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260515-unique-task-name">
 {% endblock %}
 
 {% block content %}
@@ -21,10 +21,13 @@
         {% if remote_train %}
           <p class="remote-train-note">使用已部署的数据集，通过 SSH 在算力服务器上执行 YOLO 训练命令。</p>
         {% endif %}
+        {% if train_error %}
+          <p class="train-form-error">{{ train_error }}</p>
+        {% endif %}
 
         <label>
           <span>任务名称</span>
-          <input name="name" type="text" value="{{ dataset.name if dataset else 'train' }}" required>
+          <input name="name" type="text" value="{{ name_value or (dataset.name if dataset else 'train') }}" required>
         </label>
 
         <label>

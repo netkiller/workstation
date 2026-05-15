@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260515-completed-task-link">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260515-task-actions-clean">
 {% endblock %}
 
 {% block content %}
@@ -143,10 +143,26 @@
                     {% endif %}
                   </div>
                 </div>
-                {% if task.show_progress %}
-                  <div class="task-progress-row" aria-label="训练进度 {{ task.progress }}%">
-                    <div class="task-progress-track"><span data-task-progress-bar style="width: {{ task.progress }}%"></span></div>
-                    <strong data-task-progress-text>{{ task.progress }}%</strong>
+                {% if task.epoch_snapshot %}
+                  <div class="task-epoch-card" data-epoch-card>
+                    <div class="task-epoch-head">
+                      <strong>Epoch {{ task.epoch_snapshot.epoch }}/{{ task.epoch_snapshot.total }}</strong>
+                      <span>{{ task.epoch_snapshot.progress_label }}</span>
+                    </div>
+                    <div class="task-progress-track" aria-label="Epoch 进度 {{ task.epoch_snapshot.progress }}%">
+                      <span style="width: {{ task.epoch_snapshot.progress }}%"></span>
+                    </div>
+                    {% if task.epoch_snapshot.metrics %}
+                      <div class="task-epoch-metrics">
+                        {% for metric in task.epoch_snapshot.metrics %}
+                          <span><b>{{ metric.label }}</b>{{ metric.value }}</span>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <pre>{{ task.epoch_snapshot.train_line }}
+{{ task.epoch_snapshot.validation_line }}
+{{ task.epoch_snapshot.summary_line }}</pre>
+                    {% endif %}
                   </div>
                 {% endif %}
               </div>
@@ -196,18 +212,46 @@
         const header = status ? [`状态：${status}`, `进度：${progress || 0}%`, ""].join("\n") : "";
         window.yoloutilsFooterConsole?.open(`${header}${text || "控制台暂无输出"}`);
       }
-      function paintProgress(card, progress) {
-        const bar = card.querySelector("[data-task-progress-bar]");
-        const text = card.querySelector("[data-task-progress-text]");
-        if (bar) bar.style.width = `${progress}%`;
-        if (text) text.textContent = `${progress}%`;
-        card.querySelector(".task-progress-row")?.setAttribute("aria-label", `训练进度 ${progress}%`);
-      }
-      function syncProgressVisibility(card, status) {
-        const row = card.querySelector(".task-progress-row");
-        if (!row) return;
-        const hiddenStatuses = new Set(["完成", "失败", "取消", "演示模式"]);
-        row.hidden = hiddenStatuses.has(status || "");
+      function renderEpochCard(card, snapshot) {
+        if (!snapshot) return;
+        let epochCard = card.querySelector("[data-epoch-card]");
+        if (!epochCard) {
+          epochCard = document.createElement("div");
+          epochCard.className = "task-epoch-card";
+          epochCard.dataset.epochCard = "";
+          card.querySelector(".task-card-main")?.appendChild(epochCard);
+        }
+        epochCard.textContent = "";
+        const head = document.createElement("div");
+        head.className = "task-epoch-head";
+        const title = document.createElement("strong");
+        title.textContent = `Epoch ${snapshot.epoch || 0}/${snapshot.total || 0}`;
+        const percent = document.createElement("span");
+        percent.textContent = snapshot.progress_label || `${snapshot.epoch || 0}/${snapshot.total || 0}`;
+        head.append(title, percent);
+        const track = document.createElement("div");
+        track.className = "task-progress-track";
+        track.setAttribute("aria-label", `Epoch 进度 ${snapshot.progress || 0}%`);
+        const fill = document.createElement("span");
+        fill.style.width = `${snapshot.progress || 0}%`;
+        track.appendChild(fill);
+        epochCard.append(head, track);
+        if (Array.isArray(snapshot.metrics) && snapshot.metrics.length) {
+          const metrics = document.createElement("div");
+          metrics.className = "task-epoch-metrics";
+          snapshot.metrics.forEach(metric => {
+            const item = document.createElement("span");
+            const label = document.createElement("b");
+            label.textContent = metric.label || "";
+            item.append(label, document.createTextNode(metric.value || "-"));
+            metrics.appendChild(item);
+          });
+          epochCard.appendChild(metrics);
+        } else {
+          const pre = document.createElement("pre");
+          pre.textContent = [snapshot.train_line, snapshot.validation_line, snapshot.summary_line].filter(Boolean).join("\n");
+          epochCard.appendChild(pre);
+        }
       }
       function updateFooterConsole(text, status = "", progress = 0) {
         if (text) window.yoloutilsFooterConsole?.append(text);
@@ -240,8 +284,7 @@
         if (card) {
           const statusNode = card.querySelector("[data-task-status]");
           if (statusNode) statusNode.textContent = task.status || "";
-          syncProgressVisibility(card, task.status || "");
-          paintProgress(card, task.progress || 0);
+          renderEpochCard(card, task.epoch_snapshot);
         }
         return data;
       }

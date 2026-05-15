@@ -3,6 +3,7 @@ import os
 import csv
 import base64
 import posixpath
+import re
 import shlex
 import shutil
 import stat as stat_module
@@ -21,7 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from routes.dataset import count_dataset_split, read_deploy_tasks
+from routes.dataset import count_dataset_split, normalize_console_log, read_deploy_tasks
 from routes.project import header_context
 from routes.resources import find_resource, ssh_connect_kwargs
 
@@ -483,6 +484,9 @@ def task_progress(task: dict):
             return max(0, min(int(task.get("progress") or 0), 100))
         except (TypeError, ValueError):
             pass
+    snapshot = task_epoch_snapshot(task)
+    if snapshot:
+        return int(snapshot.get("progress") or 0)
     status_value = task.get("status", "")
     if status_value == COMPLETE_STATUS:
         return 100
@@ -495,6 +499,7 @@ def task_progress(task: dict):
 
 def task_card_view(task: dict):
     progress = task_progress(task)
+    epoch_snapshot = task_epoch_snapshot(task)
     is_remote = task.get("train_scope") == "remote"
     resource_id = str(task.get("resource_id") or "")
     resource_url = f"/resources/{task.get('project', '')}/server/{resource_id}" if is_remote and resource_id else ""
@@ -525,6 +530,7 @@ def task_card_view(task: dict):
         "progress": progress,
         "progress_style": f"conic-gradient(#1667c7 0 {progress}%, #e2e8f0 {progress}% 100%)",
         "params": params,
+        "epoch_snapshot": epoch_snapshot,
         "is_active": status_value in ACTIVE_STATUSES,
         "is_completed": status_value == COMPLETE_STATUS,
         "show_progress": status_value in ACTIVE_STATUSES,
@@ -655,6 +661,102 @@ def format_metric(value: str):
         return f"{float(value):.3f}"
     except ValueError:
         return value
+
+
+def clean_console_line(text: str):
+    return normalize_console_log(text).strip()
+
+
+def metric_row_from_results(run_dir: Path):
+    path = run_dir / "results.csv"
+    if not path.is_file():
+        return None
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        rows = [row for row in csv.DictReader(handle) if row]
+    return rows[-1] if rows else None
+
+
+def task_epoch_total(task: dict):
+    try:
+        return max(1, int(task.get("epochs") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def epoch_progress(task: dict, completed_epoch: int = 0):
+    total = task_epoch_total(task)
+    if not total:
+        return 0
+    if task.get("status") == COMPLETE_STATUS:
+        return 100
+    return max(0, min(round(completed_epoch / total * 100), 100))
+
+
+def last_epoch_from_log(task_id: str):
+    path = log_file(task_id)
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = [clean_console_line(line) for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    last = None
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*(\d+)/(\d+)\s+", line)
+        if not match or "100%" not in line:
+            continue
+        validation = ""
+        summary = ""
+        for next_line in lines[index + 1:index + 8]:
+            if next_line.startswith("Class") or next_line.lstrip().startswith("Class"):
+                validation = next_line
+            elif next_line.lstrip().startswith("all "):
+                summary = next_line
+                break
+        last = {
+            "epoch": int(match.group(1)),
+            "total": int(match.group(2)),
+            "train_line": line,
+            "validation_line": validation,
+            "summary_line": summary,
+        }
+    return last
+
+
+def task_epoch_snapshot(task: dict):
+    run_dir = task_run_dir(task)
+    total = task_epoch_total(task)
+    row = metric_row_from_results(run_dir)
+    if row:
+        epoch = int(float(row.get("epoch") or 0))
+        return {
+            "epoch": epoch,
+            "total": total,
+            "progress": epoch_progress(task, epoch),
+            "progress_label": f"{epoch}/{total}" if total else str(epoch),
+            "metrics": [
+                {"label": "box_loss", "value": format_metric(row.get("train/box_loss", ""))},
+                {"label": "cls_loss", "value": format_metric(row.get("train/cls_loss", ""))},
+                {"label": "dfl_loss", "value": format_metric(row.get("train/dfl_loss", ""))},
+                {"label": "Precision", "value": format_metric(row.get("metrics/precision(B)") or row.get("metrics/precision"))},
+                {"label": "Recall", "value": format_metric(row.get("metrics/recall(B)") or row.get("metrics/recall"))},
+                {"label": "mAP50", "value": format_metric(row.get("metrics/mAP50(B)") or row.get("metrics/mAP50"))},
+                {"label": "mAP50-95", "value": format_metric(row.get("metrics/mAP50-95(B)") or row.get("metrics/mAP50-95"))},
+            ],
+            "train_line": "",
+            "validation_line": "",
+            "summary_line": "",
+        }
+    log_snapshot = last_epoch_from_log(str(task.get("id") or ""))
+    if not log_snapshot:
+        return None
+    epoch = int(log_snapshot.get("epoch") or 0)
+    return {
+        **log_snapshot,
+        "total": int(log_snapshot.get("total") or total or 0),
+        "progress": epoch_progress(task, epoch),
+        "progress_label": f"{epoch}/{int(log_snapshot.get('total') or total or 0)}" if int(log_snapshot.get("total") or total or 0) else str(epoch),
+        "metrics": [],
+    }
 
 
 def run_metrics_summary(run_dir: Path):
@@ -1073,6 +1175,47 @@ async def form_fields(request: Request):
     return parse_qs(body, keep_blank_values=True)
 
 
+def train_name_exists(project: str, name: str, exclude_task_id: str = ""):
+    normalized = (name or "").strip().casefold()
+    if not normalized:
+        return False
+    return any(
+        (task.get("project") == project)
+        and (task.get("id") != exclude_task_id)
+        and str(task.get("name") or "").strip().casefold() == normalized
+        for task in load_tasks()
+    )
+
+
+def train_new_context(request: Request, workspace: Path, project: str, dataset_key: str, is_remote: bool, error: str = "", name_value: str = ""):
+    dataset_options = remote_dataset_dirs(project) if is_remote else dataset_dirs(project)
+    locked_dataset = (
+        matched_remote_dataset(project, dataset_key)
+        if is_remote
+        else matched_dataset(project, dataset_key)
+    )
+    dataset_item = locked_dataset or (dataset_options[0] if dataset_options else None)
+    return {
+        "request": request,
+        "workspace": workspace,
+        "dataset": dataset_item,
+        "datasets": dataset_options,
+        "dataset_locked": locked_dataset is not None,
+        "remote_train": is_remote,
+        "model_versions": MODEL_VERSIONS,
+        "model_sizes": MODEL_SIZES,
+        "default_model_version": "YOLO26",
+        "default_model_size": "N",
+        "demo_mode": demo_mode_enabled(),
+        "active_page": "model",
+        "model_active": "train",
+        "current_project": project,
+        "train_error": error,
+        "name_value": name_value,
+        **header_context(request, workspace),
+    }
+
+
 @router.get("/model/train")
 @router.get("/train")
 def train(request: Request, tab: str = "", queue: str = "all"):
@@ -1307,33 +1450,10 @@ def new_train(request: Request, dataset: str = ""):
         return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
     workspace = workspace_path()
     current_project = request.cookies.get("current_project", "")
-    dataset_options = remote_dataset_dirs(current_project) if is_remote else dataset_dirs(current_project)
-    locked_dataset = (
-        matched_remote_dataset(current_project, requested_dataset)
-        if is_remote
-        else matched_dataset(current_project, requested_dataset)
-    )
-    dataset_item = locked_dataset or (dataset_options[0] if dataset_options else None)
     response = templates.TemplateResponse(
         request=request,
         name="train/new.html",
-        context={
-            "request": request,
-            "workspace": workspace,
-            "dataset": dataset_item,
-            "datasets": dataset_options,
-            "dataset_locked": locked_dataset is not None,
-            "remote_train": is_remote,
-            "model_versions": MODEL_VERSIONS,
-            "model_sizes": MODEL_SIZES,
-            "default_model_version": "YOLO26",
-            "default_model_size": "N",
-            "demo_mode": demo_mode_enabled(),
-            "active_page": "model",
-            "model_active": "train",
-            "current_project": current_project,
-            **header_context(request, workspace),
-        },
+        context=train_new_context(request, workspace, current_project, requested_dataset, is_remote),
     )
     if current_project:
         response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
@@ -1356,33 +1476,10 @@ def new_train_with_project(request: Request, project: str, dataset: str = ""):
     workspace = workspace_path()
     current_project = project
     is_remote = request.query_params.get("remote") == "1"
-    dataset_options = remote_dataset_dirs(project) if is_remote else dataset_dirs(project)
-    locked_dataset = (
-        matched_remote_dataset(project, requested_dataset)
-        if is_remote
-        else matched_dataset(project, requested_dataset)
-    )
-    dataset_item = locked_dataset or (dataset_options[0] if dataset_options else None)
     response = templates.TemplateResponse(
         request=request,
         name="train/new.html",
-        context={
-            "request": request,
-            "workspace": workspace,
-            "dataset": dataset_item,
-            "datasets": dataset_options,
-            "dataset_locked": locked_dataset is not None,
-            "remote_train": is_remote,
-            "model_versions": MODEL_VERSIONS,
-            "model_sizes": MODEL_SIZES,
-            "default_model_version": "YOLO26",
-            "default_model_size": "N",
-            "demo_mode": demo_mode_enabled(),
-            "active_page": "model",
-            "model_active": "train",
-            "current_project": current_project,
-            **header_context(request, workspace),
-        },
+        context=train_new_context(request, workspace, current_project, requested_dataset, is_remote),
     )
     response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
     return response
@@ -1406,9 +1503,28 @@ async def create_train(request: Request):
     data_value = form.get("data", [""])[0].strip()
     yolo_options = {key: optional_value(form.get(key, [""])[0]) for key in YOLO_OPTION_KEYS}
     yolo_options["data"] = data_value
+    task_name = form.get("name", ["train"])[0].strip() or "train"
+    if train_name_exists(dataset_item["project"], task_name):
+        workspace = workspace_path()
+        response = templates.TemplateResponse(
+            request=request,
+            name="train/new.html",
+            context=train_new_context(
+                request,
+                workspace,
+                dataset_item["project"],
+                dataset,
+                is_remote,
+                error="任务名称已存在，请换一个名称。",
+                name_value=task_name,
+            ),
+            status_code=400,
+        )
+        response.set_cookie("current_project", dataset_item["project"], httponly=True, samesite="lax")
+        return response
     task = {
         "id": uuid4().hex[:12],
-        "name": form.get("name", ["train"])[0].strip() or "train",
+        "name": task_name,
         "project": dataset_item["project"],
         "dataset": dataset_item["name"],
         "dataset_path": str(dataset_item["path"]),
@@ -1488,7 +1604,7 @@ def train_task_logs(task_id: str, offset: int = 0):
     return {
         "ok": True,
         "task": task_card_view(task),
-        "log": log,
+        "log": normalize_console_log(log),
         "offset": start,
         "size": size,
     }

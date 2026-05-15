@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from routes.dataset import normalize_console_log
 from routes.project import header_context
 
 
@@ -531,7 +532,7 @@ def validate_task_logs(task_id: str, offset: int = 0):
     return {
         "ok": True,
         "task": view,
-        "log": log,
+        "log": normalize_console_log(log),
         "offset": start,
         "size": size,
     }
