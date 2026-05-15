@@ -1,5 +1,5 @@
 .validate-main {
-  width: min(1180px, calc(100vw - 32px));
+  width: min(var(--page-width), calc(100vw - 32px));
 }
 
 .validate-head {
@@ -369,7 +369,7 @@
 }
 
 .predict-main {
-  width: min(1240px, calc(100vw - 32px));
+  width: min(var(--page-width), calc(100vw - 32px));
 }
 
 .predict-workbench {

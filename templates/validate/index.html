@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 验证{% else %}验证{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/val.css?v=20260514-split-val-default">
+  <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
 {% endblock %}
 
 {% block content %}
@@ -156,15 +156,31 @@
         output.scrollTop = output.scrollHeight;
       }
 
-      async function loadTaskLog(button) {
+      function updateFooterConsole(text, status = "", progress = 0) {
+        const panel = document.querySelector("[data-footer-console]");
+        const output = panel?.querySelector("pre");
+        if (!panel || !output || panel.hidden) return;
+        const header = status ? [`状态：${status}`, `进度：${progress || 0}%`, ""].join("\n") : "";
+        output.textContent = `${header}${text || "控制台暂无输出"}`;
+        output.scrollTop = output.scrollHeight;
+      }
+
+      async function loadTaskLog(button, openConsole = true) {
+        const requestStartedAt = Date.now();
         const response = await fetch(button.dataset.logUrl, {cache: "no-store"});
         const data = await response.json();
+        const wasClosedAfterRequest = Number(window.yoloutilsFooterConsoleClosedAt || 0) > requestStartedAt;
         if (!response.ok || !data.ok) {
-          openFooterConsole(data.error || "验证日志读取失败");
+          if (openConsole && !wasClosedAfterRequest) openFooterConsole(data.error || "验证日志读取失败");
+          else updateFooterConsole(data.error || "验证日志读取失败");
           return null;
         }
         const task = data.task || {};
-        openFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
+        if (openConsole && !wasClosedAfterRequest) {
+          openFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
+        } else {
+          updateFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
+        }
         const card = button.closest(".validate-task-card");
         const statusNode = card?.querySelector(".status");
         if (statusNode) statusNode.textContent = task.status || "";
@@ -178,7 +194,13 @@
           const status = data?.task?.status || "";
           if (!activeStatuses.has(status)) return;
           activeLogTimer = setInterval(async () => {
-            const latest = await loadTaskLog(button).catch(() => null);
+            const panel = document.querySelector("[data-footer-console]");
+            if (!panel || panel.hidden) {
+              clearInterval(activeLogTimer);
+              activeLogTimer = null;
+              return;
+            }
+            const latest = await loadTaskLog(button, false).catch(() => null);
             const latestStatus = latest?.task?.status || "";
             if (latestStatus && !activeStatuses.has(latestStatus)) {
               clearInterval(activeLogTimer);

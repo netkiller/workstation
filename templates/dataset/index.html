@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 数据集{% else %}数据集{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-uniform-card-layout">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-current-file">
 {% endblock %}
 
 {% block content %}
@@ -25,7 +25,7 @@
       {% if datasets %}
         <section class="dataset-grid" aria-label="数据集列表">
           {% for dataset in datasets %}
-            <article class="dataset-card"{% if dataset.building %} data-building="true"{% endif %}{% if dataset.deploying %} data-deploying="true"{% endif %}>
+            <article class="dataset-card"{% if dataset.building %} data-building="true"{% endif %}{% if dataset.deploying %} data-deploying="true"{% endif %}{% if not dataset.building and not dataset.deploying and not dataset.deploy_failed %} data-card-url="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}" role="link" tabindex="0"{% endif %}>
               <div class="card-title">
                 <span class="dataset-card-icon" aria-hidden="true">{{ dataset.icon }}</span>
                 <div>
@@ -68,12 +68,16 @@
                 {% if dataset.deploy_error %}
                   <div class="dataset-build-status"><p>{{ dataset.build_error or dataset.deploy_error }}</p></div>
                 {% endif %}
-                <div class="dataset-footer">
-                  {% if dataset.build_status == "失败" %}
+                {% if dataset.current_file %}
+                  <div class="dataset-current-file" title="{{ dataset.current_file }}">
+                    <b>{{ dataset.current_file }}</b>
+                  </div>
+                {% endif %}
+                {% if dataset.build_status == "失败" %}
+                  <div class="dataset-footer">
                     <button class="download-button deploy-button" type="button" data-retry-build-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.build_task_id }}">重新创建</button>
-                  {% endif %}
-                  <button class="download-button deploy-log-button" type="button" data-view-task-log data-log-url="/dataset/{{ dataset.project_dir }}/build/tasks/{{ dataset.build_task_id }}/log" data-log-error="创建日志读取失败">日志</button>
-                </div>
+                  </div>
+                {% endif %}
               {% elif dataset.deploying %}
                 {% if dataset.deploy_error %}
                   <div class="dataset-deploy-status"><p>{{ dataset.deploy_error }}</p></div>
@@ -82,18 +86,18 @@
                   <span class="dataset-build-progress"><span style="width: {{ dataset.deploy_progress }}%"></span></span>
                   <strong>{{ dataset.deploy_progress }}%</strong>
                 </div>
-                <div class="dataset-footer">
-                  <button class="download-button deploy-log-button" type="button" data-view-task-log data-log-url="/dataset/{{ dataset.project_dir }}/deploy/tasks/{{ dataset.deploy_task_id }}/log" data-log-error="部署日志读取失败">日志</button>
-                </div>
+                {% if dataset.current_file %}
+                  <div class="dataset-current-file" title="{{ dataset.current_file }}">
+                    <b>{{ dataset.current_file }}</b>
+                  </div>
+                {% endif %}
               {% elif dataset.deploy_failed %}
                 <div class="dataset-footer dataset-failed-footer">
                   <button class="delete-button" type="button" data-delete-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}">删除</button>
                   <button class="download-button deploy-button" type="button" data-retry-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}">部署</button>
-                  <button class="download-button deploy-log-button" type="button" data-view-task-log data-log-url="/dataset/{{ dataset.project_dir }}/deploy/tasks/{{ dataset.deploy_task_id }}/log" data-log-error="部署日志读取失败">日志</button>
                 </div>
               {% else %}
                 <div class="dataset-footer">
-                  <a class="view-button" href="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}">查看</a>
                   <button class="download-button deploy-button" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}">部署</button>
                   <a class="download-button train-button" href="/model/{{ dataset.project_dir }}/train/new?dataset={{ dataset.name }}{% if dataset.location_label and dataset.location_label != '本地' %}&remote=1{% endif %}">训练</a>
                 </div>
@@ -220,9 +224,6 @@
       const deleteRemoteInput = document.querySelector("[data-delete-remote]");
       let deleteTarget = null;
       let datasetPollTimer = null;
-      let activeTaskLogUrl = "";
-      let activeTaskLogError = "日志读取失败";
-      let taskLogPollTimer = null;
       const close = () => dialog?.close();
       function randomIcon() {
         if (!iconInput || !iconButton || !datasetIcons.length) return;
@@ -267,48 +268,6 @@
       function hasActiveDatasetTasks() {
         return Boolean(document.querySelector("[data-building='true'], [data-deploying='true']"));
       }
-      function openFooterConsole(text, status = "", progress = 0) {
-        const panel = document.querySelector("[data-footer-console]");
-        const output = panel?.querySelector("pre");
-        const toggle = document.querySelector("[data-footer-console-toggle]");
-        if (!panel || !output) return;
-        const timestamp = new Date().toLocaleString("sv-SE", {hour12: false}).replace("T", " ");
-        const header = status ? [
-          `[${timestamp}] 状态：${status}`,
-          `[${timestamp}] 进度：${progress || 0}%`,
-          "",
-        ].join("\n") : "";
-        output.textContent = `${header}${text || "控制台暂无输出"}`;
-        panel.hidden = false;
-        document.body.classList.add("public-console-open");
-        toggle?.classList.add("active");
-        output.scrollTop = output.scrollHeight;
-      }
-      async function loadTaskLog(url, fallback = "日志读取失败") {
-        const response = await fetch(url, {cache: "no-store"});
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) {
-          openFooterConsole(data.error || fallback);
-          return null;
-        }
-        openFooterConsole(data.log || data.error || "暂无日志", data.status || "", data.progress || 0);
-        return data;
-      }
-      function scheduleTaskLogRefresh() {
-        if (taskLogPollTimer) clearTimeout(taskLogPollTimer);
-        const panel = document.querySelector("[data-footer-console]");
-        if (!activeTaskLogUrl || panel?.hidden) return;
-        taskLogPollTimer = setTimeout(async () => {
-          try {
-            const data = await loadTaskLog(activeTaskLogUrl, activeTaskLogError);
-            if (data?.status && !["完成", "失败", "等待确认"].includes(data.status)) {
-              scheduleTaskLogRefresh();
-            }
-          } catch (error) {
-            scheduleTaskLogRefresh();
-          }
-        }, 1200);
-      }
       function scheduleDatasetRefresh() {
         if (datasetPollTimer) clearTimeout(datasetPollTimer);
         if (hasActiveDatasetTasks()) {
@@ -349,6 +308,18 @@
         await refreshDatasetList();
       });
       document.addEventListener("click", event => {
+        const card = event.target.closest("[data-card-url]");
+        if (!card || event.target.closest("a, button, input, textarea, select, label")) return;
+        window.location.assign(card.dataset.cardUrl);
+      });
+      document.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const card = event.target.closest("[data-card-url]");
+        if (!card) return;
+        event.preventDefault();
+        window.location.assign(card.dataset.cardUrl);
+      });
+      document.addEventListener("click", event => {
         const button = event.target.closest("[data-delete-dataset]");
         if (!button) return;
         deleteTarget = {project: button.dataset.project || "", name: button.dataset.name || "", hasRemote: button.dataset.hasRemote === "1"};
@@ -373,18 +344,6 @@
           return;
         }
         await refreshDatasetList();
-      });
-      document.addEventListener("click", event => {
-        const button = event.target.closest("[data-view-task-log]");
-        if (!button) return;
-        activeTaskLogUrl = button.dataset.logUrl || "";
-        activeTaskLogError = button.dataset.logError || "日志读取失败";
-        loadTaskLog(activeTaskLogUrl, activeTaskLogError)
-          .then(scheduleTaskLogRefresh)
-          .catch(() => {
-            openFooterConsole(activeTaskLogError);
-            scheduleTaskLogRefresh();
-          });
       });
       document.addEventListener("click", async event => {
         const button = event.target.closest("[data-retry-build-task]");

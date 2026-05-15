@@ -307,19 +307,19 @@ textarea {
 }
 
 .project-detail-page {
-  width: min(1584px, calc(100vw - 32px));
+  width: min(var(--page-width), calc(100vw - 32px));
 }
 
 .project-detail-shell {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1080px);
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
   justify-content: center;
 }
 
 .project-detail-shell.no-team {
-  grid-template-columns: minmax(0, 1080px);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .project-detail-main {
@@ -1052,7 +1052,7 @@ textarea {
 }
 
 main.team-main {
-  width: min(1280px, calc(100vw - 32px));
+  width: min(var(--page-width), calc(100vw - 32px));
   height: calc(100dvh - 84px);
   grid-template-rows: auto auto minmax(0, 1fr);
 }
@@ -1722,7 +1722,7 @@ button.close-project-link {
   }
 
   .project-detail-page {
-    width: min(1080px, calc(100vw - 32px));
+    width: min(var(--page-width), calc(100vw - 32px));
   }
 
   .project-detail-shell {

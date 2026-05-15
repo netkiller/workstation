@@ -3,7 +3,7 @@
 {% block title %}数据集 {{ dataset.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-detail-deploy-action">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-detail-preview-nav">
 {% endblock %}
 
 {% block content %}
@@ -97,7 +97,7 @@
         <div class="dataset-tab-buttons">
           {% for split_name, files in dataset.files.items() %}
             {% set total = files | length %}
-            {% set initial_end = 100 if total > 100 else total %}
+            {% set initial_end = 20 if total > 20 else total %}
             <button
               type="button"
               class="dataset-tab{% if loop.first %} active{% endif %}"
@@ -115,10 +115,11 @@
           <label class="page-size-control">
             <span>每页</span>
             <select data-page-size-select>
-              <option value="50">50</option>
-              <option value="100" selected>100</option>
-              <option value="200">200</option>
-              <option value="500">500</option>
+              <option value="20" selected>20</option>
+              <option value="40">40</option>
+              <option value="60">60</option>
+              <option value="80">80</option>
+              <option value="100">100</option>
             </select>
           </label>
           <div class="dataset-pager" data-pager>
@@ -136,14 +137,14 @@
           id="panel-{{ split_name }}"
           aria-labelledby="tab-{{ split_name }}"
           data-split-panel="{{ split_name }}"
-          data-page-size="100"
+          data-page-size="20"
           {% if not loop.first %}hidden{% endif %}
         >
           {% if files %}
             <div class="dataset-file-grid" data-file-grid>
               {% for file in files %}
-                <article class="dataset-file-card" data-file-card data-index="{{ loop.index0 }}" {% if loop.index0 >= 100 %}hidden{% endif %}>
-                  <img src="{{ file.media }}" alt="{{ file.name }}" loading="lazy" data-preview-image data-preview-title="{{ file.name }}">
+                <article class="dataset-file-card" data-file-card data-index="{{ loop.index0 }}" {% if loop.index0 >= 20 %}hidden{% endif %}>
+                  <img src="{{ file.thumb }}" alt="{{ file.name }}" loading="lazy" data-preview-image data-preview-src="{{ file.media }}" data-preview-title="{{ file.name }}" data-preview-split="{{ split_name }}" data-preview-index="{{ loop.index0 }}">
                   <span title="{{ file.name }}">{{ file.name }}{% if file.label %} · label{% endif %}</span>
                 </article>
               {% endfor %}
@@ -180,10 +181,16 @@
   </dialog>
 
   <dialog class="image-preview-dialog" data-image-preview>
-    <button type="button" class="image-preview-close" data-image-preview-close aria-label="关闭">x</button>
+    <button type="button" class="image-preview-close" data-image-preview-close aria-label="关闭">×</button>
     <figure>
-      <img src="" alt="" data-image-preview-target>
-      <figcaption data-image-preview-caption></figcaption>
+      <div class="image-preview-stage" data-image-preview-stage>
+        <img src="" alt="" data-image-preview-target>
+      </div>
+      <figcaption class="image-preview-nav">
+        <button type="button" data-preview-prev aria-label="上一张">&lt;</button>
+        <span data-image-preview-caption></span>
+        <button type="button" data-preview-next aria-label="下一张">&gt;</button>
+      </figcaption>
     </figure>
   </dialog>
 
@@ -217,7 +224,7 @@
       }
 
       function pageSize(panel) {
-        return Number(panel?.dataset.pageSize || pageSizeSelect?.value || "100");
+        return Number(panel?.dataset.pageSize || pageSizeSelect?.value || "20");
       }
 
       function updatePanel(panel) {
@@ -240,7 +247,7 @@
             card.dataset.fileCard = "";
             card.dataset.index = String(start + offset);
             card.innerHTML = `
-              <img src="${escapeHtml(file.media)}" alt="${escapeHtml(file.name)}" loading="lazy" data-preview-image data-preview-title="${escapeHtml(file.name)}">
+              <img src="${escapeHtml(file.thumb || file.media)}" alt="${escapeHtml(file.name)}" loading="lazy" data-preview-image data-preview-src="${escapeHtml(file.media)}" data-preview-title="${escapeHtml(file.name)}" data-preview-split="${escapeHtml(split)}" data-preview-index="${start + offset}">
               <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}${file.label ? " · label" : ""}</span>
             `;
             grid.appendChild(card);
@@ -303,32 +310,74 @@
 
       panels.forEach((panel) => {
         panel.dataset.page = panel.dataset.page || "1";
-        panel.dataset.pageSize = panel.dataset.pageSize || "100";
+        panel.dataset.pageSize = panel.dataset.pageSize || "20";
         updatePanel(panel);
       });
       activate(activeSplit);
 
       const preview = document.querySelector("[data-image-preview]");
+      const previewStage = document.querySelector("[data-image-preview-stage]");
       const previewImage = document.querySelector("[data-image-preview-target]");
       const previewCaption = document.querySelector("[data-image-preview-caption]");
+      const previewPrev = document.querySelector("[data-preview-prev]");
+      const previewNext = document.querySelector("[data-preview-next]");
+      let previewSplit = "";
+      let previewIndex = 0;
+      let previewScale = 1;
+
+      function setPreviewScale(scale) {
+        previewScale = Math.min(Math.max(scale, 0.25), 8);
+        if (previewImage) previewImage.style.transform = `scale(${previewScale})`;
+      }
+
+      function openPreview(split, index) {
+        const files = splitFiles[split] || [];
+        const file = files[index];
+        if (!file || !preview || !previewImage || !previewCaption) return;
+        previewSplit = split;
+        previewIndex = index;
+        previewImage.src = file.media;
+        previewImage.alt = file.name || "";
+        previewCaption.textContent = file.name || "";
+        setPreviewScale(1);
+        if (previewPrev) previewPrev.disabled = index <= 0;
+        if (previewNext) previewNext.disabled = index >= files.length - 1;
+        if (!preview.open) preview.showModal();
+      }
+
+      function movePreview(step) {
+        const files = splitFiles[previewSplit] || [];
+        const nextIndex = Math.min(Math.max(previewIndex + step, 0), files.length - 1);
+        if (nextIndex !== previewIndex) openPreview(previewSplit, nextIndex);
+      }
+
       const closePreview = () => {
         preview?.close();
-        if (previewImage) previewImage.src = "";
+        if (previewImage) {
+          previewImage.src = "";
+          previewImage.style.transform = "";
+        }
       };
       document.addEventListener("click", (event) => {
         const image = event.target.closest("[data-preview-image]");
-        if (!image || !preview || !previewImage || !previewCaption) return;
-        previewImage.src = image.currentSrc || image.src;
-        previewImage.alt = image.alt || "";
-        previewCaption.textContent = image.dataset.previewTitle || image.alt || "";
-        preview.showModal();
+        if (!image) return;
+        openPreview(image.dataset.previewSplit || activeSplit, Number(image.dataset.previewIndex || "0"));
       });
+      previewPrev?.addEventListener("click", () => movePreview(-1));
+      previewNext?.addEventListener("click", () => movePreview(1));
+      previewStage?.addEventListener("wheel", (event) => {
+        if (!preview?.open) return;
+        event.preventDefault();
+        setPreviewScale(previewScale + (event.deltaY < 0 ? 0.15 : -0.15));
+      }, {passive: false});
       document.querySelector("[data-image-preview-close]")?.addEventListener("click", closePreview);
       preview?.addEventListener("click", (event) => {
         if (event.target === preview) closePreview();
       });
       window.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && preview?.open) closePreview();
+        if (preview?.open && event.key === "ArrowLeft") movePreview(-1);
+        if (preview?.open && event.key === "ArrowRight") movePreview(1);
       });
 
       document.addEventListener("click", event => {

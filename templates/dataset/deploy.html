@@ -3,7 +3,7 @@
 {% block title %}部署数据集{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260513-deploy-task-line">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-current-file">
 {% endblock %}
 
 {% block content %}
@@ -100,6 +100,10 @@
                       <span data-progress-bar style="width: {{ task.progress }}%"></span>
                     </span>
                     <strong data-progress-text>{{ task.progress }}%</strong>
+                  </div>
+                  <div class="deploy-current-file"{% if not task.current_file %} hidden{% endif %} data-current-file title="{{ task.current_file or '' }}">
+                    <span>当前文件</span>
+                    <b>{{ task.current_file or '' }}</b>
                   </div>
                 {% endif %}
                 {% if task.error %}
@@ -215,12 +219,27 @@
         output.scrollTop = output.scrollHeight;
       }
 
+      function updateFooterConsole(text, status = "", progress = 0) {
+        const panel = document.querySelector("[data-footer-console]");
+        const output = panel?.querySelector("pre");
+        if (!panel || !output || panel.hidden) return;
+        const timestamp = new Date().toLocaleString("sv-SE", {hour12: false}).replace("T", " ");
+        const header = status ? [
+          `[${timestamp}] 状态：${status}`,
+          `[${timestamp}] 进度：${progress || 0}%`,
+          "",
+        ].join("\n") : "";
+        output.textContent = `${header}${text || "控制台暂无输出"}`;
+        output.scrollTop = output.scrollHeight;
+      }
+
       async function refreshTask(card) {
         const taskId = card.dataset.taskId;
         const statusNode = card.querySelector("[data-task-status]");
         const progressRow = card.querySelector(".deploy-task-progress-row");
         const progressBar = card.querySelector("[data-progress-bar]");
         const progressText = card.querySelector("[data-progress-text]");
+        const currentFile = card.querySelector("[data-current-file]");
         const errorNode = card.querySelector("[data-task-error]");
         if (!taskId) return null;
         const response = await fetch(`/dataset/{{ current_project }}/deploy/tasks/${taskId}/log`, {cache: "no-store"});
@@ -234,6 +253,13 @@
           progressBar.parentElement?.setAttribute("aria-label", `部署进度 ${progress}%`);
         }
         if (progressText) progressText.textContent = `${progress}%`;
+        if (currentFile) {
+          const file = data.current_file || "";
+          currentFile.hidden = !file;
+          currentFile.title = file;
+          const fileText = currentFile.querySelector("b");
+          if (fileText) fileText.textContent = file;
+        }
         if (status === "完成" && progressRow) progressRow.remove();
         if (errorNode) {
           errorNode.textContent = data.error || "";
@@ -246,14 +272,21 @@
         return data;
       }
 
-      async function loadTaskLog(button) {
+      async function loadTaskLog(button, openConsole = true) {
+        const requestStartedAt = Date.now();
         const response = await fetch(button.dataset.logUrl, {cache: "no-store"});
         const data = await response.json();
+        const wasClosedAfterRequest = Number(window.yoloutilsFooterConsoleClosedAt || 0) > requestStartedAt;
         if (!response.ok || !data.ok) {
-          openFooterConsole(data.error || "部署日志读取失败");
+          if (openConsole && !wasClosedAfterRequest) openFooterConsole(data.error || "部署日志读取失败");
+          else updateFooterConsole(data.error || "部署日志读取失败");
           return;
         }
-        openFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
+        if (openConsole && !wasClosedAfterRequest) {
+          openFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
+        } else {
+          updateFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
+        }
         return data;
       }
 
@@ -265,7 +298,13 @@
         loadTaskLog(button).then(data => {
           if (!data || !activeStatuses.has(data.status)) return;
           activeLogTimer = setInterval(async () => {
-            const latest = await loadTaskLog(button).catch(() => null);
+            const panel = document.querySelector("[data-footer-console]");
+            if (!panel || panel.hidden) {
+              clearInterval(activeLogTimer);
+              activeLogTimer = null;
+              return;
+            }
+            const latest = await loadTaskLog(button, false).catch(() => null);
             if (latest && !activeStatuses.has(latest.status)) {
               clearInterval(activeLogTimer);
               activeLogTimer = null;

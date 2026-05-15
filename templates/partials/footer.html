@@ -99,6 +99,7 @@
       panel.toggleAttribute("hidden", !open);
       document.body.classList.toggle("public-console-open", open);
       event.currentTarget.classList.toggle("active", open);
+      if (!open) window.yoloutilsFooterConsoleClosedAt = Date.now();
       if (open) loadConsole();
     });
     function startConsoleResize(clientY, event) {

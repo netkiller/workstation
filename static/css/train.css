@@ -1,7 +1,7 @@
 .train-main {
   grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
-  align-content: stretch;
-  overflow: hidden;
+  align-content: start;
+  overflow: visible;
 }
 
 .train-new-main {
@@ -368,15 +368,15 @@
 .model-overview-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   min-height: 0;
-  overflow: auto;
-  padding-right: 4px;
+  overflow: visible;
+  padding-right: 0;
   scroll-padding-bottom: 20px;
 }
 
 .model-overview-main {
-  grid-template-rows: auto auto minmax(0, 1fr);
-  align-content: stretch;
-  overflow: hidden;
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  overflow: visible;
 }
 
 .model-card {

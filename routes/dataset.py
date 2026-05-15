@@ -1,6 +1,7 @@
 import os
 import errno
 import json
+import pty
 import re
 import shlex
 import shutil
@@ -15,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
@@ -26,6 +27,7 @@ from routes.resources import find_resource, read_resources
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic", ".heif"}
+JPEG_EXTS = {".jpg", ".jpeg"}
 DATASET_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 ANNOTATE_DIR = "annotate"
 DEPLOY_MODES = {"full": "全量", "incremental": "增量", "sync": "同步", "diff": "同步"}
@@ -40,7 +42,14 @@ _UNICODE_SYMBOLS = tuple(
 DATASET_ICONS = (DEFAULT_DATASET_ICON,) + tuple(symbol for symbol in _UNICODE_SYMBOLS if symbol != DEFAULT_DATASET_ICON)
 deploy_lock = threading.Lock()
 build_lock = threading.Lock()
+dataset_worker_lock = threading.Lock()
+dataset_worker_thread: threading.Thread | None = None
+running_build_tasks: set[str] = set()
+running_deploy_tasks: set[str] = set()
+BUILD_RUNNABLE_STATUSES = {"排队中", "创建中"}
+DEPLOY_RUNNABLE_STATUSES = {"排队中", "进行中"}
 ACTIVE_DEPLOY_STATUSES = {"排队中", "进行中", "等待确认"}
+LOG_TIMESTAMP_PREFIX = re.compile(r"^\[[^\]]+\]\s*")
 
 
 def workspace_path():
@@ -300,6 +309,84 @@ def active_build_tasks(project_path: Path):
     return tasks
 
 
+def task_key(project_path: Path, task: dict):
+    return f"{project_path.resolve()}::{task.get('id', '')}"
+
+
+def workspace_project_dirs(workspace: Path):
+    if not workspace.is_dir():
+        return []
+    return [path for path in sorted(workspace.iterdir(), key=lambda item: item.name.lower()) if path.is_dir()]
+
+
+def claim_next_dataset_task(workspace: Path):
+    with dataset_worker_lock:
+        for current_project_path in workspace_project_dirs(workspace):
+            for task in read_build_tasks(current_project_path):
+                if task.get("status") not in BUILD_RUNNABLE_STATUSES:
+                    continue
+                key = task_key(current_project_path, task)
+                if key in running_build_tasks:
+                    continue
+                running_build_tasks.add(key)
+                return "build", current_project_path, dict(task), key
+            for task in read_deploy_tasks(current_project_path):
+                if task.get("status") not in DEPLOY_RUNNABLE_STATUSES:
+                    continue
+                key = task_key(current_project_path, task)
+                if key in running_deploy_tasks:
+                    continue
+                running_deploy_tasks.add(key)
+                return "deploy", current_project_path, dict(task), key
+    return None
+
+
+def dataset_worker_loop(workspace_value: str):
+    global dataset_worker_thread
+    workspace = Path(workspace_value)
+    idle_checks = 0
+    try:
+        while True:
+            claimed = claim_next_dataset_task(workspace)
+            if claimed is None:
+                idle_checks += 1
+                if idle_checks >= 4:
+                    return
+                time.sleep(0.5)
+                continue
+            idle_checks = 0
+            kind, current_project_path, task, key = claimed
+            try:
+                if kind == "build":
+                    run_build_dataset_task(current_project_path, task)
+                else:
+                    run_deploy_task(current_project_path, task)
+            finally:
+                with dataset_worker_lock:
+                    if kind == "build":
+                        running_build_tasks.discard(key)
+                    else:
+                        running_deploy_tasks.discard(key)
+    finally:
+        with dataset_worker_lock:
+            dataset_worker_thread = None
+
+
+def ensure_dataset_worker(workspace: Path | None = None):
+    global dataset_worker_thread
+    workspace = workspace or workspace_path()
+    with dataset_worker_lock:
+        if dataset_worker_thread and dataset_worker_thread.is_alive():
+            return
+        dataset_worker_thread = threading.Thread(
+            target=dataset_worker_loop,
+            args=(str(workspace),),
+            daemon=True,
+            name="dataset-background-worker",
+        )
+        dataset_worker_thread.start()
+
+
 def latest_dataset_deploy_task(project_path: Path, dataset_name: str):
     tasks = [
         task
@@ -382,6 +469,7 @@ def run_build_dataset_task(project_path: Path, task: dict):
     workspace = workspace_path()
     task_id = task["id"]
     log_path = Path(task.get("log_path") or build_logs_root(project_path) / f"{task_id}.log")
+    previous_status = str(task.get("status") or "")
     try:
         update_build_task(project_path, task_id, status="创建中", progress=3, error="")
         append_deploy_log(log_path, f"开始创建数据集 {task['name']}")
@@ -394,7 +482,7 @@ def run_build_dataset_task(project_path: Path, task: dict):
         files = image_files(source_root)
         total = len(files)
         append_deploy_log(log_path, f"待复制图片：{total} 个")
-        if dataset_path.exists():
+        if dataset_path.exists() and previous_status != "创建中":
             raise RuntimeError("数据集已存在")
         if val_percent < 0 or test_percent < 0 or val_percent + test_percent > 100:
             raise RuntimeError("val 和 test 百分比之和不能超过 100")
@@ -501,7 +589,7 @@ def create_build_task(
         tasks.insert(0, task)
         write_build_tasks(project_path, tasks)
     append_deploy_log(log_path, "数据集创建任务已创建")
-    threading.Thread(target=run_build_dataset_task, args=(project_path, task), daemon=True, name=f"dataset-build-{task['id']}").start()
+    ensure_dataset_worker(workspace_path())
     return task, ""
 
 
@@ -563,6 +651,68 @@ def append_deploy_log(log_path: Path, message: str):
         output.write(f"[{timestamp}] {message}\n")
 
 
+def current_copy_file_from_log(log_text: str):
+    ignored_prefixes = (
+        "$ ",
+        "rsync ",
+        "openrsync",
+        "receiving incremental file list",
+        "sent ",
+        "total size ",
+        "部署任务已创建",
+        "开始部署",
+        "待复制文件",
+        "执行 ",
+        "部署完成",
+        "部署失败",
+        "失败任务重试",
+        "已确认删除覆盖",
+        "未知部署方式",
+        "数据集创建任务已创建",
+        "开始创建",
+        "待复制图片",
+        "数据集创建完成",
+        "数据集创建失败",
+        "train：",
+        "val：",
+        "test：",
+        "空间不足",
+        "创建部署任务失败",
+        "已创建部署任务",
+        "重新创建数据集",
+    )
+    for line in reversed(log_text.splitlines()):
+        clean = LOG_TIMESTAMP_PREFIX.sub("", line).strip()
+        if not clean or clean.endswith("/") or clean.startswith(ignored_prefixes):
+            continue
+        return clean
+    return ""
+
+
+def deploy_current_file_label(log_text: str, status_value: str):
+    current_file = current_copy_file_from_log(log_text)
+    if current_file:
+        return current_file
+    if status_value in ACTIVE_DEPLOY_STATUSES:
+        return "等待复制文件..."
+    if status_value == "完成":
+        return "没有文件需要复制"
+    return ""
+
+
+def current_copy_file_for_task(task: dict):
+    log_path = Path(str(task.get("log_path") or ""))
+    if not log_path.is_file():
+        return ""
+    return current_copy_file_from_log(log_path.read_text(encoding="utf-8", errors="replace"))
+
+
+def deploy_current_file_for_task(task: dict):
+    log_path = Path(str(task.get("log_path") or ""))
+    log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+    return deploy_current_file_label(log_text, str(task.get("status") or ""))
+
+
 def extract_transfer_percent(text: str):
     matches = re.findall(r"(?<!\d)(\d{1,3})%", text)
     if not matches:
@@ -620,6 +770,7 @@ def deploy_task_view(task: dict):
         "completed": status_value == "完成",
         "needs_overwrite_confirm": status_value == "等待确认" and task.get("mode") == "full",
         "can_retry": status_value == "失败",
+        "current_file": deploy_current_file_for_task(task) if status_value in ACTIVE_DEPLOY_STATUSES else "",
     }
 
 
@@ -661,18 +812,38 @@ def prepare_remote_auth(resource: dict, temp_files: list[Path]):
     return [], None, ""
 
 
-def run_command(command: list[str], log_path: Path, progress_callback=None, progress_total: int = 0, count_output_files: bool = False):
+def run_command(
+    command: list[str],
+    log_path: Path,
+    progress_callback=None,
+    progress_total: int = 0,
+    count_output_files: bool = False,
+    use_pty: bool = False,
+):
     display = list(command)
     if display and Path(display[0]).name == "sshpass" and len(display) > 2:
         display[2] = "******"
     append_deploy_log(log_path, "$ " + " ".join(display))
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    assert process.stdout is not None
-    stdout_fd = process.stdout.fileno()
+    master_fd = None
+    if use_pty:
+        master_fd, slave_fd = pty.openpty()
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=slave_fd,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        stdout_fd = master_fd
+    else:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        assert process.stdout is not None
+        stdout_fd = process.stdout.fileno()
     os.set_blocking(stdout_fd, False)
     pending = ""
     last_logged_progress = None
@@ -715,6 +886,10 @@ def run_command(command: list[str], log_path: Path, progress_callback=None, prog
                 chunk = os.read(stdout_fd, 4096)
             except BlockingIOError:
                 break
+            except OSError as error:
+                if error.errno == errno.EIO and use_pty:
+                    break
+                raise
             if not chunk:
                 break
             consumed = True
@@ -725,30 +900,38 @@ def run_command(command: list[str], log_path: Path, progress_callback=None, prog
                 handle_output_segment(part)
         return consumed
 
-    while process.poll() is None:
+    try:
+        while process.poll() is None:
+            consume_available_output()
+            if pending and not count_output_files:
+                percent = extract_transfer_percent(pending)
+                if percent is not None and progress_callback and percent != last_callback_progress:
+                    progress_callback(percent)
+                    last_callback_progress = percent
+            time.sleep(0.2)
         consume_available_output()
-        if pending and not count_output_files:
-            percent = extract_transfer_percent(pending)
-            if percent is not None and progress_callback and percent != last_callback_progress:
-                progress_callback(percent)
-                last_callback_progress = percent
-        time.sleep(0.2)
-    consume_available_output()
-    while True:
-        try:
-            chunk = os.read(stdout_fd, 4096)
-        except BlockingIOError:
-            break
-        if not chunk:
-            break
-        pending += chunk.decode("utf-8", errors="replace")
-        parts = re.split(r"[\r\n]+", pending)
-        pending = parts.pop() if parts else ""
-        for part in parts:
-            handle_output_segment(part)
-    if pending:
-        handle_output_segment(pending, force=True)
-    return process.wait()
+        while True:
+            try:
+                chunk = os.read(stdout_fd, 4096)
+            except BlockingIOError:
+                break
+            except OSError as error:
+                if error.errno == errno.EIO and use_pty:
+                    break
+                raise
+            if not chunk:
+                break
+            pending += chunk.decode("utf-8", errors="replace")
+            parts = re.split(r"[\r\n]+", pending)
+            pending = parts.pop() if parts else ""
+            for part in parts:
+                handle_output_segment(part)
+        if pending:
+            handle_output_segment(pending, force=True)
+        return process.wait()
+    finally:
+        if master_fd is not None:
+            os.close(master_fd)
 
 
 def remote_path_exists(resource: dict, target_path: str):
@@ -1033,11 +1216,14 @@ def run_deploy_task(project_path: Path, task: dict):
                 sync_transfer_progress,
                 progress_total=total_files,
                 count_output_files=tool_name == "rsync",
+                use_pty=tool_name == "rsync",
             )
             if code != 0:
                 raise RuntimeError(f"{tool_name} 退出码 {code}")
             update_deploy_task(project_path, task_id, progress=20 + round(index / len(commands) * 70))
         update_deploy_task(project_path, task_id, status="完成", progress=100)
+        if total_files and not current_copy_file_from_log(log_path.read_text(encoding="utf-8", errors="replace")):
+            append_deploy_log(log_path, "没有文件需要复制")
         append_deploy_log(log_path, "部署完成")
     except Exception as error:
         update_deploy_task(project_path, task_id, status="失败", progress=100, error=str(error))
@@ -1085,7 +1271,7 @@ def create_deploy_task(project_path: Path, dataset_path: Path, dataset_name: str
         tasks.insert(0, task)
         write_deploy_tasks(project_path, tasks)
     append_deploy_log(log_path, "部署任务已创建")
-    threading.Thread(target=run_deploy_task, args=(project_path, task), daemon=True, name=f"dataset-deploy-{task_id}").start()
+    ensure_dataset_worker(workspace_path())
     return task, ""
 
 
@@ -1113,11 +1299,108 @@ def split_image_items(path: Path):
             {
                 "name": file.relative_to(split_dir).as_posix(),
                 "media": f"/dataset/{path.parent.parent.name}/{path.name}/media/{split}/{file.relative_to(split_dir).as_posix()}",
+                "thumb": f"/dataset/{path.parent.parent.name}/{path.name}/thumb/{split}/{file.relative_to(split_dir).as_posix()}",
                 "label": (labels_dir / file.relative_to(split_dir).with_suffix(".txt")).is_file(),
             }
             for file in files
         ]
     return items
+
+
+def dataset_image_path(project: str, name: str, split: str, file_path: str):
+    path = dataset_dir(workspace_path(), project, name)
+    if path is None or split not in {"train", "val", "test"}:
+        return None
+    root = (path / "images" / split).resolve()
+    if not root.is_dir():
+        root = (path / split).resolve()
+    image = (root / file_path).resolve()
+    if not is_inside(image, root) or not image.is_file() or image.suffix.lower() not in IMAGE_EXTS:
+        return None
+    return image
+
+
+def jpeg_exif_thumbnail(image: Path):
+    if image.suffix.lower() not in JPEG_EXTS:
+        return None
+    try:
+        data = image.read_bytes()
+    except OSError:
+        return None
+    pos = 2 if data.startswith(b"\xff\xd8") else 0
+    while pos + 4 <= len(data):
+        if data[pos] != 0xFF:
+            break
+        marker = data[pos + 1]
+        pos += 2
+        if marker in {0xD8, 0xD9}:
+            continue
+        if marker == 0xDA or pos + 2 > len(data):
+            break
+        segment_length = int.from_bytes(data[pos:pos + 2], "big")
+        segment_start = pos + 2
+        segment_end = pos + segment_length
+        if marker == 0xE1 and data[segment_start:segment_start + 6] == b"Exif\x00\x00":
+            return exif_thumbnail_from_segment(data[segment_start + 6:segment_end])
+        pos = segment_end
+    return None
+
+
+def exif_thumbnail_from_segment(tiff: bytes):
+    if len(tiff) < 8:
+        return None
+    endian = tiff[:2]
+    if endian == b"II":
+        byteorder = "little"
+    elif endian == b"MM":
+        byteorder = "big"
+    else:
+        return None
+    if int.from_bytes(tiff[2:4], byteorder) != 42:
+        return None
+
+    def read_u16(offset: int):
+        if offset < 0 or offset + 2 > len(tiff):
+            return None
+        return int.from_bytes(tiff[offset:offset + 2], byteorder)
+
+    def read_u32(offset: int):
+        if offset < 0 or offset + 4 > len(tiff):
+            return None
+        return int.from_bytes(tiff[offset:offset + 4], byteorder)
+
+    ifd0 = read_u32(4)
+    if ifd0 is None:
+        return None
+    count0 = read_u16(ifd0)
+    if count0 is None:
+        return None
+    next_ifd_offset = ifd0 + 2 + count0 * 12
+    ifd1 = read_u32(next_ifd_offset)
+    if not ifd1:
+        return None
+    count1 = read_u16(ifd1)
+    if count1 is None:
+        return None
+    thumb_offset = None
+    thumb_length = None
+    for index in range(count1):
+        entry = ifd1 + 2 + index * 12
+        if entry + 12 > len(tiff):
+            return None
+        tag = read_u16(entry)
+        value = read_u32(entry + 8)
+        if tag == 0x0201:
+            thumb_offset = value
+        elif tag == 0x0202:
+            thumb_length = value
+    if not thumb_offset or not thumb_length:
+        return None
+    end = thumb_offset + thumb_length
+    if end > len(tiff):
+        return None
+    thumbnail = tiff[thumb_offset:end]
+    return thumbnail if thumbnail.startswith(b"\xff\xd8") else None
 
 
 def read_classes_for_dataset(dataset_path: Path):
@@ -1222,6 +1505,7 @@ def dataset_items(workspace: Path, project: str = ""):
                     "deploy_progress": 0,
                     "deploy_status": "",
                     "deploy_error": task.get("deploy_error", ""),
+                    "current_file": current_copy_file_for_task(task) if task.get("status") in {"排队中", "创建中"} else "",
                 }
             )
         if not project_dir.is_dir() or not datasets_dir.is_dir():
@@ -1243,6 +1527,7 @@ def dataset_items(workspace: Path, project: str = ""):
             deploy_progress = int(deploy_task.get("progress") or 0) if deploy_task else 0
             deploying = bool(deploy_task) and deploy_status in ACTIVE_DEPLOY_STATUSES
             deploy_failed = bool(deploy_task) and deploy_status == "失败"
+            current_file = deploy_current_file_for_task(deploy_task) if deploying else ""
             location_label = str(deploy_task.get("resource_name") or "算力服务器") if deploy_task else "本地"
             datasets.append(
                 {
@@ -1269,6 +1554,7 @@ def dataset_items(workspace: Path, project: str = ""):
                     "deploy_progress": 100 if deploy_status == "完成" else deploy_progress,
                     "deploy_status": deploy_status,
                     "deploy_error": deploy_task.get("error", "") if deploy_task else "",
+                    "current_file": current_file,
                 }
             )
     return sorted(datasets, key=lambda item: (item.get("created_sort", 0), item.get("name", "")), reverse=True)
@@ -1303,6 +1589,7 @@ def dataset_summary(path: Path, project: str, name: str):
 @router.get("/dataset")
 def dataset(request: Request, project: str = ""):
     workspace = workspace_path()
+    ensure_dataset_worker(workspace)
     current_project = current_project_from_request(request, project)
     if current_project:
         return RedirectResponse(url=f"/dataset/{current_project}", status_code=status.HTTP_303_SEE_OTHER)
@@ -1328,6 +1615,7 @@ def dataset(request: Request, project: str = ""):
 @router.get("/dataset/{project}")
 def dataset_with_project(request: Request, project: str):
     workspace = workspace_path()
+    ensure_dataset_worker(workspace)
     current_project_path = project_dir(workspace, project)
     response = templates.TemplateResponse(
         request=request,
@@ -1353,6 +1641,7 @@ def dataset_with_project(request: Request, project: str):
 @router.get("/dataset/{project}/deploy/{name}")
 def dataset_deploy(request: Request, project: str, name: str = ""):
     workspace = workspace_path()
+    ensure_dataset_worker(workspace)
     current_project_path = project_dir(workspace, project)
     if current_project_path is None or not current_project_path.is_dir():
         return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
@@ -1449,7 +1738,7 @@ def dataset_deploy_task_overwrite(project: str, task_id: str):
                 break
         write_deploy_tasks(current_project_path, next_tasks)
     append_deploy_log(Path(task["log_path"]), "已确认删除覆盖，继续部署")
-    threading.Thread(target=run_deploy_task, args=(current_project_path, task), daemon=True, name=f"dataset-deploy-{task_id}").start()
+    ensure_dataset_worker(workspace)
     return RedirectResponse(url=f"/dataset/{project}/deploy/{task.get('dataset', '')}#task-{task_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1478,7 +1767,7 @@ def dataset_deploy_task_retry(project: str, task_id: str):
                 break
         write_deploy_tasks(current_project_path, next_tasks)
     append_deploy_log(Path(task["log_path"]), "失败任务重试")
-    threading.Thread(target=run_deploy_task, args=(current_project_path, task), daemon=True, name=f"dataset-deploy-{task_id}").start()
+    ensure_dataset_worker(workspace)
     return RedirectResponse(url=f"/dataset/{project}/deploy/{task.get('dataset', '')}#task-{task_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1513,12 +1802,14 @@ def dataset_deploy_task_log(project: str, task_id: str):
     log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
     task_status = task.get("status", "")
     task_progress = 100 if task_status == "完成" else task.get("progress", 0)
+    current_file = deploy_current_file_label(log_text, task_status)
     return {
         "ok": True,
         "status": task_status,
         "progress": task_progress,
         "error": normalize_task_error(str(task.get("error", ""))),
         "log": log_text,
+        "current_file": current_file,
     }
 
 
@@ -1535,12 +1826,14 @@ def dataset_build_task_log(project: str, task_id: str):
     log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
     task_status = task.get("status", "")
     task_progress = 100 if task_status == "完成" else task.get("progress", 0)
+    current_file = current_copy_file_from_log(log_text) if task_status in {"排队中", "创建中"} else ""
     return {
         "ok": True,
         "status": task_status,
         "progress": task_progress,
         "error": task.get("error", ""),
         "log": log_text,
+        "current_file": current_file,
     }
 
 
@@ -1574,7 +1867,7 @@ def dataset_build_task_retry(project: str, task_id: str):
                 break
         write_build_tasks(current_project_path, next_tasks)
     append_deploy_log(Path(task["log_path"]), "重新创建数据集")
-    threading.Thread(target=run_build_dataset_task, args=(current_project_path, task), daemon=True, name=f"dataset-build-{task_id}").start()
+    ensure_dataset_worker(workspace)
     return {"ok": True}
 
 
@@ -1633,15 +1926,20 @@ def dataset_detail(request: Request, project: str, name: str):
 
 @router.get("/dataset/{project}/{name}/media/{split}/{file_path:path}")
 def dataset_media(project: str, name: str, split: str, file_path: str):
-    path = dataset_dir(workspace_path(), project, name)
-    if path is None or split not in {"train", "val", "test"}:
-        return JSONResponse({"ok": False, "error": "数据集不存在"}, status_code=404)
-    root = (path / "images" / split).resolve()
-    if not root.is_dir():
-        root = (path / split).resolve()
-    image = (root / file_path).resolve()
-    if not is_inside(image, root) or not image.is_file() or image.suffix.lower() not in IMAGE_EXTS:
+    image = dataset_image_path(project, name, split, file_path)
+    if image is None:
         return JSONResponse({"ok": False, "error": "图片不存在"}, status_code=404)
+    return FileResponse(image)
+
+
+@router.get("/dataset/{project}/{name}/thumb/{split}/{file_path:path}")
+def dataset_thumb(project: str, name: str, split: str, file_path: str):
+    image = dataset_image_path(project, name, split, file_path)
+    if image is None:
+        return JSONResponse({"ok": False, "error": "图片不存在"}, status_code=404)
+    thumbnail = jpeg_exif_thumbnail(image)
+    if thumbnail:
+        return Response(content=thumbnail, media_type="image/jpeg")
     return FileResponse(image)
 
 

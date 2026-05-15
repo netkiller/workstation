@@ -8,6 +8,12 @@
   --accent-dark: #0f4f9a;
   --ok: #17803b;
   --warn: #a15c00;
+  --page-title-size: 24px;
+  --page-title-color: #111827;
+  --page-title-weight: 700;
+  --page-subtitle-size: 13px;
+  --page-subtitle-color: #64748b;
+  --page-width: 1280px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -47,6 +53,11 @@ header {
   background: #ffffff;
   border-bottom: 1px solid var(--line);
   font-weight: 650;
+}
+
+header :where(a, button) {
+  font-family: inherit !important;
+  letter-spacing: 0 !important;
 }
 
 .brand-title {
@@ -146,8 +157,8 @@ header {
 
 .logout-form button:hover,
 .brand-title .close-current-project:hover {
-  background: #e6f0ff;
-  color: #243b53;
+  background: #e6f0ff !important;
+  color: #243b53 !important;
 }
 
 nav {
@@ -176,9 +187,32 @@ nav a {
   white-space: nowrap;
 }
 
+nav a,
+nav .nav-disabled,
+.logout-form button,
+.brand-title .close-current-project,
+.public-header-button {
+  min-width: 62px !important;
+  height: 30px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  padding: 0 9px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #334e68 !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
+}
+
 nav a:hover {
-  background: #e6f0ff;
-  color: #243b53;
+  background: #e6f0ff !important;
+  color: #243b53 !important;
 }
 
 nav .nav-disabled {
@@ -201,9 +235,9 @@ nav .nav-disabled {
 }
 
 nav a.active {
-  border-color: #2563eb;
-  color: #1d4ed8;
-  background: #dbeafe;
+  border-color: #2563eb !important;
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
 }
 
 .nav-icon {
@@ -243,8 +277,8 @@ nav a.active {
 }
 
 .public-header-button:hover {
-  background: #e6f0ff;
-  color: #243b53;
+  background: #e6f0ff !important;
+  color: #243b53 !important;
 }
 
 .header-actions button {
@@ -309,7 +343,7 @@ nav a.active {
 }
 
 main {
-  width: min(1080px, calc(100vw - 32px));
+  width: min(var(--page-width), calc(100vw - 32px));
   min-height: calc(100dvh - 84px);
   margin: 0 auto;
   padding: 24px 0;
@@ -325,15 +359,71 @@ main > :where(
   .dataset-detail-head,
   .train-head,
   .validate-head,
-  .model-detail-head
+  .model-detail-head,
+  .detail-head
 ),
 .project-detail-shell > .detail-head {
   position: sticky;
   top: 44px;
   z-index: 12;
   align-self: start;
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: end !important;
+  gap: 16px !important;
+  margin: 0 !important;
   background: var(--bg);
   box-shadow: 0 0 0 12px var(--bg);
+}
+
+main > :where(
+  .toolbar,
+  .dataset-head,
+  .dataset-detail-head,
+  .train-head,
+  .validate-head,
+  .model-detail-head,
+  .detail-head
+) h1,
+.project-detail-shell > .detail-head h1 {
+  margin: 0 !important;
+  color: var(--page-title-color) !important;
+  font-size: var(--page-title-size) !important;
+  font-weight: var(--page-title-weight) !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+}
+
+main > :where(
+  .toolbar,
+  .dataset-head,
+  .dataset-detail-head,
+  .train-head,
+  .validate-head,
+  .model-detail-head,
+  .detail-head
+) :where(p, .project-description, .dataset-description, .workspace, .model-detail-metrics),
+.project-detail-shell > .detail-head :where(p, .project-description) {
+  margin: 6px 0 0 !important;
+  color: var(--page-subtitle-color) !important;
+  font-size: var(--page-subtitle-size) !important;
+  font-weight: 400 !important;
+  line-height: 1.45 !important;
+  letter-spacing: 0 !important;
+}
+
+main > :where(
+  .toolbar,
+  .dataset-head,
+  .dataset-detail-head,
+  .train-head,
+  .validate-head,
+  .model-detail-head,
+  .detail-head
+) > :last-child,
+.project-detail-shell > .detail-head > :last-child {
+  justify-self: end;
 }
 
 .scroll-top-button {
@@ -1986,9 +2076,9 @@ body.public-console-resizing .footer-console-resizer {
 
 h1 {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: var(--page-title-size);
   line-height: 1.2;
-  font-weight: 650;
+  font-weight: var(--page-title-weight);
 }
 
 input {
@@ -2097,10 +2187,13 @@ main :where(button:disabled) {
     .dataset-detail-head,
     .train-head,
     .validate-head,
-    .model-detail-head
+    .model-detail-head,
+    .detail-head
   ),
   .project-detail-shell > .detail-head {
     top: 88px;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: start !important;
   }
 
   .help-main {
