@@ -6,6 +6,16 @@ const classesDialog = document.getElementById("classesDialog");
 const classesForm = document.getElementById("classesForm");
 const editClassesButton = document.getElementById("editClassesButton");
 const sftpPanel = document.querySelector("[data-sftp-path]");
+const projectIcons = Array.isArray(window.yoloutilsProjectIcons) ? window.yoloutilsProjectIcons : ["▤"];
+
+function randomProjectIcon(input, button, fallback = "") {
+  if (!input || !button || !projectIcons.length) {
+    return;
+  }
+  const next = fallback || projectIcons[Math.floor(Math.random() * projectIcons.length)];
+  input.value = next;
+  button.textContent = next;
+}
 
 function copyFeedback(button, text) {
   if (!button || !text) {
@@ -208,13 +218,22 @@ document.querySelectorAll("[data-rsync-command]").forEach((target) => {
 });
 
 if (createDialog && openCreateDialog) {
-  openCreateDialog.addEventListener("click", () => createDialog.showModal());
+  const iconInput = createDialog.querySelector("[data-project-icon-value]");
+  const iconButton = createDialog.querySelector("[data-random-project-icon]");
+  iconButton?.addEventListener("click", () => randomProjectIcon(iconInput, iconButton));
+  openCreateDialog.addEventListener("click", () => {
+    randomProjectIcon(iconInput, iconButton);
+    createDialog.showModal();
+  });
   createDialog.querySelectorAll("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => createDialog.close());
   });
 }
 
 if (editDialog && editForm) {
+  const editIconInput = editDialog.querySelector("[data-edit-project-icon-value]");
+  const editIconButton = editDialog.querySelector("[data-random-edit-project-icon]");
+  editIconButton?.addEventListener("click", () => randomProjectIcon(editIconInput, editIconButton));
   editDialog.querySelectorAll("[data-close-dialog]").forEach((button) => {
     button.addEventListener("click", () => editDialog.close());
   });
@@ -224,6 +243,7 @@ if (editDialog && editForm) {
       event.stopPropagation();
       editForm.action = `/project/${button.dataset.directory}/edit`;
       editForm.elements.name.value = button.dataset.name || "";
+      randomProjectIcon(editIconInput, editIconButton, button.dataset.icon || projectIcons[0] || "▤");
       editForm.elements.description.value = button.dataset.description || "";
       document.querySelectorAll(".menu-panel").forEach((panel) => {
         panel.hidden = true;

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Yolo Workstation{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=20260514-resource-card-theme">
+  <link rel="stylesheet" href="/static/css/app.css?v=20260515-window-scrollbar">
   {% block styles %}{% endblock %}
 </head>
 <body>
@@ -13,16 +13,15 @@
   <button class="scroll-top-button" type="button" data-scroll-top aria-label="返回顶部" hidden>🔝</button>
   <script>
     (() => {
-      const main = document.querySelector("main");
       const button = document.querySelector("[data-scroll-top]");
-      if (!main || !button) return;
+      if (!button) return;
       const update = () => {
-        button.hidden = main.scrollTop < 120;
+        button.hidden = window.scrollY < 120;
       };
       button.addEventListener("click", () => {
-        main.scrollTo({top: 0, behavior: "smooth"});
+        window.scrollTo({top: 0, behavior: "smooth"});
       });
-      main.addEventListener("scroll", update, {passive: true});
+      window.addEventListener("scroll", update, {passive: true});
       update();
     })();
   </script>

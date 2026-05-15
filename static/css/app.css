@@ -25,10 +25,11 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100dvh;
-  height: 100dvh;
   padding-top: 44px;
   padding-bottom: 40px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
 }
 
 header {
@@ -309,16 +310,30 @@ nav a.active {
 
 main {
   width: min(1080px, calc(100vw - 32px));
-  height: calc(100dvh - 84px);
+  min-height: calc(100dvh - 84px);
   margin: 0 auto;
   padding: 24px 0;
   display: grid;
   align-content: start;
   gap: 20px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
-  scroll-behavior: smooth;
+  overflow: visible;
+}
+
+main > :where(
+  .toolbar,
+  .dataset-head,
+  .dataset-detail-head,
+  .train-head,
+  .validate-head,
+  .model-detail-head
+),
+.project-detail-shell > .detail-head {
+  position: sticky;
+  top: 44px;
+  z-index: 12;
+  align-self: start;
+  background: var(--bg);
+  box-shadow: 0 0 0 12px var(--bg);
 }
 
 .scroll-top-button {
@@ -657,8 +672,8 @@ main {
 .resources-main {
   width: calc(100vw - 32px);
   max-width: none;
-  height: calc(100dvh - 84px);
-  overflow: auto;
+  min-height: calc(100dvh - 84px);
+  overflow: visible;
   padding: 28px 40px;
 }
 
@@ -2002,6 +2017,57 @@ button:hover {
   background: var(--accent-dark);
 }
 
+main :where(
+  button:not(.icon-button):not(.menu-button):not(.menu-action):not(.danger-button):not(.dialog-close):not(.dataset-dialog-close):not(.image-preview-close):not(.copy-icon-button):not(.dataset-tab):not([data-page-prev]):not([data-page-next]):not([data-select-button]):not([data-select-option]),
+  a.secondary-button,
+  a.project-link-button,
+  a.view-button,
+  a.download-button,
+  a.deploy-button,
+  a.train-button,
+  a.close-project-link
+) {
+  min-width: 72px !important;
+  height: 36px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 0 14px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #334e68 !important;
+  cursor: pointer !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
+}
+
+main :where(
+  button:not(.icon-button):not(.menu-button):not(.menu-action):not(.danger-button):not(.dialog-close):not(.dataset-dialog-close):not(.image-preview-close):not(.copy-icon-button):not(.dataset-tab):not([data-page-prev]):not([data-page-next]):not([data-select-button]):not([data-select-option]),
+  a.secondary-button,
+  a.project-link-button,
+  a.view-button,
+  a.download-button,
+  a.deploy-button,
+  a.train-button,
+  a.close-project-link
+):where(:hover, :focus-visible) {
+  border-color: var(--line) !important;
+  background: #f8fafc !important;
+  color: #243b53 !important;
+}
+
+main :where(button:disabled) {
+  opacity: .55 !important;
+  cursor: not-allowed !important;
+}
+
 @media (max-width: 1100px) {
   .gpu-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2022,7 +2088,19 @@ button:hover {
   }
 
   main {
-    height: calc(100dvh - 128px);
+    min-height: calc(100dvh - 128px);
+  }
+
+  main > :where(
+    .toolbar,
+    .dataset-head,
+    .dataset-detail-head,
+    .train-head,
+    .validate-head,
+    .model-detail-head
+  ),
+  .project-detail-shell > .detail-head {
+    top: 88px;
   }
 
   .help-main {

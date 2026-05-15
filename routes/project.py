@@ -35,6 +35,33 @@ USER_HEARTBEAT_TIMEOUT = 45
 PROJECT_UPLOAD_LOG = ".project.log"
 WORKSPACE_LOG = ".workstation/workspace.log"
 PROJECT_INDEX = ".workstation/index.json"
+DEFAULT_PROJECT_ICON = "▤"
+PROJECT_ICONS = (
+    DEFAULT_PROJECT_ICON,
+    "▦",
+    "◈",
+    "◉",
+    "◎",
+    "✦",
+    "✧",
+    "◆",
+    "◇",
+    "▲",
+    "●",
+    "■",
+    "▣",
+    "▥",
+    "◌",
+    "◍",
+    "★",
+    "☆",
+    "☼",
+    "⌁",
+    "⌘",
+    "⚙",
+    "⚑",
+    "♢",
+)
 
 
 def workspace_path():
@@ -404,15 +431,20 @@ def write_project_registry(workspace: Path, projects: dict):
     )
 
 
+def project_icon(value: str):
+    return (value or "").strip() or DEFAULT_PROJECT_ICON
+
+
 def read_project_meta(path: Path, registry: dict | None = None):
     meta_file = path / ".project"
-    fallback = {"name": path.name, "directory": path.name, "description": ""}
+    fallback = {"name": path.name, "directory": path.name, "description": "", "icon": DEFAULT_PROJECT_ICON}
     if registry and isinstance(registry.get(path.name), dict):
         data = registry[path.name]
         return {
             "name": str(data.get("name") or path.name),
             "directory": path.name,
             "description": str(data.get("description") or ""),
+            "icon": project_icon(str(data.get("icon") or "")),
         }
     if not meta_file.is_file():
         return fallback
@@ -426,14 +458,16 @@ def read_project_meta(path: Path, registry: dict | None = None):
         "name": path.name if stale_directory else str(data.get("name") or path.name),
         "directory": path.name,
         "description": str(data.get("description") or ""),
+        "icon": project_icon(str(data.get("icon") or "")),
     }
 
 
-def write_project_meta(workspace: Path, path: Path, name: str, description: str):
+def write_project_meta(workspace: Path, path: Path, name: str, description: str, icon: str = ""):
     payload = {
         "name": name.strip() or path.name,
         "directory": path.name,
         "description": description.strip(),
+        "icon": project_icon(icon),
     }
     registry = read_project_registry(workspace)
     registry[path.name] = payload
@@ -947,6 +981,7 @@ def project(request: Request):
                 "error": request.query_params.get("error"),
                 "active_page": "project",
                 "show_create_project": True,
+                "project_icons": PROJECT_ICONS,
                 "online_users": user_items(online_users, read_user_projects(workspace), project_names),
                 **header_context(request, workspace),
             },
@@ -1158,6 +1193,7 @@ async def create_project(request: Request):
         form.get("name", [""])[0],
     )
     description = form.get("description", [""])[0]
+    icon = form.get("icon", [""])[0]
     if error:
         return project_redirect(error)
 
@@ -1170,7 +1206,7 @@ async def create_project(request: Request):
         return project_redirect(error)
 
     ensure_project_structure(path)
-    write_project_meta(workspace, path, name, description)
+    write_project_meta(workspace, path, name, description, icon)
     return RedirectResponse(url=f"/project/{directory}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1187,7 +1223,8 @@ async def edit_project(directory: str, request: Request):
         return project_redirect(error)
 
     description = form.get("description", [""])[0]
-    write_project_meta(workspace, path, name, description)
+    icon = form.get("icon", [""])[0]
+    write_project_meta(workspace, path, name, description, icon)
     return project_redirect()
 
 

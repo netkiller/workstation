@@ -14,7 +14,7 @@
         <p class="dataset-description">将当前项目的数据集部署到算力服务器。</p>
       </div>
       <div class="dataset-head-actions">
-        <a class="secondary-dataset-button" href="/dataset/{{ current_project }}">返回数据集</a>
+        <a class="secondary-button" href="/dataset/{{ current_project }}">返回数据集</a>
       </div>
     </section>
 
@@ -22,7 +22,7 @@
       <form class="deploy-card deploy-form" method="post">
         <div class="deploy-card-head">
           <div>
-            <h2>添加部署任务</h2>
+            <h2>手动部署</h2>
             <p>优先使用 rsync 执行全量或同步部署，缺失时自动使用 scp。</p>
           </div>
         </div>
@@ -87,9 +87,6 @@
                     <span class="deploy-task-time">时间 {{ task.created_at }}</span>
                   </div>
                   <button type="button" data-view-task-log data-log-url="/dataset/{{ current_project }}/deploy/tasks/{{ task.id }}/log">查看</button>
-                  {% if task.completed %}
-                    <a href="/model/{{ current_project }}/train/new?dataset={{ task.dataset }}">开始训练</a>
-                  {% endif %}
                 </div>
                 <div class="deploy-task-line">
                   <span class="deploy-detail deploy-mode-badge"><i aria-hidden="true">{{ task.mode_icon }}</i><b>{{ task.mode_label }}</b></span>
@@ -205,7 +202,12 @@
         const output = panel?.querySelector("pre");
         const toggle = document.querySelector("[data-footer-console-toggle]");
         if (!panel || !output) return;
-        const header = status ? [`状态：${status}`, `进度：${progress || 0}%`, ""].join("\n") : "";
+        const timestamp = new Date().toLocaleString("sv-SE", {hour12: false}).replace("T", " ");
+        const header = status ? [
+          `[${timestamp}] 状态：${status}`,
+          `[${timestamp}] 进度：${progress || 0}%`,
+          "",
+        ].join("\n") : "";
         output.textContent = `${header}${text || "控制台暂无输出"}`;
         panel.hidden = false;
         document.body.classList.add("public-console-open");

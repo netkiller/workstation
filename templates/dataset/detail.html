@@ -3,7 +3,7 @@
 {% block title %}数据集 {{ dataset.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260514-detail-actions">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-detail-deploy-action">
 {% endblock %}
 
 {% block content %}
@@ -14,8 +14,9 @@
       </div>
       <div class="dataset-detail-actions">
         <button class="delete-button" type="button" data-delete-dataset data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}" data-has-remote="{{ '1' if dataset.deploy_target and dataset.deploy_target != '本地' else '0' }}">删除</button>
+        <button class="download-button deploy-button" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}">部署</button>
         <a class="download-button" href="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}/download">下载</a>
-        <a class="project-link-button" href="/dataset/{{ dataset.project_dir }}">返回数据集</a>
+        <a class="secondary-button" href="/dataset/{{ dataset.project_dir }}">返回数据集</a>
       </div>
     </section>
 
@@ -358,6 +359,24 @@
           return;
         }
         window.location.href = `/dataset/${encodeURIComponent(deleteTarget.project)}`;
+      });
+
+      document.addEventListener("click", async event => {
+        const button = event.target.closest("[data-run-deploy]");
+        if (!button) return;
+        button.disabled = true;
+        button.textContent = "部署中";
+        const response = await fetch(`/dataset/${encodeURIComponent(button.dataset.project || "")}/${encodeURIComponent(button.dataset.name || "")}/deploy/run`, {
+          method: "POST",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) {
+          alert(payload.error || "部署失败");
+          button.disabled = false;
+          button.textContent = "部署";
+          return;
+        }
+        window.location.href = `/dataset/${encodeURIComponent(button.dataset.project || "")}`;
       });
     })();
   </script>

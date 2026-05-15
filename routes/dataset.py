@@ -1,4 +1,5 @@
 import os
+import errno
 import json
 import re
 import shlex
@@ -27,7 +28,7 @@ templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic", ".heif"}
 DATASET_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 ANNOTATE_DIR = "annotate"
-DEPLOY_MODES = {"full": "全量", "sync": "同步", "diff": "同步", "incremental": "同步"}
+DEPLOY_MODES = {"full": "全量", "incremental": "增量", "sync": "同步", "diff": "同步"}
 DEPLOY_TARGETS = {"local": "本地", "remote": "远程"}
 DEFAULT_DATASET_ICON = "▦"
 _UNICODE_SYMBOLS = tuple(
@@ -104,6 +105,65 @@ def image_files(root: Path):
         (path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTS),
         key=lambda path: path.relative_to(root).as_posix().lower(),
     )
+
+
+def split_counts(files: list[Path]):
+    return {
+        "images": len(files),
+        "labels": sum(1 for path in files if path.with_suffix(".txt").is_file()),
+    }
+
+
+def dataset_chart_data(splits: dict):
+    total_images = sum(split["images"] for split in splits.values())
+    total_labels = sum(split["labels"] for split in splits.values())
+    if total_images:
+        train_percent = splits["train"]["images"] / total_images * 100
+        val_percent = splits["val"]["images"] / total_images * 100
+        test_percent = splits["test"]["images"] / total_images * 100
+    else:
+        train_percent = val_percent = test_percent = 0
+    train_end = train_percent
+    val_end = train_percent + val_percent
+    chart_style = (
+        f"conic-gradient(#1667c7 0 {train_end:.2f}%, "
+        f"#16a34a {train_end:.2f}% {val_end:.2f}%, "
+        f"#f59e0b {val_end:.2f}% 100%)"
+        if total_images
+        else "conic-gradient(#e2e8f0 0 100%)"
+    )
+    return {
+        "total_images": total_images,
+        "total_labels": total_labels,
+        "chart_style": chart_style,
+        "chart_segments": [
+            {"name": "train", "count": splits["train"]["images"], "percent": round(train_percent)},
+            {"name": "val", "count": splits["val"]["images"], "percent": round(val_percent)},
+            {"name": "test", "count": splits["test"]["images"], "percent": round(test_percent)},
+        ],
+    }
+
+
+def expected_dataset_preview(project_path: Path, task: dict):
+    files = image_files(project_path / ANNOTATE_DIR)
+    total = len(files)
+    try:
+        val_percent = int(task.get("val_percent", 20) or 20)
+        test_percent = int(task.get("test_percent", 0) or 0)
+    except (TypeError, ValueError):
+        val_percent = 20
+        test_percent = 0
+    test_count = round(total * test_percent / 100)
+    val_count = round(total * val_percent / 100)
+    test_files = files[:test_count]
+    val_files = files[test_count : test_count + val_count]
+    train_files = files[test_count + val_count :]
+    splits = {
+        "train": split_counts(train_files),
+        "val": split_counts(val_files),
+        "test": split_counts(test_files),
+    }
+    return {"splits": splits, **dataset_chart_data(splits)}
 
 
 def copy_image_with_label(source: Path, source_root: Path, target_root: Path):
@@ -191,6 +251,12 @@ def build_tasks_file(project_path: Path):
     return project_path / ".dataset-builds.json"
 
 
+def build_logs_root(project_path: Path):
+    path = project_path / ".dataset-build-logs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def read_build_tasks(project_path: Path):
     path = build_tasks_file(project_path)
     if not path.is_file():
@@ -227,6 +293,8 @@ def active_build_tasks(project_path: Path):
         status_value = task.get("status")
         dataset_path = project_path / "datasets" / str(task.get("name", ""))
         if status_value == "完成" and dataset_path.is_dir():
+            continue
+        if status_value not in {"排队中", "创建中"} and not dataset_path.is_dir():
             continue
         tasks.append(task)
     return tasks
@@ -313,8 +381,10 @@ def build_dataset(workspace: Path, project: str, name: str, val_percent: int, te
 def run_build_dataset_task(project_path: Path, task: dict):
     workspace = workspace_path()
     task_id = task["id"]
+    log_path = Path(task.get("log_path") or build_logs_root(project_path) / f"{task_id}.log")
     try:
         update_build_task(project_path, task_id, status="创建中", progress=3, error="")
+        append_deploy_log(log_path, f"开始创建数据集 {task['name']}")
         name = task["name"]
         val_percent = int(task.get("val_percent", 20) or 20)
         test_percent = int(task.get("test_percent", 0) or 0)
@@ -323,6 +393,7 @@ def run_build_dataset_task(project_path: Path, task: dict):
         dataset_path = project_path / "datasets" / name
         files = image_files(source_root)
         total = len(files)
+        append_deploy_log(log_path, f"待复制图片：{total} 个")
         if dataset_path.exists():
             raise RuntimeError("数据集已存在")
         if val_percent < 0 or test_percent < 0 or val_percent + test_percent > 100:
@@ -337,6 +408,8 @@ def run_build_dataset_task(project_path: Path, task: dict):
             ("val", files[test_count : test_count + val_count]),
             ("train", files[test_count + val_count :]),
         )
+        for split, split_files in split_groups:
+            append_deploy_log(log_path, f"{split}：{len(split_files)} 个")
         copied = 0
         for split, split_files in split_groups:
             images_dir = dataset_path / "images" / split
@@ -346,12 +419,14 @@ def run_build_dataset_task(project_path: Path, task: dict):
             for source in split_files:
                 copy_image_to_dataset(source, source_root, images_dir, labels_dir)
                 copied += 1
-                if copied == total or copied % 10 == 0:
-                    progress = 5 + round((copied / total) * 90) if total else 95
-                    update_build_task(project_path, task_id, progress=min(progress, 95))
+                append_deploy_log(log_path, f"{split}/{source.relative_to(source_root)}")
+                progress = 5 + round((copied / total) * 90) if total else 95
+                update_build_task(project_path, task_id, progress=min(progress, 95))
         shutil.copy2(classes_file, dataset_path / "classes.txt")
+        append_deploy_log(log_path, "classes.txt")
         write_dataset_meta(dataset_path, icon, str(task.get("created_at") or ""))
         update_build_task(project_path, task_id, status="完成", progress=100, error="")
+        append_deploy_log(log_path, "数据集创建完成")
         if task.get("deploy_enabled"):
             deploy_form = {
                 "resource_id": str(task.get("resource_id") or ""),
@@ -361,10 +436,17 @@ def run_build_dataset_task(project_path: Path, task: dict):
             deploy_task, deploy_error = create_deploy_task(project_path, dataset_path, name, deploy_form)
             if deploy_error:
                 update_build_task(project_path, task_id, deploy_error=deploy_error)
+                append_deploy_log(log_path, f"创建部署任务失败：{deploy_error}")
             elif deploy_task:
                 update_build_task(project_path, task_id, deploy_task_id=deploy_task["id"])
+                append_deploy_log(log_path, f"已创建部署任务：{deploy_task['id']}")
     except Exception as error:
-        update_build_task(project_path, task_id, status="失败", progress=100, error=str(error))
+        message = build_error_message(error)
+        if message == "空间不足" and dataset_path.exists():
+            shutil.rmtree(dataset_path, ignore_errors=True)
+            append_deploy_log(log_path, "空间不足，已停止复制并清理未完成数据集。")
+        update_build_task(project_path, task_id, status="失败", error=message)
+        append_deploy_log(log_path, f"数据集创建失败：{message}")
 
 
 def create_build_task(
@@ -390,13 +472,15 @@ def create_build_task(
     if project_classes_file(project_path) is None:
         return None, f"缺少 {ANNOTATE_DIR}/classes.txt，不能创建数据集"
     if deploy_enabled:
-        if deploy_mode not in {"full", "sync"}:
+        if deploy_mode not in {"full", "incremental", "sync"}:
             return None, "部署方式不正确"
         if find_resource(workspace_path(), resource_id) is None:
             return None, "请选择算力服务器"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    task_id = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
+    log_path = build_logs_root(project_path) / f"{task_id}.log"
     task = {
-        "id": datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8],
+        "id": task_id,
         "name": name,
         "icon": dataset_icon(icon),
         "val_percent": val_percent,
@@ -405,9 +489,10 @@ def create_build_task(
         "progress": 0,
         "error": "",
         "deploy_enabled": bool(deploy_enabled),
-        "deploy_mode": deploy_mode if deploy_mode in {"full", "sync"} else "sync",
+        "deploy_mode": deploy_mode if deploy_mode in {"full", "incremental", "sync"} else "sync",
         "resource_id": resource_id if deploy_enabled else "",
         "target_path": f"~/datasets/{name}" if deploy_enabled else "",
+        "log_path": str(log_path),
         "created_at": now,
         "updated_at": now,
     }
@@ -415,6 +500,7 @@ def create_build_task(
         tasks = read_build_tasks(project_path)
         tasks.insert(0, task)
         write_build_tasks(project_path, tasks)
+    append_deploy_log(log_path, "数据集创建任务已创建")
     threading.Thread(target=run_build_dataset_task, args=(project_path, task), daemon=True, name=f"dataset-build-{task['id']}").start()
     return task, ""
 
@@ -472,8 +558,41 @@ def update_deploy_task(project_path: Path, task_id: str, **updates):
 
 def append_deploy_log(log_path: Path, message: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8", errors="replace") as output:
         output.write(f"[{timestamp}] {message}\n")
+
+
+def extract_transfer_percent(text: str):
+    matches = re.findall(r"(?<!\d)(\d{1,3})%", text)
+    if not matches:
+        return None
+    value = max(0, min(int(matches[-1]), 100))
+    return value
+
+
+def count_deploy_files(source: Path):
+    if not source.is_dir():
+        return 0
+    return sum(1 for path in source.rglob("*") if path.is_file())
+
+
+def is_no_space_error(error: BaseException):
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, OSError) and current.errno == errno.ENOSPC:
+            return True
+        current = current.__cause__ or current.__context__
+    return "No space left on device" in str(error)
+
+
+def build_error_message(error: BaseException):
+    return "空间不足" if is_no_space_error(error) else str(error)
+
+
+def normalize_task_error(error: str):
+    text = str(error or "")
+    return "空间不足" if "No space left on device" in text else text
 
 
 def dataset_select_items(workspace: Path, project: str):
@@ -542,7 +661,7 @@ def prepare_remote_auth(resource: dict, temp_files: list[Path]):
     return [], None, ""
 
 
-def run_command(command: list[str], log_path: Path):
+def run_command(command: list[str], log_path: Path, progress_callback=None, progress_total: int = 0, count_output_files: bool = False):
     display = list(command)
     if display and Path(display[0]).name == "sshpass" and len(display) > 2:
         display[2] = "******"
@@ -551,14 +670,84 @@ def run_command(command: list[str], log_path: Path):
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
     )
     assert process.stdout is not None
-    for line in process.stdout:
-        with log_path.open("a", encoding="utf-8", errors="replace") as output:
-            output.write(line)
+    stdout_fd = process.stdout.fileno()
+    os.set_blocking(stdout_fd, False)
+    pending = ""
+    last_logged_progress = None
+    last_callback_progress = None
+    copied_files = 0
+
+    def handle_output_segment(segment: str, force: bool = False):
+        nonlocal last_logged_progress, last_callback_progress, copied_files
+        clean = segment.strip()
+        if not clean:
+            return
+        if count_output_files:
+            if clean.endswith("/"):
+                return
+            copied_files += 1
+            if progress_callback and progress_total > 0:
+                percent = max(0, min(round(copied_files / progress_total * 100), 100))
+                if percent != last_callback_progress:
+                    progress_callback(percent)
+                    last_callback_progress = percent
+            append_deploy_log(log_path, clean)
+            return
+        percent = extract_transfer_percent(clean)
+        if percent is not None:
+            if progress_callback and percent != last_callback_progress:
+                progress_callback(percent)
+                last_callback_progress = percent
+            should_log = force or percent == 100 or last_logged_progress is None or abs(percent - last_logged_progress) >= 5
+            if should_log:
+                append_deploy_log(log_path, clean)
+                last_logged_progress = percent
+            return
+        append_deploy_log(log_path, clean)
+
+    def consume_available_output():
+        nonlocal pending
+        consumed = False
+        while True:
+            try:
+                chunk = os.read(stdout_fd, 4096)
+            except BlockingIOError:
+                break
+            if not chunk:
+                break
+            consumed = True
+            pending += chunk.decode("utf-8", errors="replace")
+            parts = re.split(r"[\r\n]+", pending)
+            pending = parts.pop() if parts else ""
+            for part in parts:
+                handle_output_segment(part)
+        return consumed
+
+    while process.poll() is None:
+        consume_available_output()
+        if pending and not count_output_files:
+            percent = extract_transfer_percent(pending)
+            if percent is not None and progress_callback and percent != last_callback_progress:
+                progress_callback(percent)
+                last_callback_progress = percent
+        time.sleep(0.2)
+    consume_available_output()
+    while True:
+        try:
+            chunk = os.read(stdout_fd, 4096)
+        except BlockingIOError:
+            break
+        if not chunk:
+            break
+        pending += chunk.decode("utf-8", errors="replace")
+        parts = re.split(r"[\r\n]+", pending)
+        pending = parts.pop() if parts else ""
+        for part in parts:
+            handle_output_segment(part)
+    if pending:
+        handle_output_segment(pending, force=True)
     return process.wait()
 
 
@@ -669,7 +858,39 @@ def deploy_transfer_tool():
     return "", ""
 
 
-def rsync_progress_args(rsync_path: str):
+def rsync_file_output_args(rsync_path: str, log_path: Path | None = None):
+    version_label = "未知版本"
+    help_text = ""
+    try:
+        version = subprocess.run(
+            [rsync_path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=3,
+            check=False,
+        )
+        first_line = (version.stdout or "").splitlines()[0].strip()
+        if first_line:
+            version_label = first_line
+    except Exception:
+        pass
+    try:
+        help_result = subprocess.run(
+            [rsync_path, "--help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=3,
+            check=False,
+        )
+        help_text = help_result.stdout or ""
+    except Exception:
+        help_text = ""
     try:
         result = subprocess.run(
             [rsync_path, "--info=help"],
@@ -682,8 +903,22 @@ def rsync_progress_args(rsync_path: str):
             check=False,
         )
     except Exception:
-        return ["--progress"]
-    return ["--info=progress2"] if "progress2" in result.stdout else ["--progress"]
+        if log_path:
+            append_deploy_log(log_path, f"rsync {version_label}，无法检测 --info=progress2，使用文件数量进度。")
+        args = ["--out-format=%n"]
+        if "--outbuf" in help_text:
+            args.insert(0, "--outbuf=L")
+        return args
+    supports_progress2 = "progress2" in result.stdout
+    args = ["--out-format=%n"]
+    line_buffered = "--outbuf" in help_text
+    if line_buffered:
+        args.insert(0, "--outbuf=L")
+    if log_path:
+        flag = "支持 --info=progress2" if supports_progress2 else "不支持 --info=progress2"
+        buffer_flag = "启用行缓冲输出" if line_buffered else "当前 rsync 不支持 --outbuf=L"
+        append_deploy_log(log_path, f"rsync {version_label}，{flag}，使用文件数量进度，{buffer_flag}。")
+    return args
 
 
 def build_deploy_commands(task: dict, source: Path, resource: dict | None, log_path: Path):
@@ -704,7 +939,7 @@ def build_deploy_commands(task: dict, source: Path, resource: dict | None, log_p
         target_arg = remote_target(resource, target_path.rstrip("/") + "/")
         if tool_name == "rsync":
             source_arg = str(source) + "/"
-            base = [*prefix, tool_path, "-az", *rsync_progress_args(tool_path), "-e", rsync_ssh_args(resource, ssh_key)]
+            base = [*prefix, tool_path, "-az", *rsync_file_output_args(tool_path, log_path), "-e", rsync_ssh_args(resource, ssh_key)]
         else:
             source_arg = str(source / ".")
             base = [*prefix, tool_path, "-r", "-P", str(resource.get("port") or 22), "-o", "StrictHostKeyChecking=no"]
@@ -714,7 +949,7 @@ def build_deploy_commands(task: dict, source: Path, resource: dict | None, log_p
         target_arg = str(Path(target_path).expanduser()) + "/"
         if tool_name == "rsync":
             source_arg = str(source) + "/"
-            base = [tool_path, "-az", *rsync_progress_args(tool_path)]
+            base = [tool_path, "-az", *rsync_file_output_args(tool_path, log_path)]
         else:
             source_arg = str(source / ".")
             base = [tool_path, "-r"]
@@ -772,9 +1007,33 @@ def run_deploy_task(project_path: Path, task: dict):
         commands, temp_files, tool_name, error = build_deploy_commands(task, source, resource, log_path)
         if error:
             raise RuntimeError(error)
+        total_files = count_deploy_files(source)
+        append_deploy_log(log_path, f"待复制文件：{total_files} 个")
         for index, command in enumerate(commands, start=1):
             append_deploy_log(log_path, f"执行 {tool_name} ({index}/{len(commands)})")
-            code = run_command(command, log_path)
+            last_task_progress = 20
+            last_progress_update = 0.0
+
+            def sync_transfer_progress(percent: int):
+                nonlocal last_task_progress, last_progress_update
+                command_start = 20 + round((index - 1) / len(commands) * 70)
+                command_span = 70 / len(commands)
+                next_progress = command_start + round(percent / 100 * command_span)
+                next_progress = max(last_task_progress, min(next_progress, 90))
+                now = time.monotonic()
+                if next_progress == last_task_progress and now - last_progress_update < 2:
+                    return
+                update_deploy_task(project_path, task_id, progress=next_progress)
+                last_task_progress = next_progress
+                last_progress_update = now
+
+            code = run_command(
+                command,
+                log_path,
+                sync_transfer_progress,
+                progress_total=total_files,
+                count_output_files=tool_name == "rsync",
+            )
             if code != 0:
                 raise RuntimeError(f"{tool_name} 退出码 {code}")
             update_deploy_task(project_path, task_id, progress=20 + round(index / len(commands) * 70))
@@ -936,6 +1195,7 @@ def dataset_items(workspace: Path, project: str = ""):
         for task in active_tasks:
             created_at = str(task.get("created_at") or task.get("updated_at") or "")
             created_sort = datetime_sort_value(created_at, time.time())
+            preview = expected_dataset_preview(project_dir, task)
             datasets.append(
                 {
                     "name": task.get("name", ""),
@@ -948,19 +1208,16 @@ def dataset_items(workspace: Path, project: str = ""):
                     "project": project_name(project_dir),
                     "location_label": "本地",
                     "project_dir": project_dir.name,
-                    "splits": {
-                        "train": {"images": 0, "labels": 0},
-                        "val": {"images": 0, "labels": 0},
-                        "test": {"images": 0, "labels": 0},
-                    },
-                    "total_images": 0,
-                    "total_labels": 0,
-                    "chart_style": "conic-gradient(#e2e8f0 0 100%)",
-                    "chart_segments": [],
+                    "splits": preview["splits"],
+                    "total_images": preview["total_images"],
+                    "total_labels": preview["total_labels"],
+                    "chart_style": preview["chart_style"],
+                    "chart_segments": preview["chart_segments"],
                     "building": True,
+                    "build_task_id": task.get("id", ""),
                     "build_status": task.get("status", ""),
                     "build_progress": int(task.get("progress") or 0),
-                    "build_error": task.get("error", ""),
+                    "build_error": normalize_task_error(str(task.get("error", ""))),
                     "deploying": False,
                     "deploy_progress": 0,
                     "deploy_status": "",
@@ -980,29 +1237,13 @@ def dataset_items(workspace: Path, project: str = ""):
                 "val": count_dataset_split(dataset_dir, "val"),
                 "test": count_dataset_split(dataset_dir, "test"),
             }
-            total_images = sum(split["images"] for split in splits.values())
-            total_labels = sum(split["labels"] for split in splits.values())
-            if total_images:
-                train_percent = splits["train"]["images"] / total_images * 100
-                val_percent = splits["val"]["images"] / total_images * 100
-                test_percent = splits["test"]["images"] / total_images * 100
-            else:
-                train_percent = val_percent = test_percent = 0
-            train_end = train_percent
-            val_end = train_percent + val_percent
+            chart = dataset_chart_data(splits)
             deploy_task = latest_dataset_deploy_task(project_dir, dataset_dir.name)
             deploy_status = str(deploy_task.get("status") or "") if deploy_task else ""
             deploy_progress = int(deploy_task.get("progress") or 0) if deploy_task else 0
             deploying = bool(deploy_task) and deploy_status in ACTIVE_DEPLOY_STATUSES
             deploy_failed = bool(deploy_task) and deploy_status == "失败"
             location_label = str(deploy_task.get("resource_name") or "算力服务器") if deploy_task else "本地"
-            chart_style = (
-                f"conic-gradient(#1667c7 0 {train_end:.2f}%, "
-                f"#16a34a {train_end:.2f}% {val_end:.2f}%, "
-                f"#f59e0b {val_end:.2f}% 100%)"
-                if total_images
-                else "conic-gradient(#e2e8f0 0 100%)"
-            )
             datasets.append(
                 {
                     "name": dataset_dir.name,
@@ -1016,14 +1257,10 @@ def dataset_items(workspace: Path, project: str = ""):
                     "location_label": location_label,
                     "project_dir": project_dir.name,
                     "splits": splits,
-                    "total_images": total_images,
-                    "total_labels": total_labels,
-                    "chart_style": chart_style,
-                    "chart_segments": [
-                        {"name": "train", "count": splits["train"]["images"], "percent": round(train_percent)},
-                        {"name": "val", "count": splits["val"]["images"], "percent": round(val_percent)},
-                        {"name": "test", "count": splits["test"]["images"], "percent": round(test_percent)},
-                    ],
+                    "total_images": chart["total_images"],
+                    "total_labels": chart["total_labels"],
+                    "chart_style": chart["chart_style"],
+                    "chart_segments": chart["chart_segments"],
                     "building": False,
                     "build_progress": 100,
                     "deploying": deploying,
@@ -1280,9 +1517,65 @@ def dataset_deploy_task_log(project: str, task_id: str):
         "ok": True,
         "status": task_status,
         "progress": task_progress,
+        "error": normalize_task_error(str(task.get("error", ""))),
+        "log": log_text,
+    }
+
+
+@router.get("/dataset/{project}/build/tasks/{task_id}/log")
+def dataset_build_task_log(project: str, task_id: str):
+    workspace = workspace_path()
+    current_project_path = project_dir(workspace, project)
+    if current_project_path is None or not current_project_path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    task = next((item for item in read_build_tasks(current_project_path) if item.get("id") == task_id), None)
+    if task is None:
+        return JSONResponse({"ok": False, "error": "创建任务不存在"}, status_code=404)
+    log_path = Path(task.get("log_path", ""))
+    log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+    task_status = task.get("status", "")
+    task_progress = 100 if task_status == "完成" else task.get("progress", 0)
+    return {
+        "ok": True,
+        "status": task_status,
+        "progress": task_progress,
         "error": task.get("error", ""),
         "log": log_text,
     }
+
+
+@router.post("/dataset/{project}/build/tasks/{task_id}/retry")
+def dataset_build_task_retry(project: str, task_id: str):
+    workspace = workspace_path()
+    current_project_path = project_dir(workspace, project)
+    if current_project_path is None or not current_project_path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    task = next((item for item in read_build_tasks(current_project_path) if item.get("id") == task_id), None)
+    if task is None:
+        return JSONResponse({"ok": False, "error": "创建任务不存在"}, status_code=404)
+    if task.get("status") != "失败":
+        return JSONResponse({"ok": False, "error": "只有失败的创建任务可以重新创建"}, status_code=400)
+    dataset_path = current_project_path / "datasets" / str(task.get("name") or "")
+    if dataset_path.exists():
+        shutil.rmtree(dataset_path, ignore_errors=True)
+    task["status"] = "排队中"
+    task["progress"] = 0
+    task["error"] = ""
+    task["deploy_error"] = ""
+    task["deploy_task_id"] = ""
+    task["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not task.get("log_path"):
+        task["log_path"] = str(build_logs_root(current_project_path) / f"{task_id}.log")
+    with build_lock:
+        next_tasks = read_build_tasks(current_project_path)
+        for item in next_tasks:
+            if item.get("id") == task_id:
+                item.update(task)
+                break
+        write_build_tasks(current_project_path, next_tasks)
+    append_deploy_log(Path(task["log_path"]), "重新创建数据集")
+    threading.Thread(target=run_build_dataset_task, args=(current_project_path, task), daemon=True, name=f"dataset-build-{task_id}").start()
+    return {"ok": True}
 
 
 @router.post("/dataset/{project}/{name}/delete")

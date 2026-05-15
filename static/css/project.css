@@ -599,6 +599,31 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.project-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-card-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--accent);
+  font-size: 24px;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
 .project-description {
   margin: 6px 0 0;
   color: #334155;
@@ -685,13 +710,30 @@ textarea {
 .icon-button {
   width: 32px;
   height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
+  cursor: pointer;
   font-size: 22px;
   line-height: 1;
+}
+
+.menu-button:focus,
+.icon-button:focus,
+.project-dialog .project-icon-random > button:focus {
+  outline: none;
+}
+
+.menu-button:focus-visible,
+.icon-button:focus-visible,
+.project-dialog .project-icon-random > button:focus-visible {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(147, 197, 253, .35);
 }
 
 .menu-button:hover,
@@ -917,6 +959,81 @@ textarea {
 
 .project-dialog input {
   width: 100%;
+}
+
+.project-name-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.project-name-field,
+.project-name-row .project-icon-random {
+  min-width: 0;
+}
+
+.project-icon-random {
+  display: grid;
+  gap: 8px;
+}
+
+.project-dialog .project-icon-random > button {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: #ffffff;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.project-dialog .project-icon-random > button:hover {
+  background: #e6f0ff;
+  color: var(--accent);
+}
+
+.project-dialog .dialog-actions {
+  justify-content: flex-end;
+}
+
+.project-dialog .dialog-actions button {
+  min-width: 76px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334e68;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.project-dialog .dialog-actions button:hover {
+  background: #f8fafc;
+}
+
+.project-dialog .dialog-head .icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0 0 2px;
+  font-size: 24px;
+  line-height: 1;
 }
 
 .login-layout {

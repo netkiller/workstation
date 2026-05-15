@@ -3,7 +3,7 @@
 {% block title %}项目{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260514-project-toolbar">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260515-project-icon-align">
 {% endblock %}
 
 {% block content %}
@@ -40,7 +40,10 @@
             <article class="project-card">
               <a class="project-link" href="/project/{{ project.directory }}" aria-label="进入 {{ project.name }} 项目页面">
                 <div>
-                  <h3>{{ project.name }}</h3>
+                  <div class="project-title-row">
+                    <span class="project-card-icon" aria-hidden="true">{{ project.icon | default("▤") }}</span>
+                    <h3>{{ project.name }}</h3>
+                  </div>
                   {% if project.description %}
                     <p class="project-description">{{ project.description }}</p>
                   {% else %}
@@ -80,6 +83,7 @@
                     data-edit-project
                     data-directory="{{ project.directory }}"
                     data-name="{{ project.name }}"
+                    data-icon="{{ project.icon | default('▤') }}"
                     data-description="{{ project.description }}"
                   >编辑</button>
                   <form method="post" action="/project/{{ project.directory }}/delete" data-confirm="确认删除项目 {{ project.name }}？">
@@ -107,10 +111,17 @@
         <h2>创建项目</h2>
         <button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button>
       </div>
-      <label>
-        <span>项目名</span>
-        <input name="name" type="text" autocomplete="off" required>
-      </label>
+      <div class="project-name-row">
+        <label class="project-icon-random">
+          <span>图标</span>
+          <input name="icon" type="hidden" value="{{ project_icons[0] if project_icons else '▤' }}" data-project-icon-value>
+          <button type="button" data-random-project-icon aria-label="随机更换图标">{{ project_icons[0] if project_icons else '▤' }}</button>
+        </label>
+        <label class="project-name-field">
+          <span>项目名</span>
+          <input name="name" type="text" autocomplete="off" required>
+        </label>
+      </div>
       <label>
         <span>目录名</span>
         <input name="directory" type="text" autocomplete="off" required>
@@ -132,10 +143,17 @@
         <h2>编辑项目</h2>
         <button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button>
       </div>
-      <label>
-        <span>项目名</span>
-        <input name="name" type="text" autocomplete="off" required>
-      </label>
+      <div class="project-name-row">
+        <label class="project-icon-random">
+          <span>图标</span>
+          <input name="icon" type="hidden" value="{{ project_icons[0] if project_icons else '▤' }}" data-edit-project-icon-value>
+          <button type="button" data-random-edit-project-icon aria-label="随机更换图标">{{ project_icons[0] if project_icons else '▤' }}</button>
+        </label>
+        <label class="project-name-field">
+          <span>项目名</span>
+          <input name="name" type="text" autocomplete="off" required>
+        </label>
+      </div>
       <label>
         <span>项目描述</span>
         <textarea name="description" rows="4"></textarea>
@@ -147,5 +165,8 @@
     </form>
   </dialog>
 
-  <script src="/static/js/project.js"></script>
+  <script>
+    window.yoloutilsProjectIcons = {{ project_icons | list | tojson }};
+  </script>
+  <script src="/static/js/project.js?v=20260515-project-icon"></script>
 {% endblock %}
