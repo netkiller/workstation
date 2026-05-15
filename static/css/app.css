@@ -2051,7 +2051,7 @@ body.public-console-resizing {
   left: 0;
   right: 0;
   z-index: 1;
-  height: 10px;
+  height: 4px;
   cursor: row-resize;
   border-bottom: 1px solid #1f2937;
   background: #263244;
@@ -2066,7 +2066,7 @@ body.public-console-resizing .footer-console-resizer {
 .footer-console pre {
   height: 100%;
   margin: 0;
-  padding: 16px 14px 14px;
+  padding: 10px 14px 14px;
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;

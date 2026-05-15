@@ -92,15 +92,43 @@
         output.textContent = "控制台日志读取失败";
       }
     }
-    window.yoloutilsReloadFooterConsole = loadConsole;
-    toggle?.addEventListener("click", (event) => {
+    function setConsoleOpen(open, options = {}) {
       if (!panel) return;
-      const open = panel.hasAttribute("hidden");
       panel.toggleAttribute("hidden", !open);
       document.body.classList.toggle("public-console-open", open);
-      event.currentTarget.classList.toggle("active", open);
-      if (!open) window.yoloutilsFooterConsoleClosedAt = Date.now();
-      if (open) loadConsole();
+      toggle?.classList.toggle("active", open);
+      if (!open && options.markClosed !== false) window.yoloutilsFooterConsoleClosedAt = Date.now();
+      if (open && options.load !== false) loadConsole();
+    }
+    function setConsoleText(text) {
+      if (!output) return;
+      output.textContent = text || "控制台暂无输出";
+      output.scrollTop = output.scrollHeight;
+    }
+    window.yoloutilsFooterConsole = {
+      isOpen: () => Boolean(panel && !panel.hidden),
+      open(text = "", options = {}) {
+        setConsoleOpen(true, {load: false, markClosed: false});
+        if (text) setConsoleText(text);
+      },
+      update(text = "") {
+        if (!panel || panel.hidden) return;
+        setConsoleText(text);
+      },
+      append(text = "") {
+        if (!panel || panel.hidden || !output || !text) return;
+        output.textContent += text;
+        output.scrollTop = output.scrollHeight;
+      },
+      close() {
+        setConsoleOpen(false);
+      },
+      setText: setConsoleText,
+    };
+    window.yoloutilsReloadFooterConsole = loadConsole;
+    toggle?.addEventListener("click", () => {
+      if (!panel) return;
+      setConsoleOpen(panel.hasAttribute("hidden"));
     });
     function startConsoleResize(clientY, event) {
       if (!panel || panel.hidden || clientY == null) return;

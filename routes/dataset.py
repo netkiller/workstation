@@ -1790,7 +1790,7 @@ def dataset_deploy_task_delete(project: str, task_id: str):
 
 
 @router.get("/dataset/{project}/deploy/tasks/{task_id}/log")
-def dataset_deploy_task_log(project: str, task_id: str):
+def dataset_deploy_task_log(project: str, task_id: str, offset: int = 0):
     workspace = workspace_path()
     current_project_path = project_dir(workspace, project)
     if current_project_path is None or not current_project_path.is_dir():
@@ -1799,22 +1799,31 @@ def dataset_deploy_task_log(project: str, task_id: str):
     if task is None:
         return JSONResponse({"ok": False, "error": "部署任务不存在"}, status_code=404)
     log_path = Path(task.get("log_path", ""))
-    log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+    size = log_path.stat().st_size if log_path.is_file() else 0
+    start = max(0, min(int(offset or 0), size))
+    full_log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+    log_text = ""
+    if log_path.is_file():
+        with log_path.open("rb") as handle:
+            handle.seek(start)
+            log_text = handle.read().decode("utf-8", errors="replace")
     task_status = task.get("status", "")
     task_progress = 100 if task_status == "完成" else task.get("progress", 0)
-    current_file = deploy_current_file_label(log_text, task_status)
+    current_file = deploy_current_file_label(full_log_text, task_status)
     return {
         "ok": True,
         "status": task_status,
         "progress": task_progress,
         "error": normalize_task_error(str(task.get("error", ""))),
         "log": log_text,
+        "offset": start,
+        "size": size,
         "current_file": current_file,
     }
 
 
 @router.get("/dataset/{project}/build/tasks/{task_id}/log")
-def dataset_build_task_log(project: str, task_id: str):
+def dataset_build_task_log(project: str, task_id: str, offset: int = 0):
     workspace = workspace_path()
     current_project_path = project_dir(workspace, project)
     if current_project_path is None or not current_project_path.is_dir():
@@ -1823,16 +1832,25 @@ def dataset_build_task_log(project: str, task_id: str):
     if task is None:
         return JSONResponse({"ok": False, "error": "创建任务不存在"}, status_code=404)
     log_path = Path(task.get("log_path", ""))
-    log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+    size = log_path.stat().st_size if log_path.is_file() else 0
+    start = max(0, min(int(offset or 0), size))
+    full_log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+    log_text = ""
+    if log_path.is_file():
+        with log_path.open("rb") as handle:
+            handle.seek(start)
+            log_text = handle.read().decode("utf-8", errors="replace")
     task_status = task.get("status", "")
     task_progress = 100 if task_status == "完成" else task.get("progress", 0)
-    current_file = current_copy_file_from_log(log_text) if task_status in {"排队中", "创建中"} else ""
+    current_file = current_copy_file_from_log(full_log_text) if task_status in {"排队中", "创建中"} else ""
     return {
         "ok": True,
         "status": task_status,
         "progress": task_progress,
         "error": task.get("error", ""),
         "log": log_text,
+        "offset": start,
+        "size": size,
         "current_file": current_file,
     }
 

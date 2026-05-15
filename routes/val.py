@@ -513,20 +513,27 @@ def task_progress(task):
 
 @router.get("/model/val/tasks/{task_id}/logs")
 @router.get("/validate/tasks/{task_id}/logs")
-def validate_task_logs(task_id: str):
+def validate_task_logs(task_id: str, offset: int = 0):
     tasks = load_tasks()
     task = next((item for item in tasks if item["id"] == task_id), None)
     if task is None:
         return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
     path = log_file(task_id)
-    log = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    size = path.stat().st_size if path.is_file() else 0
+    start = max(0, min(int(offset or 0), size))
+    log = ""
+    if path.is_file():
+        with path.open("rb") as handle:
+            handle.seek(start)
+            log = handle.read().decode("utf-8", errors="replace")
     view = dict(task)
     view["progress"] = task_progress(task)
     return {
         "ok": True,
         "task": view,
         "log": log,
-        "size": path.stat().st_size if path.is_file() else 0,
+        "offset": start,
+        "size": size,
     }
 
 

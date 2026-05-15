@@ -144,6 +144,7 @@
       const targetPath = form?.elements.target_path;
       const activeStatuses = new Set(["排队中", "进行中"]);
       let activeLogTimer = null;
+      const logOffsets = new Map();
 
       function syncDatasetName() {
         if (!datasetInput || !targetPath) return;
@@ -202,35 +203,17 @@
       });
 
       function openFooterConsole(text, status = "", progress = 0) {
-        const panel = document.querySelector("[data-footer-console]");
-        const output = panel?.querySelector("pre");
-        const toggle = document.querySelector("[data-footer-console-toggle]");
-        if (!panel || !output) return;
         const timestamp = new Date().toLocaleString("sv-SE", {hour12: false}).replace("T", " ");
         const header = status ? [
           `[${timestamp}] 状态：${status}`,
           `[${timestamp}] 进度：${progress || 0}%`,
           "",
         ].join("\n") : "";
-        output.textContent = `${header}${text || "控制台暂无输出"}`;
-        panel.hidden = false;
-        document.body.classList.add("public-console-open");
-        toggle?.classList.add("active");
-        output.scrollTop = output.scrollHeight;
+        window.yoloutilsFooterConsole?.open(`${header}${text || "控制台暂无输出"}`);
       }
 
       function updateFooterConsole(text, status = "", progress = 0) {
-        const panel = document.querySelector("[data-footer-console]");
-        const output = panel?.querySelector("pre");
-        if (!panel || !output || panel.hidden) return;
-        const timestamp = new Date().toLocaleString("sv-SE", {hour12: false}).replace("T", " ");
-        const header = status ? [
-          `[${timestamp}] 状态：${status}`,
-          `[${timestamp}] 进度：${progress || 0}%`,
-          "",
-        ].join("\n") : "";
-        output.textContent = `${header}${text || "控制台暂无输出"}`;
-        output.scrollTop = output.scrollHeight;
+        if (text) window.yoloutilsFooterConsole?.append(text);
       }
 
       async function refreshTask(card) {
@@ -274,18 +257,27 @@
 
       async function loadTaskLog(button, openConsole = true) {
         const requestStartedAt = Date.now();
-        const response = await fetch(button.dataset.logUrl, {cache: "no-store"});
+        const logUrl = button.dataset.logUrl;
+        const offset = openConsole ? 0 : Number(logOffsets.get(logUrl) || 0);
+        const url = new URL(logUrl, window.location.origin);
+        if (offset > 0) url.searchParams.set("offset", String(offset));
+        const response = await fetch(url, {cache: "no-store"});
         const data = await response.json();
         const wasClosedAfterRequest = Number(window.yoloutilsFooterConsoleClosedAt || 0) > requestStartedAt;
         if (!response.ok || !data.ok) {
-          if (openConsole && !wasClosedAfterRequest) openFooterConsole(data.error || "部署日志读取失败");
-          else updateFooterConsole(data.error || "部署日志读取失败");
+            if (openConsole && !wasClosedAfterRequest) openFooterConsole(data.error || "部署日志读取失败");
+            else updateFooterConsole(data.error || "部署日志读取失败");
           return;
         }
+        logOffsets.set(logUrl, Number(data.size || 0));
         if (openConsole && !wasClosedAfterRequest) {
           openFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
         } else {
-          updateFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
+          if (Number(data.offset || 0) === 0 && offset > 0) {
+            openFooterConsole(data.log || "暂无日志", data.status || "", data.progress || 0);
+          } else {
+            updateFooterConsole(data.log || "", data.status || "", data.progress || 0);
+          }
         }
         return data;
       }
@@ -295,11 +287,11 @@
           clearInterval(activeLogTimer);
           activeLogTimer = null;
         }
+        const requestStartedAt = Date.now();
         loadTaskLog(button).then(data => {
           if (!data || !activeStatuses.has(data.status)) return;
           activeLogTimer = setInterval(async () => {
-            const panel = document.querySelector("[data-footer-console]");
-            if (!panel || panel.hidden) {
+            if (!window.yoloutilsFooterConsole?.isOpen()) {
               clearInterval(activeLogTimer);
               activeLogTimer = null;
               return;
@@ -310,7 +302,10 @@
               activeLogTimer = null;
             }
           }, 1000);
-        }).catch(() => openFooterConsole("部署日志读取失败"));
+        }).catch(() => {
+          const wasClosedAfterRequest = Number(window.yoloutilsFooterConsoleClosedAt || 0) > requestStartedAt;
+          if (!wasClosedAfterRequest) openFooterConsole("部署日志读取失败");
+        });
       }
 
       document.querySelectorAll("[data-deploy-task]").forEach(card => {

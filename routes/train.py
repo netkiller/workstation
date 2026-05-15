@@ -527,6 +527,7 @@ def task_card_view(task: dict):
         "params": params,
         "is_active": status_value in ACTIVE_STATUSES,
         "is_completed": status_value == COMPLETE_STATUS,
+        "show_progress": status_value in ACTIVE_STATUSES,
         "status_class": {
             COMPLETE_STATUS: "completed",
             "失败": "failed",
@@ -946,6 +947,7 @@ def run_remote_task(task):
         command = remote_train_command(task, remote_yaml, remote_runs_root)
         shell_command = shell_join(command)
         session = tmux_session_name(task_id)
+        remote_command_output(client, f": > {shlex.quote(remote_log)}; rm -f {shlex.quote(remote_exit)}")
         tmux_command = tmux_wrap_command(shell_command, remote_log, remote_exit, remote_work_dir)
         start_command = f"tmux new-session -d -s {shlex.quote(session)} {shlex.quote(tmux_command)}"
         append_log(task_id, f"远程数据集：{remote_dataset_path}\n")
@@ -1470,18 +1472,25 @@ def train_task(request: Request, task_id: str):
 
 @router.get("/model/train/tasks/{task_id}/logs")
 @router.get("/train/tasks/{task_id}/logs")
-def train_task_logs(task_id: str):
+def train_task_logs(task_id: str, offset: int = 0):
     tasks = load_tasks()
     task = next((item for item in tasks if item["id"] == task_id), None)
     if task is None:
         return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
     path = log_file(task_id)
-    log = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    size = path.stat().st_size if path.is_file() else 0
+    start = max(0, min(int(offset or 0), size))
+    log = ""
+    if path.is_file():
+        with path.open("rb") as handle:
+            handle.seek(start)
+            log = handle.read().decode("utf-8", errors="replace")
     return {
         "ok": True,
         "task": task_card_view(task),
         "log": log,
-        "size": path.stat().st_size if path.is_file() else 0,
+        "offset": start,
+        "size": size,
     }
 
 

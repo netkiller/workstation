@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260515-page-width-uniform">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260515-completed-task-link">
 {% endblock %}
 
 {% block content %}
@@ -82,14 +82,26 @@
       {% if queue_tasks %}
         <section class="task-list" aria-label="训练任务">
           {% for task in queue_tasks %}
-            <article class="task-card {{ 'remote-task' if task.is_remote else 'local-task' }}" data-train-task data-task-id="{{ task.id }}">
+            <article
+              class="task-card {{ 'remote-task' if task.is_remote else 'local-task' }}{% if task.is_completed %} completed-task{% endif %}"
+              data-train-task
+              data-task-id="{{ task.id }}"
+              {% if task.is_completed %}data-model-url="/model/train/models/{{ task.id }}"{% endif %}
+            >
               <div class="task-card-main">
                 <div class="task-card-title">
                   <div>
-                    <h2><span class="train-scope {{ 'remote' if task.is_remote else 'local' }}">{{ task.scope_label }}</span>{{ task.name }}</h2>
-                    <p>创建时间 {{ task.display_created_at or task.created_at }}</p>
+                    <div class="task-name-row">
+                      <h2>
+                        <span class="task-name-text">{{ task.name }}</span>
+                        <span class="task-badges">
+                          <span class="train-scope {{ 'remote' if task.is_remote else 'local' }}">{{ task.scope_label }}</span>
+                          <span class="status {{ task.status_class }}" data-task-status>{{ task.status }}</span>
+                        </span>
+                      </h2>
+                      <time>{{ task.display_created_at or task.created_at }}</time>
+                    </div>
                   </div>
-                  <span class="status {{ task.status_class }}" data-task-status>{{ task.status }}</span>
                 </div>
                 <div class="task-params" aria-label="训练参数">
                   {% for param in task.params %}
@@ -131,24 +143,26 @@
                     {% endif %}
                   </div>
                 </div>
-                <div class="task-progress-row" aria-label="训练进度 {{ task.progress }}%">
-                  <div class="task-progress-track"><span data-task-progress-bar style="width: {{ task.progress }}%"></span></div>
-                  <strong data-task-progress-text>{{ task.progress }}%</strong>
-                </div>
+                {% if task.show_progress %}
+                  <div class="task-progress-row" aria-label="训练进度 {{ task.progress }}%">
+                    <div class="task-progress-track"><span data-task-progress-bar style="width: {{ task.progress }}%"></span></div>
+                    <strong data-task-progress-text>{{ task.progress }}%</strong>
+                  </div>
+                {% endif %}
               </div>
               <div class="task-actions">
-                {% if task.is_active and task.is_remote and task.resource_url %}
-                  <a href="{{ task.resource_url }}">监控</a>
+                {% if not task.is_completed %}
+                  {% if task.is_active and task.is_remote and task.resource_url %}
+                    <a href="{{ task.resource_url }}">监控</a>
+                  {% endif %}
+                  <button type="button" data-view-train-log data-log-url="/model/train/tasks/{{ task.id }}/logs">查看</button>
+                  {% if task.is_active %}
+                    <form method="post" action="/model/train/tasks/{{ task.id }}/cancel">
+                      <button type="submit">停止</button>
+                    </form>
+                  {% endif %}
                 {% endif %}
-                <button type="button" data-view-train-log data-log-url="/model/train/tasks/{{ task.id }}/logs">查看</button>
-                {% if task.is_completed %}
-                  <a href="/model/train/models/{{ task.id }}">模型</a>
-                {% endif %}
-                {% if task.is_active %}
-                  <form method="post" action="/model/train/tasks/{{ task.id }}/cancel">
-                    <button type="submit">停止</button>
-                  </form>
-                {% else %}
+                {% if not task.is_active %}
                   <form method="post" action="/model/train/tasks/{{ task.id }}/rerun">
                     <button type="submit">重跑</button>
                   </form>
@@ -173,21 +187,14 @@
     (() => {
       const activeStatuses = new Set(["排队中", "进行中"]);
       let activeLogTimer = null;
+      const logOffsets = new Map();
       function stopLogFollow() {
         if (activeLogTimer) clearInterval(activeLogTimer);
         activeLogTimer = null;
       }
       function openFooterConsole(text, status = "", progress = 0) {
-        const panel = document.querySelector("[data-footer-console]");
-        const output = panel?.querySelector("pre");
-        const toggle = document.querySelector("[data-footer-console-toggle]");
-        if (!panel || !output) return;
         const header = status ? [`状态：${status}`, `进度：${progress || 0}%`, ""].join("\n") : "";
-        output.textContent = `${header}${text || "控制台暂无输出"}`;
-        panel.hidden = false;
-        document.body.classList.add("public-console-open");
-        toggle?.classList.add("active");
-        output.scrollTop = output.scrollHeight;
+        window.yoloutilsFooterConsole?.open(`${header}${text || "控制台暂无输出"}`);
       }
       function paintProgress(card, progress) {
         const bar = card.querySelector("[data-task-progress-bar]");
@@ -196,17 +203,22 @@
         if (text) text.textContent = `${progress}%`;
         card.querySelector(".task-progress-row")?.setAttribute("aria-label", `训练进度 ${progress}%`);
       }
+      function syncProgressVisibility(card, status) {
+        const row = card.querySelector(".task-progress-row");
+        if (!row) return;
+        const hiddenStatuses = new Set(["完成", "失败", "取消", "演示模式"]);
+        row.hidden = hiddenStatuses.has(status || "");
+      }
       function updateFooterConsole(text, status = "", progress = 0) {
-        const panel = document.querySelector("[data-footer-console]");
-        const output = panel?.querySelector("pre");
-        if (!panel || !output || panel.hidden) return;
-        const header = status ? [`状态：${status}`, `进度：${progress || 0}%`, ""].join("\n") : "";
-        output.textContent = `${header}${text || "控制台暂无输出"}`;
-        output.scrollTop = output.scrollHeight;
+        if (text) window.yoloutilsFooterConsole?.append(text);
       }
       async function loadTaskLog(button, openConsole = true) {
         const requestStartedAt = Date.now();
-        const response = await fetch(button.dataset.logUrl, {cache: "no-store"});
+        const logUrl = button.dataset.logUrl;
+        const offset = openConsole ? 0 : Number(logOffsets.get(logUrl) || 0);
+        const url = new URL(logUrl, window.location.origin);
+        if (offset > 0) url.searchParams.set("offset", String(offset));
+        const response = await fetch(url, {cache: "no-store"});
         const data = await response.json();
         const wasClosedAfterRequest = Number(window.yoloutilsFooterConsoleClosedAt || 0) > requestStartedAt;
         if (!response.ok || !data.ok) {
@@ -214,27 +226,33 @@
           return null;
         }
         const task = data.task || {};
+        logOffsets.set(logUrl, Number(data.size || 0));
         if (openConsole && !wasClosedAfterRequest) {
           openFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
         } else {
-          updateFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
+          if (Number(data.offset || 0) === 0 && offset > 0) {
+            openFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
+          } else {
+            updateFooterConsole(data.log || "", task.status || "", task.progress || 0);
+          }
         }
         const card = button.closest("[data-train-task]");
         if (card) {
           const statusNode = card.querySelector("[data-task-status]");
           if (statusNode) statusNode.textContent = task.status || "";
+          syncProgressVisibility(card, task.status || "");
           paintProgress(card, task.progress || 0);
         }
         return data;
       }
       function watchTaskLog(button) {
         stopLogFollow();
+        const requestStartedAt = Date.now();
         loadTaskLog(button).then(data => {
           const status = data?.task?.status || "";
           if (!activeStatuses.has(status)) return;
           activeLogTimer = setInterval(async () => {
-            const panel = document.querySelector("[data-footer-console]");
-            if (!panel || panel.hidden) {
+            if (!window.yoloutilsFooterConsole?.isOpen()) {
               stopLogFollow();
               return;
             }
@@ -244,15 +262,23 @@
               stopLogFollow();
             }
           }, 1000);
-        }).catch(() => openFooterConsole("训练日志读取失败"));
+        }).catch(() => {
+          const wasClosedAfterRequest = Number(window.yoloutilsFooterConsoleClosedAt || 0) > requestStartedAt;
+          if (!wasClosedAfterRequest) openFooterConsole("训练日志读取失败");
+        });
       }
       document.querySelectorAll("[data-view-train-log]").forEach(button => {
         button.addEventListener("click", () => watchTaskLog(button));
       });
+      document.querySelectorAll("[data-model-url]").forEach(card => {
+        card.addEventListener("click", event => {
+          if (event.target.closest("a, button, form, input, select, textarea")) return;
+          window.location.assign(card.dataset.modelUrl);
+        });
+      });
       document.querySelector("[data-footer-console-toggle]")?.addEventListener("click", () => {
         setTimeout(() => {
-          const panel = document.querySelector("[data-footer-console]");
-          if (!panel || panel.hidden) stopLogFollow();
+          if (!window.yoloutilsFooterConsole?.isOpen()) stopLogFollow();
         }, 0);
       });
     })();

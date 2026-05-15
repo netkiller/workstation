@@ -56,32 +56,32 @@
 
 .primary-link,
 .secondary-link,
-.task-actions a {
+.task-actions a,
+.task-actions button {
+  min-width: 72px;
   height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 14px;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  text-decoration: none;
+  background: #ffffff;
+  color: #334e68;
+  cursor: pointer;
+  font: inherit;
   font-weight: 650;
-}
-
-.primary-link,
-.task-actions a {
-  background: var(--accent);
-  color: #ffffff;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .primary-link:hover,
-.task-actions a:hover {
-  background: var(--accent-dark);
-}
-
-.secondary-link {
-  border: 1px solid var(--line);
-  color: var(--text);
-  background: #ffffff;
+.secondary-link:hover,
+.task-actions a:hover,
+.task-actions button:hover {
+  background: #e6f0ff;
+  color: #243b53;
 }
 
 .train-tabs,
@@ -661,6 +661,15 @@
   background: var(--task-soft);
 }
 
+.task-card.completed-task {
+  cursor: pointer;
+}
+
+.task-card.completed-task:hover {
+  border-color: var(--task-accent);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+}
+
 .task-list .task-card:nth-child(6n + 1) {
   --task-accent: #1667c7;
   --task-soft: #f5faff;
@@ -704,12 +713,44 @@
 }
 
 .task-card h2 {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
   font-size: 18px;
   color: var(--task-accent);
+}
+
+.task-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-badges {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-name-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.task-name-row time {
+  color: var(--task-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .train-scope {
@@ -741,10 +782,7 @@
 
 .task-card-title {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: block;
 }
 
 .task-card p {
@@ -753,7 +791,9 @@
 }
 
 .status {
-  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
   padding: 4px 8px;
   border-radius: 999px;
   background: #eef6ff;
@@ -1010,31 +1050,6 @@
   margin: 0;
 }
 
-.task-actions button {
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #ffffff;
-  color: #334e68;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 650;
-}
-
-.task-actions a,
-.task-actions button {
-  min-width: 72px;
-}
-
-.task-actions button:hover {
-  background: #e6f0ff;
-  color: #243b53;
-}
-
 .disabled-action {
   height: 36px;
   display: inline-flex;
@@ -1208,9 +1223,9 @@
 }
 
 .model-detail-main {
-  align-content: stretch;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  overflow: hidden;
+  align-content: start;
+  grid-template-rows: auto auto auto;
+  overflow: visible;
 }
 
 .model-detail-main > .model-subnav {
@@ -1218,8 +1233,8 @@
 }
 
 .model-detail-head {
-  min-height: 58px;
-  align-items: center;
+  min-height: 0;
+  align-items: end;
 }
 
 .model-downloads {
@@ -1229,25 +1244,25 @@
 
 .model-layout {
   min-height: 0;
-  height: 100%;
+  height: auto;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  overflow: hidden;
+  grid-template-rows: auto;
+  overflow: visible;
 }
 
 .model-results {
   min-height: 0;
-  height: 100%;
+  height: auto;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  overflow: hidden;
+  grid-template-rows: auto;
+  overflow: visible;
 }
 
 .model-section {
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto;
   min-height: 0;
-  height: 100%;
+  height: auto;
 }
 
 .model-section h2 {
@@ -1629,10 +1644,7 @@
     grid-template-columns: 1fr;
   }
 
-  .model-layout {
-    overflow: auto;
-  }
-
+  .model-layout,
   .model-results {
     overflow: visible;
   }
