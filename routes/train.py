@@ -453,6 +453,18 @@ def model_items(tasks, current_project: str = ""):
     return sorted(items, key=lambda item: item["updated_at"], reverse=True)
 
 
+def task_has_model_artifacts(task: dict):
+    if task.get("status") != COMPLETE_STATUS:
+        return True
+    run_dir = task_run_dir(task)
+    weights_dir = run_dir / "weights"
+    return (weights_dir / "best.pt").is_file() or (weights_dir / "last.pt").is_file()
+
+
+def visible_train_tasks(tasks):
+    return [task for task in tasks if task_has_model_artifacts(task)]
+
+
 def filtered_queue_tasks(tasks, queue_filter: str):
     if queue_filter == "completed":
         return [task for task in tasks if task.get("status") == COMPLETE_STATUS]
@@ -1077,6 +1089,7 @@ def train(request: Request, tab: str = "", queue: str = "all"):
         tasks = list(reversed(load_tasks()))
     if current_project:
         tasks = [task for task in tasks if task.get("project") == current_project]
+    tasks = visible_train_tasks(tasks)
     queue_filter = train_queue_filter(queue)
     overview = train_overview(tasks)
     response = templates.TemplateResponse(
@@ -1542,6 +1555,7 @@ def train_with_project(request: Request, project: str, tab: str = "", queue: str
         tasks = list(reversed(load_tasks()))
     if current_project:
         tasks = [task for task in tasks if task.get("project") == current_project]
+    tasks = visible_train_tasks(tasks)
     queue_filter = train_queue_filter(queue)
     overview = train_overview(tasks)
     response = templates.TemplateResponse(
