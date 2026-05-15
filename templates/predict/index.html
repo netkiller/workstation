@@ -11,7 +11,7 @@
     <section class="validate-head" aria-labelledby="predict-title">
       <div>
         <h1 id="predict-title">{% if project_name %}项目 {{ project_name }} 预测{% else %}预测{% endif %}</h1>
-        <p>{{ project_name or current_project or "未选择项目" }}</p>
+        <p>预测用于对图片、视频或摄像头输入运行模型推理，查看检测结果。</p>
       </div>
       <div class="model-head-actions">
         <a class="secondary-button" href="/model{% if current_project %}/{{ current_project }}{% endif %}">返回模型</a>

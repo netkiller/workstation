@@ -58,6 +58,9 @@
                   <a href="{{ resources_base }}/server/{{ item.id }}/sftp" data-resource-action aria-label="通过 SFTP 管理 {{ item.name }} 文件">SFTP</a>
                   <a href="{{ resources_base }}/check?server={{ item.id }}" data-resource-action aria-label="检查 {{ item.name }} 工具环境">检查</a>
                   <button type="button" data-resource-action data-edit-resource aria-label="编辑 {{ item.name }}">编辑</button>
+                  <form method="post" action="{{ resources_base }}/server/{{ item.id }}/delete" data-resource-action data-delete-resource data-resource-name="{{ item.name }}">
+                    <button type="submit" class="resource-danger-action" aria-label="删除 {{ item.name }}">删除</button>
+                  </form>
                 </div>
                 <dl class="resource-server-specs">
                   <div>
@@ -321,6 +324,14 @@
           const card = button.closest("[data-href]");
           setFormMode("edit", card);
           dialog?.showModal();
+        });
+      });
+      document.querySelectorAll("[data-delete-resource]").forEach(form => {
+        form.addEventListener("submit", event => {
+          const name = form.dataset.resourceName || "该算力服务器";
+          if (!confirm(`确认删除 ${name}？`)) {
+            event.preventDefault();
+          }
         });
       });
       document.querySelectorAll("[data-href]").forEach(card => {

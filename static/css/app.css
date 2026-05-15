@@ -1317,11 +1317,27 @@ main > :where(
   gap: 8px;
 }
 
+.resource-server-actions form {
+  margin: 0;
+}
+
+.resource-server button.resource-danger-action {
+  color: #b42318;
+  border-color: #fed7d7;
+  background: #fffafa;
+}
+
 .resource-server a:hover,
 .resource-server button:hover,
 .resource-back-link:hover {
   background: #e6f0ff;
   color: #243b53;
+}
+
+.resource-server button.resource-danger-action:hover {
+  color: #8a1f14;
+  border-color: #f5b5b5;
+  background: #fff1f1;
 }
 
 .resource-alert {

@@ -11,7 +11,7 @@
     <section class="validate-head" aria-labelledby="validate-title">
       <div>
         <h1 id="validate-title">{% if project_name %}项目 {{ project_name }} 验证{% else %}验证{% endif %}</h1>
-        <p>{{ project_name or current_project or "未选择项目" }}</p>
+        <p>验证用于使用已训练模型评估数据集表现，输出 Precision、Recall、mAP 等指标。</p>
       </div>
       <div class="model-head-actions">
         <a class="secondary-button" href="/model{% if current_project %}/{{ current_project }}{% endif %}">返回模型</a>

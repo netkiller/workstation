@@ -1026,6 +1026,21 @@ async def update_resource(resource_id: str, request: Request, project: str = "")
     return RedirectResponse(url=resource_detail_url(current_project, resource_id), status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/resources/server/{resource_id}/delete")
+@router.post("/resources/{project}/server/{resource_id}/delete")
+async def delete_resource(resource_id: str, request: Request, project: str = ""):
+    workspace = workspace_path()
+    login_response = require_team_login(request, workspace)
+    if login_response:
+        return login_response
+    current_project = current_project_from_request(request, workspace, project)
+    items = read_resources(workspace)
+    next_items = [item for item in items if item["id"] != resource_id]
+    if len(next_items) != len(items):
+        write_resources(workspace, next_items)
+    return RedirectResponse(url=resources_base(current_project), status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/resources")
 @router.post("/resources/{project}")
 async def add_resource(request: Request, project: str = ""):

@@ -11,7 +11,7 @@
     <section class="train-head">
       <div>
         <h1>{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}</h1>
-        <p>{{ current_project_name or current_project or "未选择项目" }}</p>
+        <p>训练用于基于数据集生成模型权重，并持续记录轮次、损失和评估指标。</p>
         {% if demo_mode %}
           <p class="demo-note">当前为演示模式，不会启动训练。</p>
         {% endif %}
