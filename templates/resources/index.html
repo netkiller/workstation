@@ -227,11 +227,13 @@
             <input name="use_private_key" type="checkbox" data-private-key-toggle>
             <span>私钥证书</span>
           </label>
-          <textarea name="private_key" rows="6" placeholder="粘贴 OpenSSH 私钥，例如 -----BEGIN OPENSSH PRIVATE KEY-----" disabled data-private-key-text></textarea>
-          <label class="file-upload-label">
-            <span>上传私钥证书</span>
-            <input type="file" accept=".pem,.key,.txt,.pub,*/*" disabled data-private-key-file>
-          </label>
+          <div class="private-key-fields" data-private-key-fields hidden>
+            <textarea name="private_key" rows="6" placeholder="粘贴 OpenSSH 私钥，例如 -----BEGIN OPENSSH PRIVATE KEY-----" disabled data-private-key-text></textarea>
+            <label class="file-upload-label">
+              <span>上传私钥证书</span>
+              <input type="file" accept=".pem,.key,.txt,.pub,*/*" disabled data-private-key-file>
+            </label>
+          </div>
         </div>
         <label>
           <span>备注</span>
@@ -252,6 +254,8 @@
       const formTitle = document.querySelector("[data-resource-form-title]");
       const formCopy = document.querySelector("[data-resource-form-copy]");
       const formSubmit = document.querySelector("[data-resource-form-submit]");
+      const privateKeyPanel = document.querySelector(".private-key-panel");
+      const privateKeyFields = document.querySelector("[data-private-key-fields]");
       const privateKeyToggle = document.querySelector("[data-private-key-toggle]");
       const privateKeyText = document.querySelector("[data-private-key-text]");
       const privateKeyFile = document.querySelector("[data-private-key-file]");
@@ -260,6 +264,8 @@
       function setPrivateKeyEnabled(enabled) {
         if (!privateKeyToggle || !privateKeyText || !privateKeyFile) return;
         privateKeyToggle.checked = enabled;
+        privateKeyPanel?.classList.toggle("is-enabled", enabled);
+        if (privateKeyFields) privateKeyFields.hidden = !enabled;
         privateKeyText.disabled = !enabled;
         privateKeyFile.disabled = !enabled;
         if (passwordInput) {

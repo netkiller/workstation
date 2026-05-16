@@ -462,6 +462,32 @@ def task_has_model_artifacts(task: dict):
     return (weights_dir / "best.pt").is_file() or (weights_dir / "last.pt").is_file()
 
 
+def task_has_training_output(task: dict):
+    run_dir = task_run_dir(task)
+    weights_dir = run_dir / "weights"
+    return (
+        (weights_dir / "best.pt").is_file()
+        or (weights_dir / "last.pt").is_file()
+        or (run_dir / "results.csv").is_file()
+    )
+
+
+def read_exit_code(path: Path, timeout: float = 5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            text = ""
+        if text:
+            try:
+                return int(text)
+            except ValueError:
+                return 1
+        time.sleep(0.2)
+    return None
+
+
 def visible_train_tasks(tasks):
     return [task for task in tasks if task_has_model_artifacts(task)]
 
@@ -493,7 +519,7 @@ def task_progress(task: dict):
     if status_value == "进行中":
         return 50
     if status_value in {"失败", "取消", "演示模式"}:
-        return 100
+        return 0
     return 0
 
 
@@ -1046,8 +1072,12 @@ def remote_train_command(task, remote_yaml: str, remote_runs_root: str):
     return command
 
 
-def tmux_session_name(task_id: str):
+def train_session_name(task_id: str):
     return f"yoloutils_{task_id}"
+
+
+def tmux_session_name(task_id: str):
+    return train_session_name(task_id)
 
 
 def shell_join(command: list[str]):
@@ -1059,8 +1089,16 @@ def tmux_wrap_command(command: str, log_path: str, exit_path: str, cwd: str = ""
     return f"{prefix}{command} >> {shlex.quote(log_path)} 2>&1; printf %s $? > {shlex.quote(exit_path)}"
 
 
+def local_session_backend():
+    if shutil.which("tmux"):
+        return "tmux"
+    if shutil.which("screen"):
+        return "screen"
+    return ""
+
+
 def local_tmux_available():
-    return shutil.which("tmux") is not None
+    return local_session_backend() == "tmux"
 
 
 def remote_command_output(client, command: str):
@@ -1070,9 +1108,66 @@ def remote_command_output(client, command: str):
     return stdout.channel.recv_exit_status(), output, error
 
 
-def remote_tmux_available(client):
+def remote_session_backend(client):
     code, _, _ = remote_command_output(client, "command -v tmux >/dev/null 2>&1")
-    return code == 0
+    if code == 0:
+        return "tmux"
+    code, _, _ = remote_command_output(client, "command -v screen >/dev/null 2>&1")
+    if code == 0:
+        return "screen"
+    return ""
+
+
+def remote_tmux_available(client):
+    return remote_session_backend(client) == "tmux"
+
+
+def session_start_command(backend: str, session: str, wrapped_command: str):
+    if backend == "tmux":
+        return ["tmux", "new-session", "-d", "-s", session, wrapped_command]
+    if backend == "screen":
+        return ["screen", "-dmS", session, "sh", "-lc", wrapped_command]
+    return []
+
+
+def remote_session_start_command(backend: str, session: str, wrapped_command: str):
+    if backend == "tmux":
+        return f"tmux new-session -d -s {shlex.quote(session)} {shlex.quote(wrapped_command)}"
+    if backend == "screen":
+        return f"screen -dmS {shlex.quote(session)} sh -lc {shlex.quote(wrapped_command)}"
+    return ""
+
+
+def session_has_command(backend: str, session: str):
+    if backend == "tmux":
+        return ["tmux", "has-session", "-t", session]
+    if backend == "screen":
+        return ["screen", "-S", session, "-Q", "select", "."]
+    return []
+
+
+def remote_session_has_command(backend: str, session: str):
+    if backend == "tmux":
+        return f"tmux has-session -t {shlex.quote(session)} >/dev/null 2>&1"
+    if backend == "screen":
+        return f"screen -S {shlex.quote(session)} -Q select . >/dev/null 2>&1"
+    return ""
+
+
+def kill_session_command(backend: str, session: str):
+    if backend == "tmux":
+        return ["tmux", "kill-session", "-t", session]
+    if backend == "screen":
+        return ["screen", "-S", session, "-X", "quit"]
+    return []
+
+
+def remote_kill_session_command(backend: str, session: str):
+    if backend == "tmux":
+        return f"tmux kill-session -t {shlex.quote(session)} >/dev/null 2>&1"
+    if backend == "screen":
+        return f"screen -S {shlex.quote(session)} -X quit >/dev/null 2>&1"
+    return ""
 
 
 def read_remote_text(sftp, path: str):
@@ -1184,10 +1279,13 @@ def run_remote_task(task):
         sftp = client.open_sftp()
         remote_home = remote_home_dir(client, sftp)
         append_log(task_id, f"远程 Home：{remote_home}\n")
-        if not remote_tmux_available(client):
-            append_log(task_id, "远程服务器未安装 tmux，无法启动持久训练。请先安装 tmux。\n")
+        backend = remote_session_backend(client)
+        if not backend:
+            append_log(task_id, "远程服务器未安装 tmux 或 screen，无法启动持久训练。请先安装其中一个。\n")
             update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
             return
+        if backend == "screen":
+            append_log(task_id, "远程服务器未安装 tmux，使用 screen 启动持久训练。\n")
         remote_dataset_path = expand_remote_path(remote_dataset_path, remote_home)
         remote_base_dir = posixpath.join(remote_home, ".yoloutils")
         remote_work_dir = posixpath.join(remote_base_dir, "train")
@@ -1207,19 +1305,19 @@ def run_remote_task(task):
 
         command = remote_train_command(task, remote_yaml, remote_runs_root)
         shell_command = shell_join(command)
-        session = tmux_session_name(task_id)
+        session = train_session_name(task_id)
         remote_command_output(client, f": > {shlex.quote(remote_log)}; rm -f {shlex.quote(remote_exit)}")
-        tmux_command = tmux_wrap_command(shell_command, remote_log, remote_exit, remote_work_dir)
-        start_command = f"tmux new-session -d -s {shlex.quote(session)} {shlex.quote(tmux_command)}"
+        wrapped_command = tmux_wrap_command(shell_command, remote_log, remote_exit, remote_work_dir)
+        start_command = remote_session_start_command(backend, session, wrapped_command)
         append_log(task_id, f"远程数据集：{remote_dataset_path}\n")
         append_log(task_id, "$ " + start_command + "\n\n")
         code, output, error = remote_command_output(client, start_command)
         if code != 0:
             append_log(task_id, (output + error).strip() + "\n")
-            append_log(task_id, f"tmux 启动失败，退出码: {code}\n")
+            append_log(task_id, f"{backend} 启动失败，退出码: {code}\n")
             update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
             return
-        running_processes[task_id] = {"type": "remote-tmux", "client": client, "session": session}
+        running_processes[task_id] = {"type": f"remote-{backend}", "backend": backend, "client": client, "session": session}
         remote_log_offset = 0
         try:
             while True:
@@ -1227,7 +1325,7 @@ def run_remote_task(task):
                 if len(text) > remote_log_offset:
                     append_log(task_id, text[remote_log_offset:])
                     remote_log_offset = len(text)
-                code, _, _ = remote_command_output(client, f"tmux has-session -t {shlex.quote(session)} >/dev/null 2>&1")
+                code, _, _ = remote_command_output(client, remote_session_has_command(backend, session))
                 if code != 0:
                     break
                 time.sleep(1)
@@ -1274,30 +1372,31 @@ def run_task(task):
         append_log(task_id, "yolo 命令不存在，请先安装 ultralytics 或确认虚拟环境 PATH。\n")
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
         return
-    if not local_tmux_available():
-        append_log(task_id, "本机未安装 tmux，无法启动持久训练。请先安装 tmux。\n")
+    backend = local_session_backend()
+    if not backend:
+        append_log(task_id, "本机未安装 tmux 或 screen，无法启动持久训练。请先安装其中一个。\n")
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
         return
-    session = tmux_session_name(task_id)
+    if backend == "screen":
+        append_log(task_id, "本机未安装 tmux，使用 screen 启动持久训练。\n")
+    session = train_session_name(task_id)
     exit_path = log_file(task_id).with_suffix(".exit")
     exit_path.unlink(missing_ok=True)
-    tmux_command = tmux_wrap_command(shell_join(command), str(log_file(task_id)), str(exit_path), str(workspace_path()))
-    start_command = ["tmux", "new-session", "-d", "-s", session, tmux_command]
+    wrapped_command = tmux_wrap_command(shell_join(command), str(log_file(task_id)), str(exit_path), str(workspace_path()))
+    start_command = session_start_command(backend, session, wrapped_command)
     try:
         append_log(task_id, "$ " + shell_join(start_command) + "\n\n")
         started = subprocess.run(start_command, cwd=workspace_path(), text=True, capture_output=True)
         if started.returncode != 0:
             append_log(task_id, (started.stdout + started.stderr).strip() + "\n")
-            append_log(task_id, f"tmux 启动失败，退出码: {started.returncode}\n")
+            append_log(task_id, f"{backend} 启动失败，退出码: {started.returncode}\n")
             update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
             return
-        running_processes[task_id] = {"type": "local-tmux", "session": session}
-        while subprocess.run(["tmux", "has-session", "-t", session], capture_output=True).returncode == 0:
+        running_processes[task_id] = {"type": f"local-{backend}", "backend": backend, "session": session}
+        has_command = session_has_command(backend, session)
+        while has_command and subprocess.run(has_command, capture_output=True).returncode == 0:
             time.sleep(1)
-        try:
-            return_code = int(exit_path.read_text(encoding="utf-8", errors="replace").strip())
-        except (OSError, ValueError):
-            return_code = 1
+        return_code = read_exit_code(exit_path)
     except Exception as error:
         append_log(task_id, f"\n训练启动失败: {error}\n")
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
@@ -1306,7 +1405,12 @@ def run_task(task):
         running_processes.pop(task_id, None)
         exit_path.unlink(missing_ok=True)
 
-    status_text = "完成" if return_code == 0 else "失败"
+    if return_code is None and task_has_training_output(task):
+        return_code = 0
+        append_log(task_id, "\n未读取到退出码，但已发现训练输出文件，按完成处理。\n")
+    if return_code is None:
+        return_code = 1
+    status_text = COMPLETE_STATUS if return_code == 0 else "失败"
     append_log(task_id, f"\n进程退出码: {return_code}\n")
     update_task(task_id, status=status_text, finished_at=datetime.now().isoformat(timespec="seconds"))
 
@@ -1401,20 +1505,18 @@ def train_new_context(request: Request, workspace: Path, project: str, dataset_k
     }
 
 
-@router.get("/model/train")
-@router.get("/train")
-def train(request: Request, tab: str = "", queue: str = "all"):
-    project = request.query_params.get("project", "")
-    if project:
-        url = f"/model/{project}/train"
-        params = []
-        if queue != "all":
-            params.append(f"queue={queue}")
-        if params:
-            url += "?" + "&".join(params)
-        return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
-    workspace = workspace_path()
-    current_project = request.cookies.get("current_project", "")
+def train_index_response(
+    request: Request,
+    workspace: Path,
+    current_project: str,
+    queue: str = "all",
+    dataset: str = "",
+    is_remote: bool = False,
+    open_dialog: bool = False,
+    train_error: str = "",
+    name_value: str = "",
+    status_code: int = 200,
+):
     with queue_lock:
         tasks = list(reversed(load_tasks()))
     if current_project:
@@ -1422,6 +1524,7 @@ def train(request: Request, tab: str = "", queue: str = "all"):
     tasks = visible_train_tasks(tasks)
     queue_filter = train_queue_filter(queue)
     overview = train_overview(tasks, workspace)
+    form_context = train_new_context(request, workspace, current_project, dataset, is_remote, train_error, name_value)
     response = templates.TemplateResponse(
         request=request,
         name="train/index.html",
@@ -1429,7 +1532,7 @@ def train(request: Request, tab: str = "", queue: str = "all"):
             "request": request,
             "workspace": workspace,
             "tasks": tasks,
-            "queue_tasks": [task_card_view(task) for task in filtered_queue_tasks(tasks, queue_filter)],
+            "queue_tasks": [task_card_view(task) for task in tasks],
             "models": model_items(tasks, current_project),
             **overview,
             "queue_filter": queue_filter,
@@ -1438,12 +1541,45 @@ def train(request: Request, tab: str = "", queue: str = "all"):
             "current_project": current_project,
             "current_project_name": display_project_name(workspace, current_project),
             "demo_mode": demo_mode_enabled(),
-            **header_context(request, workspace),
+            "train_dialog_open": open_dialog or bool(train_error),
+            **form_context,
         },
+        status_code=status_code,
     )
     if current_project:
         response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
     return response
+
+
+@router.get("/model/train")
+@router.get("/train")
+def train(request: Request, tab: str = "", queue: str = "all", dataset: str = "", remote: str = "", train_dialog: str = ""):
+    project = request.query_params.get("project", "")
+    if project:
+        url = f"/model/{project}/train"
+        params = []
+        if queue != "all":
+            params.append(("queue", queue))
+        if dataset:
+            params.append(("dataset", dataset))
+        if remote == "1":
+            params.append(("remote", "1"))
+        if train_dialog == "1":
+            params.append(("train_dialog", "1"))
+        if params:
+            url += "?" + urlencode(params)
+        return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
+    workspace = workspace_path()
+    current_project = request.cookies.get("current_project", "")
+    return train_index_response(
+        request,
+        workspace,
+        current_project,
+        queue=queue,
+        dataset=(dataset or "").strip(),
+        is_remote=remote == "1",
+        open_dialog=train_dialog == "1",
+    )
 
 
 def find_task(task_id: str):
@@ -1617,59 +1753,6 @@ def train_model_file(task_id: str, file_path: str, project: str = ""):
     return FileResponse(path)
 
 
-@router.get("/model/train/new")
-@router.get("/train/new")
-def new_train(request: Request, dataset: str = ""):
-    project = request.query_params.get("project", "")
-    is_remote = request.query_params.get("remote") == "1"
-    requested_dataset = (dataset or "").strip()
-    if project:
-        url = f"/model/{project}/train/new"
-        params = []
-        if requested_dataset:
-            params.append(("dataset", requested_dataset))
-        if is_remote:
-            params.append(("remote", "1"))
-        if params:
-            url += "?" + urlencode(params)
-        return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
-    workspace = workspace_path()
-    current_project = request.cookies.get("current_project", "")
-    response = templates.TemplateResponse(
-        request=request,
-        name="train/new.html",
-        context=train_new_context(request, workspace, current_project, requested_dataset, is_remote),
-    )
-    if current_project:
-        response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
-    return response
-
-
-@router.get("/model/{project}/train/new")
-@router.get("/model/train/new/{project}")
-@router.get("/train/new/{project}")
-def new_train_with_project(request: Request, project: str, dataset: str = ""):
-    requested_dataset = (dataset or "").strip()
-    if request.url.path.startswith("/model/train/new/"):
-        params = []
-        if requested_dataset:
-            params.append(("dataset", requested_dataset))
-        if request.query_params.get("remote") == "1":
-            params.append(("remote", "1"))
-        suffix = "?" + urlencode(params) if params else ""
-        return RedirectResponse(url=f"/model/{project}/train/new{suffix}", status_code=status.HTTP_303_SEE_OTHER)
-    workspace = workspace_path()
-    current_project = project
-    is_remote = request.query_params.get("remote") == "1"
-    response = templates.TemplateResponse(
-        request=request,
-        name="train/new.html",
-        context=train_new_context(request, workspace, current_project, requested_dataset, is_remote),
-    )
-    response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
-    return response
-
-
 @router.post("/model/train")
 @router.post("/train")
 async def create_train(request: Request):
@@ -1687,8 +1770,8 @@ async def create_train(request: Request):
     is_remote = dataset_source == "remote" or (not dataset_source and form.get("train_scope", ["local"])[0] == "remote")
     dataset_item = selected_remote_dataset(project, dataset_value) if is_remote else selected_dataset(project, dataset_value)
     if dataset_item is None:
-        base_url = f"/model/{project}/train/new" if project else "/model/train/new"
-        params = []
+        base_url = f"/model/{project}/train" if project else "/model/train"
+        params = [("train_dialog", "1")]
         if dataset:
             params.append(("dataset", dataset))
         if is_remote:
@@ -1704,21 +1787,17 @@ async def create_train(request: Request):
     task_name = form.get("name", ["train"])[0].strip() or "train"
     if train_name_exists(dataset_item["project"], task_name):
         workspace = workspace_path()
-        response = templates.TemplateResponse(
-            request=request,
-            name="train/new.html",
-            context=train_new_context(
-                request,
-                workspace,
-                dataset_item["project"],
-                dataset,
-                is_remote,
-                error="任务名称已存在，请换一个名称。",
-                name_value=task_name,
-            ),
+        response = train_index_response(
+            request,
+            workspace,
+            dataset_item["project"],
+            dataset=dataset,
+            is_remote=is_remote,
+            open_dialog=True,
+            train_error="任务名称已存在，请换一个名称。",
+            name_value=task_name,
             status_code=400,
         )
-        response.set_cookie("current_project", dataset_item["project"], httponly=True, samesite="lax")
         return response
     task_id = uuid4().hex[:12]
     task = {
@@ -1815,13 +1894,19 @@ def train_task_logs(task_id: str, offset: int = 0):
 def cancel_task(task_id: str):
     process = running_processes.get(task_id)
     if process:
-        if isinstance(process, dict) and process.get("type") == "local-tmux":
-            subprocess.run(["tmux", "kill-session", "-t", str(process.get("session") or "")], capture_output=True)
-        elif isinstance(process, dict) and process.get("type") == "remote-tmux":
+        if isinstance(process, dict) and str(process.get("type") or "").startswith("local-"):
+            backend = str(process.get("backend") or str(process.get("type") or "").removeprefix("local-") or "tmux")
+            command = kill_session_command(backend, str(process.get("session") or ""))
+            if command:
+                subprocess.run(command, capture_output=True)
+        elif isinstance(process, dict) and str(process.get("type") or "").startswith("remote-"):
             client = process.get("client")
+            backend = str(process.get("backend") or str(process.get("type") or "").removeprefix("remote-") or "tmux")
             session = str(process.get("session") or "")
             if client and session:
-                client.exec_command(f"tmux kill-session -t {shlex.quote(session)} >/dev/null 2>&1")
+                command = remote_kill_session_command(backend, session)
+                if command:
+                    client.exec_command(command)
         elif hasattr(process, "poll") and process.poll() is None:
             process.terminate()
         elif hasattr(process, "close"):
@@ -1871,37 +1956,29 @@ def rerun_task(task_id: str):
 @router.get("/model/train/{project}")
 @router.get("/model/{project}/train")
 @router.get("/train/{project}")
-def train_with_project(request: Request, project: str, tab: str = "", queue: str = "all"):
+def train_with_project(request: Request, project: str, tab: str = "", queue: str = "all", dataset: str = "", remote: str = "", train_dialog: str = ""):
     if request.url.path.startswith("/model/train/"):
-        suffix = f"?queue={queue}" if queue != "all" else ""
+        params = []
+        if queue != "all":
+            params.append(("queue", queue))
+        if dataset:
+            params.append(("dataset", dataset))
+        if remote == "1":
+            params.append(("remote", "1"))
+        if train_dialog == "1":
+            params.append(("train_dialog", "1"))
+        suffix = "?" + urlencode(params) if params else ""
         return RedirectResponse(url=f"/model/{project}/train{suffix}", status_code=status.HTTP_303_SEE_OTHER)
     workspace = workspace_path()
     current_project = project
-    with queue_lock:
-        tasks = list(reversed(load_tasks()))
-    if current_project:
-        tasks = [task for task in tasks if task.get("project") == current_project]
-    tasks = visible_train_tasks(tasks)
-    queue_filter = train_queue_filter(queue)
-    overview = train_overview(tasks, workspace)
-    response = templates.TemplateResponse(
-        request=request,
-        name="train/index.html",
-        context={
-            "request": request,
-            "workspace": workspace,
-            "tasks": tasks,
-            "queue_tasks": [task_card_view(task) for task in filtered_queue_tasks(tasks, queue_filter)],
-            "models": model_items(tasks, current_project),
-            **overview,
-            "queue_filter": queue_filter,
-            "active_page": "model",
-            "model_active": "train",
-            "current_project": current_project,
-            "current_project_name": display_project_name(workspace, current_project),
-            "demo_mode": demo_mode_enabled(),
-            **header_context(request, workspace),
-        },
+    response = train_index_response(
+        request,
+        workspace,
+        current_project,
+        queue=queue,
+        dataset=(dataset or "").strip(),
+        is_remote=remote == "1",
+        open_dialog=train_dialog == "1",
     )
     response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
     return response

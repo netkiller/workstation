@@ -93,7 +93,8 @@
 }
 
 .train-tab,
-.queue-filter a {
+.queue-filter a,
+.queue-filter button {
   height: 36px;
   display: inline-flex;
   align-items: center;
@@ -106,19 +107,22 @@
   color: var(--muted);
   font-weight: 650;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .train-tab:hover,
-.queue-filter a:hover {
-  background: #eef6ff;
-  color: var(--text);
+.queue-filter a:hover,
+.queue-filter button:hover {
+  background: #eef6ff !important;
+  color: var(--text) !important;
 }
 
 .train-tab.active,
-.queue-filter a.active {
-  border-color: var(--line);
-  background: #ffffff;
-  color: var(--accent);
+.queue-filter a.active,
+.queue-filter button.active {
+  border-color: var(--line) !important;
+  background: #ffffff !important;
+  color: var(--accent) !important;
   transform: translateY(1px);
 }
 
@@ -675,13 +679,8 @@
   background: var(--task-soft);
 }
 
-.task-card.completed-task {
-  cursor: pointer;
-}
-
-.task-card.completed-task:hover {
-  border-color: var(--task-accent);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+.task-card[hidden] {
+  display: none !important;
 }
 
 .task-list .task-card:nth-child(6n + 1) {
@@ -931,6 +930,18 @@
   background: rgba(255, 255, 255, .72);
 }
 
+.task-epoch-card[data-model-url] {
+  cursor: pointer;
+}
+
+.task-epoch-card[data-model-url]:hover,
+.task-epoch-card[data-model-url]:focus-visible {
+  border-color: var(--task-accent);
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+  outline: none;
+}
+
 .task-epoch-head {
   display: flex;
   align-items: center;
@@ -1148,6 +1159,21 @@
   background: #ffffff;
 }
 
+.train-create-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  margin: 0;
+  transform: translate(-50%, -50%);
+  overflow: auto;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .22);
+}
+
+.train-create-dialog::backdrop {
+  background: rgb(15 23 42 / 38%);
+}
+
 .train-dialog form {
   display: grid;
   gap: 16px;
@@ -1168,39 +1194,28 @@
 
 .dialog-secondary-button,
 .dialog-primary-button {
-  min-width: 96px;
-  height: 40px;
-  display: inline-flex;
+  min-width: 96px !important;
+  height: 40px !important;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  padding: 0 18px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  padding: 0 18px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #334e68 !important;
   cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-  line-height: 1;
-  text-decoration: none;
+  font: inherit !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  line-height: 1 !important;
+  text-decoration: none !important;
 }
 
-.dialog-secondary-button {
-  background: #ffffff;
-  color: #334e68;
-}
-
-.dialog-primary-button {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
-}
-
-.dialog-secondary-button:hover {
-  background: #f8fafc;
-}
-
+.dialog-secondary-button:hover,
 .dialog-primary-button:hover {
-  background: #1557ad;
-  border-color: #1557ad;
+  background: #e6f0ff !important;
+  color: #243b53 !important;
 }
 
 .dialog-primary-button:disabled {
@@ -1212,6 +1227,29 @@
   color: var(--muted);
   font-size: 24px;
   text-decoration: none;
+}
+
+.train-dialog-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.train-dialog-close:hover {
+  border-color: var(--line);
+  background: #f8fafc;
+  color: var(--text);
 }
 
 .train-dialog label {
@@ -1260,6 +1298,10 @@
   border-radius: 8px;
   background: #f8fbff;
   font-size: 13px;
+}
+
+.remote-train-target[hidden] {
+  display: none !important;
 }
 
 .remote-train-target span {

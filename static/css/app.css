@@ -760,11 +760,9 @@ main > :where(
 }
 
 .resources-main {
-  width: calc(100vw - 32px);
-  max-width: none;
   min-height: calc(100dvh - 84px);
   overflow: visible;
-  padding: 28px 40px;
+  padding: 24px 0;
 }
 
 .resources-layout {
@@ -1000,6 +998,29 @@ main > :where(
   margin: 0;
 }
 
+.resource-dialog .dialog-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.resource-dialog .dialog-close:hover {
+  border-color: var(--line);
+  background: #f8fafc;
+  color: var(--text);
+}
+
 .resource-form,
 .resource-form label {
   display: grid;
@@ -1056,6 +1077,15 @@ main > :where(
 .private-key-panel {
   display: grid;
   gap: 8px;
+}
+
+.private-key-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.private-key-fields[hidden] {
+  display: none !important;
 }
 
 .checkbox-label {
