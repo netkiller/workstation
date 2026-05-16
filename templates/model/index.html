@@ -4,10 +4,42 @@
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
-  <link rel="stylesheet" href="/static/css/train.css?v=20260516-model-downloads-top">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260516-model-metric-radars">
 {% endblock %}
 
 {% block content %}
+  {% macro radar_panel(radar, label) %}
+    <div class="model-entry-visual model-radar-visual" aria-label="{{ label }}">
+      <svg viewBox="0 0 150 132" role="img" aria-label="{{ label }}">
+        {% for polygon in radar.grid %}
+          <polygon class="chart-radar-grid" points="{{ polygon }}"></polygon>
+        {% endfor %}
+        {% for axis in radar.axes %}
+          <line class="chart-radar-axis" x1="75" y1="66" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
+          <text class="chart-radar-label" x="{{ '%.1f'|format(axis.label_x) }}" y="{{ '%.1f'|format(axis.label_y) }}">{{ axis.label }}</text>
+        {% endfor %}
+        {% for series in radar.series %}
+          <g class="model-radar-series" data-radar-series="{{ loop.index0 }}" style="--series-color: {{ series.color }}">
+            <polygon class="chart-radar model-radar-polygon" points="{{ series.polygon }}"></polygon>
+            <polyline class="chart-radar-line" points="{{ series.closed_polygon }}"></polyline>
+            {% for point in series.points %}
+              <circle class="chart-radar-point" cx="{{ '%.1f'|format(point.x) }}" cy="{{ '%.1f'|format(point.y) }}" r="2.2"></circle>
+            {% endfor %}
+          </g>
+        {% endfor %}
+      </svg>
+      <div class="model-radar-legend" aria-label="模型图例">
+        {% for series in radar.series %}
+          <button type="button" title="{{ series.name }}" data-radar-toggle="{{ loop.index0 }}" aria-pressed="true">
+            <i style="--series-color: {{ series.color }}"></i><b>{{ series.name }}</b>
+          </button>
+        {% else %}
+          <span class="muted">暂无模型指标</span>
+        {% endfor %}
+      </div>
+    </div>
+  {% endmacro %}
+
   <main class="validate-main model-overview-main">
     <section class="validate-head" aria-labelledby="model-title">
       <div>
@@ -23,74 +55,29 @@
       <article class="tool-panel model-entry-panel model-entry-train">
         <div class="model-entry-copy">
           <div>
-            <h2>训练</h2>
-            <p>创建训练任务，查看训练队列和训练完成的模型。</p>
+            <h2>综合评估</h2>
+            <p>对比每个模型最后结果的 Epochs、mAP、Precision 和 Recall，快速判断整体训练质量。</p>
           </div>
-          <div class="model-entry-visual" aria-hidden="true">
-            <svg viewBox="0 0 180 92" role="img">
-              <path class="chart-grid" d="M10 22H170M10 48H170M10 74H170"></path>
-              <path class="chart-area" d="M12 74C30 69 42 58 58 61C75 64 82 42 99 45C118 48 127 28 144 31C156 33 163 24 170 18V84H12Z"></path>
-              <path class="chart-line" d="M12 74C30 69 42 58 58 61C75 64 82 42 99 45C118 48 127 28 144 31C156 33 163 24 170 18"></path>
-              <g class="chart-bars">
-                <rect x="22" y="62" width="8" height="18"></rect>
-                <rect x="42" y="55" width="8" height="25"></rect>
-                <rect x="62" y="48" width="8" height="32"></rect>
-                <rect x="82" y="38" width="8" height="42"></rect>
-                <rect x="102" y="31" width="8" height="49"></rect>
-                <rect x="122" y="24" width="8" height="56"></rect>
-              </g>
-            </svg>
-          </div>
+          {{ radar_panel(model_radar, "综合评估雷达图") }}
         </div>
-        <a class="secondary-button model-entry-button" href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}">训练</a>
       </article>
       <article class="tool-panel model-entry-panel model-entry-val">
         <div class="model-entry-copy">
           <div>
-            <h2>验证</h2>
-            <p>执行 YOLO val，输出 mAP、Precision、Recall 指标。</p>
+            <h2>丢失率</h2>
+            <p>展示最后一轮 train/val 的 box、cls、dfl loss，观察各模型误差分布和收敛稳定性。</p>
           </div>
-          <div class="model-entry-visual" aria-hidden="true">
-            <svg viewBox="0 0 180 92" role="img">
-              <circle class="chart-ring-muted" cx="54" cy="46" r="30"></circle>
-              <circle class="chart-ring" cx="54" cy="46" r="30" pathLength="100"></circle>
-              <path class="chart-radar-grid" d="M126 15L164 36L158 78H112L100 36Z"></path>
-              <path class="chart-radar-grid" d="M126 29L151 42L147 68H118L112 42Z"></path>
-              <path class="chart-radar" d="M126 23L157 40L148 70H116L108 38Z"></path>
-              <g class="chart-dots">
-                <circle cx="126" cy="23" r="3"></circle>
-                <circle cx="157" cy="40" r="3"></circle>
-                <circle cx="148" cy="70" r="3"></circle>
-                <circle cx="116" cy="70" r="3"></circle>
-                <circle cx="108" cy="38" r="3"></circle>
-              </g>
-            </svg>
-          </div>
+          {{ radar_panel(loss_radar, "丢失率雷达图") }}
         </div>
-        <a class="secondary-button model-entry-button" href="{% if current_project %}/model/{{ current_project }}/val{% else %}/model/val{% endif %}">验证</a>
       </article>
       <article class="tool-panel model-entry-panel model-entry-predict">
         <div class="model-entry-copy">
           <div>
-            <h2>预测</h2>
-            <p>选择模型后上传图片、视频，或使用摄像头预测。</p>
+            <h2>学习率</h2>
+            <p>对比最后一轮各参数组学习率，辅助判断调度策略、冻结层和优化器状态是否合理。</p>
           </div>
-          <div class="model-entry-visual" aria-hidden="true">
-            <svg viewBox="0 0 180 92" role="img">
-              <rect class="chart-frame" x="16" y="18" width="58" height="46" rx="8"></rect>
-              <rect class="chart-box" x="29" y="30" width="24" height="18" rx="3"></rect>
-              <path class="chart-flow" d="M80 41H111"></path>
-              <path class="chart-flow" d="M103 33L113 41L103 49"></path>
-              <rect class="chart-frame" x="118" y="15" width="46" height="52" rx="8"></rect>
-              <path class="chart-mini-line" d="M126 55C134 45 140 48 146 38C151 30 156 32 160 24"></path>
-              <g class="chart-meter">
-                <rect x="18" y="76" width="138" height="5" rx="2.5"></rect>
-                <rect x="18" y="76" width="104" height="5" rx="2.5"></rect>
-              </g>
-            </svg>
-          </div>
+          {{ radar_panel(lr_radar, "学习率雷达图") }}
         </div>
-        <a class="secondary-button model-entry-button" href="{% if current_project %}/model/{{ current_project }}/predict{% else %}/model/predict{% endif %}">预测</a>
       </article>
     </section>
 
@@ -137,4 +124,20 @@
   {% set footer_id = "stats" %}
   {% set footer_left = workspace %}
   {% include "partials/footer.html" %}
+  <script>
+    (() => {
+      document.querySelectorAll("[data-radar-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const id = button.dataset.radarToggle;
+          const root = button.closest(".model-radar-visual");
+          const active = button.getAttribute("aria-pressed") !== "false";
+          button.setAttribute("aria-pressed", active ? "false" : "true");
+          button.classList.toggle("is-muted", active);
+          root?.querySelectorAll(`[data-radar-series="${id}"]`).forEach((series) => {
+            series.classList.toggle("is-hidden", active);
+          });
+        });
+      });
+    })();
+  </script>
 {% endblock %}

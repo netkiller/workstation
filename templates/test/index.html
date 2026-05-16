@@ -11,7 +11,7 @@
     <section class="test-head" aria-labelledby="test-title">
       <div>
         <h1 id="test-title">{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试评估{% endif %}</h1>
-        <p>使用项目 test/images 文件夹图片，对已训练模型批量推理并生成横向评估表。</p>
+        <p>对已训练模型进行批量推理评估，横向对比识别结果、置信度和模型表现。</p>
       </div>
       <div class="model-head-actions">
         <button class="secondary-button" type="button" data-open-test-dialog>新建测试任务</button>
@@ -98,7 +98,7 @@
       <div class="test-upload-head">
         <div>
           <h2 id="test-upload-title">测试图片</h2>
-          <p>上传测试资源到 test/images，远程算力会同步使用这一份测试数据。</p>
+          <p>上传测试资源，远程算力会同步使用这一份测试数据。</p>
         </div>
         <span class="count" data-test-count>{{ image_count }} 个文件</span>
       </div>

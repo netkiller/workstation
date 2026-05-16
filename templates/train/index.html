@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260516-train-options-3cols">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260516-train-overview-color-text">
 {% endblock %}
 
 {% block content %}
@@ -22,7 +22,7 @@
     </section>
 
     <section class="train-overview" aria-label="训练概览">
-      <div class="train-overview-card">
+      <div class="train-overview-card overview-compute-card">
         <div class="overview-card-head">
           <span>算力分布</span>
           <strong>{{ compute_distribution.total }}</strong>
@@ -38,7 +38,7 @@
           </div>
         </div>
       </div>
-      <div class="train-overview-card">
+      <div class="train-overview-card overview-queue-card">
         <div class="overview-card-head">
           <span>任务队列</span>
           <strong>{{ total_count }}</strong>
@@ -54,7 +54,7 @@
           </div>
         </div>
       </div>
-      <div class="train-overview-card">
+      <div class="train-overview-card overview-scope-card">
         <div class="overview-card-head">
           <span>执行位置</span>
           <strong>{{ "演示" if demo_mode else "" }}</strong>
