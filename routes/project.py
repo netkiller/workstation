@@ -629,6 +629,15 @@ def resource_chart(image_count: int, dataset_count: int, model_count: int):
     }
 
 
+def model_page_count(project_name: str):
+    try:
+        from routes.train import load_tasks, model_items
+
+        return len(model_items(load_tasks(), project_name))
+    except Exception:
+        return 0
+
+
 def read_classes(path: Path):
     if not path.is_file():
         return []
@@ -661,7 +670,7 @@ def project_dashboard(projects: list[dict]):
         total_images += int(annotate.get("images") or 0)
         total_labels += int(annotate.get("labels") or 0)
         total_datasets += int(index.get("datasets", {}).get("count") or 0)
-        total_models += int(index.get("models", {}).get("count") or 0)
+        total_models += model_page_count(path.name)
         total_classes_files += 1 if (path / ANNOTATE_DIR / "classes.txt").is_file() or (path / "classes.txt").is_file() else 0
         for ext, count in (annotate.get("extensions") or {}).items():
             extension_counts[ext] = extension_counts.get(ext, 0) + int(count or 0)
@@ -760,6 +769,19 @@ def project_dashboard(projects: list[dict]):
     }
 
 
+def project_dashboard_payload(path: Path):
+    dashboard = project_dashboard([{"path": path}])
+    return {
+        "progress_percent": dashboard["progress_percent"],
+        "resource_items": dashboard["resource_items"],
+        "resource_chart_style": dashboard["resource_chart_style"],
+        "annotate_items": dashboard["annotate_items"],
+        "annotate_chart_style": dashboard["annotate_chart_style"],
+        "image_type_items": dashboard["image_type_items"],
+        "image_type_chart_style": dashboard["image_type_chart_style"],
+    }
+
+
 def project_items(workspace: Path):
     projects = []
     if not workspace.is_dir():
@@ -776,6 +798,7 @@ def project_items(workspace: Path):
         test_count = int(index.get("test", {}).get("images") or 0)
         dataset_count = int(index.get("datasets", {}).get("count") or 0)
         model_count = int(index.get("models", {}).get("count") or 0)
+        model_resource_count = model_page_count(path.name)
         projects.append(
             {
                 **meta,
@@ -787,7 +810,8 @@ def project_items(workspace: Path):
                 "test_count": test_count,
                 "dataset_count": dataset_count,
                 "model_count": model_count,
-                "resource_chart": resource_chart(image_count, dataset_count, model_count),
+                "model_resource_count": model_resource_count,
+                "resource_chart": resource_chart(image_count, dataset_count, model_resource_count),
             }
         )
     return projects
@@ -1402,7 +1426,12 @@ async def upload_images(directory: str, request: Request):
         [relative_log_entry(path, item) for item in saved],
     )
     index = build_project_index(path)
-    return {"ok": True, "saved": len(saved), "count": int(index.get("annotate", {}).get("images") or 0)}
+    return {
+        "ok": True,
+        "saved": len(saved),
+        "count": int(index.get("annotate", {}).get("images") or 0),
+        "dashboard": project_dashboard_payload(path),
+    }
 
 
 @router.post("/project/{directory}/upload/images/delete")
@@ -1426,7 +1455,12 @@ async def delete_uploaded_images(directory: str):
         [relative_log_entry(path, item) for item in removed],
     )
     index = build_project_index(path)
-    return {"ok": True, "deleted": len(removed), "count": int(index.get("annotate", {}).get("images") or 0)}
+    return {
+        "ok": True,
+        "deleted": len(removed),
+        "count": int(index.get("annotate", {}).get("images") or 0),
+        "dashboard": project_dashboard_payload(path),
+    }
 
 
 @router.post("/project/{directory}/upload/test")

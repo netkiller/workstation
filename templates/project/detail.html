@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260516-dashboard-charts">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260516-project-overview">
 {% endblock %}
 
 {% block content %}
@@ -58,21 +58,21 @@
         <section class="dashboard-card" aria-labelledby="dashboard-title">
           <div class="dashboard-head">
             <div>
-              <h2 id="dashboard-title">Dashboard</h2>
+              <h2 id="dashboard-title">项目概览</h2>
             </div>
-            <div class="dashboard-progress-title">
+            <div class="dashboard-progress-title" data-dashboard-progress-title>
               <span>标注进度</span>
-              <strong>{{ dashboard.progress_percent }}%</strong>
+              <strong data-dashboard-progress-value>{{ dashboard.progress_percent }}%</strong>
             </div>
           </div>
           <div class="dashboard-body">
             <div class="annotation-progress dashboard-progress-block" aria-label="标注进度">
               <div class="progress-track" aria-hidden="true">
-                <span style="width: {{ dashboard.progress_percent }}%"></span>
+                <span data-dashboard-progress-bar style="width: {{ dashboard.progress_percent }}%"></span>
               </div>
             </div>
             <div class="dashboard-chart-grid">
-              <div class="class-dashboard" aria-label="项目资源比例">
+              <div class="class-dashboard" aria-label="项目资源比例" data-dashboard-chart="resource">
                 <h3>资源比例</h3>
                 <span class="dashboard-pie" style="background: {{ dashboard.resource_chart_style }}"></span>
                 <div class="dashboard-legend">
@@ -84,7 +84,7 @@
                   {% endfor %}
                 </div>
               </div>
-              <div class="class-dashboard" aria-label="标注目录资源比例">
+              <div class="class-dashboard" aria-label="标注目录资源比例" data-dashboard-chart="annotate">
                 <h3>标注目录</h3>
                 <span class="dashboard-pie" style="background: {{ dashboard.annotate_chart_style }}"></span>
                 <div class="dashboard-legend">
@@ -96,7 +96,7 @@
                   {% endfor %}
                 </div>
               </div>
-              <div class="class-dashboard" aria-label="图片类型统计">
+              <div class="class-dashboard" aria-label="图片类型统计" data-dashboard-chart="imageTypes">
                 <h3>图片类型</h3>
                 <span class="dashboard-pie" style="background: {{ dashboard.image_type_chart_style }}"></span>
                 <div class="dashboard-legend">
@@ -131,8 +131,12 @@
               <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
               <span>点击上传图片，或拖拽到这里</span>
               <span class="upload-options">
-                <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">🗑</button>
-                <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">▣</button>
+                <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+                </button>
+                <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
+                </button>
               </span>
             </div>
             <a
@@ -159,23 +163,6 @@
             </button>
           </article>
 
-          <article class="upload-panel">
-            <div class="panel-head">
-              <h2>上传模型</h2>
-              <span class="count" data-model-count>{{ project.model_count }} 个文件</span>
-            </div>
-            <div class="drop-zone" data-upload-zone data-upload-kind="model" role="button" tabindex="0">
-              <input type="file" name="files" accept=".pt,.onnx,.engine,.torchscript,.tflite,.mlmodel" multiple hidden data-file-input>
-              <input type="file" name="files" accept=".pt,.onnx,.engine,.torchscript,.tflite,.mlmodel" multiple webkitdirectory directory hidden data-directory-input>
-              <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-              <span>点击上传模型，或拖拽到这里</span>
-              <span class="upload-options">
-                <span>选择文件</span>
-                <button type="button" data-directory-button>选择目录</button>
-              </span>
-            </div>
-            <a class="action-link{% if not project.has_models %} disabled{% endif %}" href="/model/{{ project.directory }}/predict" data-model-action>去推理</a>
-          </article>
         </section>
 
         <section class="sftp-panel" data-sftp-path="{{ project.path }}/annotate" data-remote-user="{{ remote_user }}">
@@ -220,5 +207,5 @@
   {% set footer_console_url = "/project/" ~ project.directory ~ "/logs" %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260516-upload-delete"></script>
+  <script src="/static/js/project.js?v=20260516-project-overview"></script>
 {% endblock %}

@@ -118,6 +118,7 @@
           <div class="pane-header">
             <h2><span class="pane-title-icon">◎</span><span class="pane-title-text">模型</span> <strong id="modelCount" class="pane-title-count">-</strong></h2>
             <div class="collaboration-tools">
+              <button id="uploadModelButton" class="icon-button" title="上传标注模型">＋</button>
               <button id="toggleModelPane" class="icon-button collapse-button" title="折叠/展开模型">⌄</button>
             </div>
           </div>
@@ -238,6 +239,22 @@
     <button type="button" data-directory-action="uppercase"><span class="menu-icon">A</span><span>文件名和扩展转大写</span></button>
     <button type="button" data-directory-action="rename"><span class="menu-icon">✎</span><span>重命名</span></button>
   </div>
+  <div id="modelContextMenu" class="context-menu" hidden>
+    <button type="button" data-model-action="delete"><span class="menu-icon">✕</span><span>删除模型</span></button>
+  </div>
+  <dialog id="modelUploadDialog" class="classes-dialog model-upload-dialog">
+    <form id="modelUploadForm" class="classes-form">
+      <div class="shortcut-title"><span>上传标注模型</span><button id="closeModelUploadDialog" type="button" title="关闭">×</button></div>
+      <label>
+        <span>选择模型文件</span>
+        <input id="modelUploadInput" type="file" name="files" accept=".pt,.onnx,.engine,.torchscript,.tflite,.mlmodel" multiple>
+      </label>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancelModelUploadDialog" type="button">取消</button>
+        <button id="confirmModelUpload" type="submit">上传</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="contextActionDialog" class="context-action-dialog">
     <form id="contextActionForm" class="context-action-form">
       <h3 id="contextActionTitle">确认操作</h3>
@@ -313,6 +330,14 @@
     const modelList = document.getElementById("modelList");
     const modelCount = document.getElementById("modelCount");
     const modelPane = document.getElementById("modelPane");
+    const uploadModelButton = document.getElementById("uploadModelButton");
+    const modelUploadDialog = document.getElementById("modelUploadDialog");
+    const modelUploadForm = document.getElementById("modelUploadForm");
+    const modelUploadInput = document.getElementById("modelUploadInput");
+    const closeModelUploadDialog = document.getElementById("closeModelUploadDialog");
+    const cancelModelUploadDialog = document.getElementById("cancelModelUploadDialog");
+    const confirmModelUpload = document.getElementById("confirmModelUpload");
+    const modelContextMenu = document.getElementById("modelContextMenu");
     const toggleModelPane = document.getElementById("toggleModelPane");
     const modelSplitter = document.getElementById("modelSplitter");
     const collaboration = document.getElementById("collaboration");
@@ -380,6 +405,7 @@
     let histogramExpandedTopHeight = null;
     let histogramExpandedLabelsHeight = null;
     let selectedAutoModel = "";
+    let contextModel = null;
     let autoAnnotateEnabled = false;
     let autoAnnotateRunning = false;
     let expandedModelPaneHeight = 120;
@@ -1027,7 +1053,7 @@
       modelCount.textContent = models.length;
       modelList.innerHTML = "";
       if (!models.length) {
-        modelList.innerHTML = '<div class="model-empty">models 目录暂无模型</div>';
+        modelList.innerHTML = '<div class="model-empty">暂无标注模型</div>';
         selectedAutoModel = "";
         autoAnnotateEnabled = false;
         updateAutoAnnotateButton();
@@ -1041,6 +1067,7 @@
         row.title = model.path;
         row.innerHTML = `<span class="model-name">${escapeHtml(model.filename)}</span><span class="model-meta">${model.size_mb} MB</span>`;
         row.onclick = () => selectAutoModel(model.path, row);
+        row.addEventListener("contextmenu", event => showModelContextMenu(event, model));
         modelList.appendChild(row);
       });
       if (selectedAutoModel) {
@@ -1052,6 +1079,74 @@
         }
       }
       updateAutoAnnotateButton();
+    }
+
+    function openModelUploadDialog() {
+      modelUploadInput.value = "";
+      modelUploadDialog?.showModal();
+      modelUploadInput?.focus();
+    }
+
+    async function uploadAnnotationModels(event) {
+      event.preventDefault();
+      const files = Array.from(modelUploadInput?.files || []);
+      if (!files.length) {
+        alert("请选择模型文件");
+        return;
+      }
+      const formData = new FormData();
+      files.forEach(file => formData.append("files", file, file.name));
+      confirmModelUpload.disabled = true;
+      try {
+        const response = await fetch("/api/models/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.detail || data.error || "上传失败");
+        }
+        modelUploadDialog?.close();
+        await loadAutoModels();
+      } catch (error) {
+        alert(error.message || "上传失败");
+      } finally {
+        confirmModelUpload.disabled = false;
+      }
+    }
+
+    function showModelContextMenu(event, model) {
+      event.preventDefault();
+      event.stopPropagation();
+      contextModel = model;
+      imageContextMenu.hidden = true;
+      treeContextMenu.hidden = true;
+      modelContextMenu.hidden = false;
+      const menuWidth = modelContextMenu.offsetWidth || 218;
+      const menuHeight = modelContextMenu.offsetHeight || 44;
+      modelContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - menuWidth - 8)}px`;
+      modelContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - menuHeight - 8)}px`;
+    }
+
+    async function deleteContextModel() {
+      if (!contextModel?.path) return;
+      const filename = contextModel.filename || contextModel.path;
+      modelContextMenu.hidden = true;
+      if (!confirm(`确认删除模型 ${filename}？`)) return;
+      try {
+        const data = await postJson("/api/models/delete", {path: contextModel.path});
+        if (data.ok === false) {
+          throw new Error(data.detail || data.error || "删除失败");
+        }
+        if (selectedAutoModel === contextModel.path) {
+          selectedAutoModel = "";
+          autoAnnotateEnabled = false;
+        }
+        contextModel = null;
+        await loadAutoModels();
+      } catch (error) {
+        alert(error.message || "删除失败");
+      }
     }
 
     async function loadAutoModels() {
@@ -1453,6 +1548,10 @@
       classesForm?.addEventListener("submit", saveClasses);
       closeClassesDialog?.addEventListener("click", () => classesDialog?.close());
       cancelClassesDialog?.addEventListener("click", () => classesDialog?.close());
+      uploadModelButton?.addEventListener("click", openModelUploadDialog);
+      modelUploadForm?.addEventListener("submit", uploadAnnotationModels);
+      closeModelUploadDialog?.addEventListener("click", () => modelUploadDialog?.close());
+      cancelModelUploadDialog?.addEventListener("click", () => modelUploadDialog?.close());
       await loadConfig();
       await loadTree();
       await loadLabels();
@@ -1576,6 +1675,7 @@
     function hideContextMenu() {
       imageContextMenu.hidden = true;
       treeContextMenu.hidden = true;
+      modelContextMenu.hidden = true;
     }
 
     function showContextMenu(event) {
@@ -1584,6 +1684,7 @@
       const targetButton = event.target instanceof Element ? event.target.closest("[data-path]") : null;
       contextFilePath = targetButton?.dataset.path || currentPath;
       treeContextMenu.hidden = true;
+      modelContextMenu.hidden = true;
       imageContextMenu.hidden = false;
       const menuWidth = imageContextMenu.offsetWidth || 218;
       const menuHeight = imageContextMenu.offsetHeight || 240;
@@ -1596,6 +1697,7 @@
       event.stopPropagation();
       contextTreePath = path || "";
       imageContextMenu.hidden = true;
+      modelContextMenu.hidden = true;
       treeContextMenu.hidden = false;
       const menuWidth = treeContextMenu.offsetWidth || 218;
       const menuHeight = treeContextMenu.offsetHeight || 210;
@@ -2084,6 +2186,7 @@
       treeContextMenu.querySelectorAll("[data-directory-action]").forEach(button => {
         button.addEventListener("click", () => runDirectoryAction(button.dataset.directoryAction));
       });
+      modelContextMenu.querySelector("[data-model-action='delete']")?.addEventListener("click", deleteContextModel);
       contextActionForm.addEventListener("submit", event => {
         event.preventDefault();
         closeContextActionDialog({name: contextActionInput.value});

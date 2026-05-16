@@ -9,6 +9,8 @@ import time
 import urllib.request
 from io import BytesIO
 from datetime import datetime
+from email.parser import BytesParser
+from email.policy import default
 from pathlib import Path
 
 try:
@@ -694,9 +696,12 @@ class Workstation:
     def _models_root(self):
         return (self.model_root or self.workspace).resolve()
 
+    def _annotate_models_dir(self):
+        return self._models_root() / ".workstation" / "annotate-models"
+
     def _model_files(self):
         root = self._models_root()
-        models_dir = root / "models"
+        models_dir = self._annotate_models_dir()
         if not models_dir.is_dir():
             return []
         exts = (".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel")
@@ -716,12 +721,44 @@ class Workstation:
             )
         return models
 
+    async def _uploaded_model_files(self, request: Request):
+        content_type = request.headers.get("content-type", "")
+        if "multipart/form-data" not in content_type:
+            return []
+        body = await request.body()
+        message = BytesParser(policy=default).parsebytes(
+            b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + body
+        )
+        files = []
+        for part in message.iter_parts():
+            filename = Path((part.get_filename() or "").replace("\\", "/")).name
+            if not filename:
+                continue
+            if Path(filename).suffix.lower() not in (".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel"):
+                continue
+            files.append((filename, part.get_payload(decode=True) or b""))
+        return files
+
+    async def _save_model_uploads(self, request: Request):
+        models_dir = self._annotate_models_dir()
+        models_dir.mkdir(parents=True, exist_ok=True)
+        saved = []
+        for filename, payload in await self._uploaded_model_files(request):
+            target = models_dir / filename
+            if target.exists():
+                stem = target.stem
+                suffix = target.suffix
+                target = models_dir / f"{stem}-{datetime.now().strftime('%Y%m%d%H%M%S')}{suffix}"
+            target.write_bytes(payload)
+            saved.append(target)
+        return saved
+
     def _safe_model_path(self, model_path: str):
         root = self._models_root()
         path = (root / (model_path or "")).resolve()
         if path == root or root not in path.parents or not path.is_file():
             raise HTTPException(status_code=404, detail="model not found")
-        models_dir = (root / "models").resolve()
+        models_dir = self._annotate_models_dir().resolve()
         if path != models_dir and models_dir not in path.parents:
             raise HTTPException(status_code=400, detail="invalid model path")
         return path
@@ -1172,6 +1209,25 @@ class Workstation:
         @app.get("/api/models")
         def models():
             return {"models": self._model_files()}
+
+        @app.post("/api/models/upload")
+        async def upload_models(request: Request):
+            saved = await self._save_model_uploads(request)
+            if not saved:
+                raise HTTPException(status_code=400, detail="请选择有效模型文件")
+            return {"ok": True, "saved": len(saved), "models": self._model_files()}
+
+        @app.post("/api/models/delete")
+        async def delete_model(request: Request):
+            payload = await request.json()
+            model_file = self._safe_model_path(str(payload.get("path", "")))
+            model_key = str(model_file)
+            try:
+                model_file.unlink()
+            except OSError as error:
+                raise HTTPException(status_code=500, detail=f"删除模型失败: {error}") from error
+            self.model_cache.pop(model_key, None)
+            return {"ok": True, "models": self._model_files()}
 
         @app.get("/api/classes")
         def classes():

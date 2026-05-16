@@ -334,6 +334,38 @@ function setAnnotateReady({imagesReady} = {}) {
   link.title = ready ? "进入标注" : "请先上传图片";
 }
 
+function dashboardLegendRow(item) {
+  return `
+    <div class="dashboard-legend-row">
+      <span class="legend-swatch" style="background: ${item.color || "#e2e8f0"}" aria-hidden="true"></span>
+      <span class="legend-text"><span class="legend-label">${escapeHtml(item.label || "")}</span><span class="legend-metric"><strong>${Number(item.count || 0)}</strong><span>${escapeHtml(item.percent || "0.0%")}</span></span></span>
+    </div>
+  `;
+}
+
+function updateDashboardChart(key, style, items, emptyLabel = "暂无数据") {
+  const card = document.querySelector(`[data-dashboard-chart="${key}"]`);
+  if (!card) return;
+  const pie = card.querySelector(".dashboard-pie");
+  if (pie) pie.style.background = style || "#e2e8f0";
+  const legend = card.querySelector(".dashboard-legend");
+  if (!legend) return;
+  const rows = Array.isArray(items) && items.length ? items : [{label: emptyLabel, count: 0, percent: "0.0%", color: "#e2e8f0"}];
+  legend.innerHTML = rows.map(dashboardLegendRow).join("");
+}
+
+function updateProjectDashboard(dashboard) {
+  if (!dashboard) return;
+  const progress = Math.max(0, Math.min(100, Number(dashboard.progress_percent || 0)));
+  const progressValue = document.querySelector("[data-dashboard-progress-value]");
+  if (progressValue) progressValue.textContent = `${Math.round(progress)}%`;
+  const progressBar = document.querySelector("[data-dashboard-progress-bar]");
+  if (progressBar) progressBar.style.width = `${progress}%`;
+  updateDashboardChart("resource", dashboard.resource_chart_style, dashboard.resource_items);
+  updateDashboardChart("annotate", dashboard.annotate_chart_style, dashboard.annotate_items);
+  updateDashboardChart("imageTypes", dashboard.image_type_chart_style, dashboard.image_type_items, "暂无图片");
+}
+
 function fileEntryFile(entry) {
   return new Promise((resolve, reject) => entry.file(resolve, reject));
 }
@@ -424,6 +456,7 @@ async function uploadFiles(zone, files) {
     if (kind === "images") {
       document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
       setAnnotateReady({imagesReady: data.count > 0});
+      updateProjectDashboard(data.dashboard);
     } else if (kind === "test") {
       document.querySelector("[data-test-count]").textContent = `${data.count} 个文件`;
       if (document.querySelector("[data-test-page]")) {
@@ -475,6 +508,7 @@ async function clearUploadedImages(button) {
     }
     document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
     setAnnotateReady({imagesReady: data.count > 0});
+    updateProjectDashboard(data.dashboard);
     zone?.classList.remove("uploading", "upload-complete", "dragging");
     if (zone) setUploadProgress(zone, 0);
     window.yoloutilsReloadFooterConsole?.();

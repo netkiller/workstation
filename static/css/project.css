@@ -1546,6 +1546,18 @@ button.close-project-link {
   color: #243b53;
 }
 
+.upload-delete-button svg,
+.upload-option-icon-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .drop-zone.uploading .upload-delete-button {
   pointer-events: none;
 }

@@ -228,6 +228,7 @@ button:hover, button.active { background: #e6f0ff; }
 .classes-form { display: grid; gap: 14px; padding: 18px; background: #fff; }
 .classes-form label { display: grid; gap: 8px; color: #52606d; font-size: 13px; font-weight: 650; }
 .classes-form textarea { min-height: 240px; width: 100%; resize: vertical; padding: 10px; border: 1px solid #bcccdc; border-radius: 6px; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #1f2933; }
+.model-upload-dialog input[type="file"] { width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid #bcccdc; border-radius: 6px; background: #fff; color: #334e68; font: inherit; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .dialog-actions button { width: auto; height: 30px; padding: 0 12px; border: 1px solid #2563eb; background: #2563eb; color: #fff; text-align: center; }
 .dialog-actions .secondary-button { border-color: #d9e2ec; background: #fff; color: #52606d; }
