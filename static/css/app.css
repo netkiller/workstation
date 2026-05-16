@@ -544,8 +544,24 @@ main > :where(
 }
 
 .footer-button-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
   line-height: 1;
+}
+
+.footer-button-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .help-main {
@@ -1404,6 +1420,10 @@ main > :where(
   border-radius: 8px;
   background: #fff3f0;
   color: #9b2c1d;
+}
+
+.resource-alert[hidden] {
+  display: none !important;
 }
 
 .resource-alert span {

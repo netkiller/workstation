@@ -252,11 +252,6 @@ def html_escape(value: str):
 
 def create_workstation():
     workstation = SiteWorkstation()
-    workstation.host = os.environ.get("YOLOUTILS_HOST", workstation.host)
-    try:
-        workstation.port = int(os.environ.get("YOLOUTILS_PORT", workstation.port))
-    except (TypeError, ValueError):
-        pass
     dataset = os.environ.get("YOLOUTILS_DATASET")
     run = os.environ.get("YOLOUTILS_RUN")
 
@@ -322,9 +317,7 @@ def apply_project_workspace(workstation: Workstation, project: str):
     )
 
 
-def create_annotate_app():
-    workstation = create_workstation()
-    app = workstation._create_app()
+def register_annotate_routes(app, workstation: Workstation):
     app.state.project_workspace_lock = asyncio.Lock()
 
     @app.middleware("http")

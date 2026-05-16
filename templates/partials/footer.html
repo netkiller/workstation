@@ -7,7 +7,12 @@
   <div class="stats-right">
     {% if footer_right %}{{ footer_right }}{% endif %}
     <button class="footer-button" type="button" data-public-shortcuts title="查看快捷键"><span class="footer-button-icon">⌘</span>快捷键</button>
-    <button class="footer-button" type="button" data-footer-console-toggle><span class="footer-button-icon">▤</span>控制台</button>
+    <button class="footer-button" type="button" data-footer-console-toggle title="控制台" aria-label="控制台">
+      <span class="footer-button-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"></path><path d="M8 10l3 2-3 2"></path><path d="M13 15h4"></path></svg>
+      </span>
+      控制台
+    </button>
     <a class="footer-button" href="/help" data-public-help title="帮助（⌘H）"><span class="footer-button-icon">?</span>帮助</a>
   </div>
 </footer>

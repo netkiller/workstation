@@ -494,7 +494,7 @@ async function uploadFiles(zone, files) {
   try {
     const {status, data} = await uploadWithProgress(`/project/${project}/upload/${kind}`, formData, (percent) => {
       setUploadProgress(zone, percent);
-      zone.classList.toggle("upload-processing", percent >= 100);
+      zone.classList.toggle("upload-processing", percent > 0 && percent < 100);
     });
     if (status < 200 || status >= 300 || !data.ok) {
       throw new Error(data.error || "上传失败");
@@ -592,17 +592,45 @@ function setUploadProgress(zone, percent) {
 function uploadWithProgress(url, formData, onProgress) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
+    let parsedLength = 0;
+    let responseBuffer = "";
+    let latestData = {};
+    const useTransportProgress = !url.includes("/upload/images") && !url.includes("/upload/test");
     request.open("POST", url);
     request.upload.addEventListener("progress", (event) => {
-      if (!event.lengthComputable) {
-        return;
-      }
-      onProgress(Math.round((event.loaded / event.total) * 100));
+      if (!event.lengthComputable) return;
+      if (useTransportProgress) onProgress(Math.round((event.loaded / event.total) * 100));
+      else if (event.loaded >= event.total) onProgress(0);
+    });
+    request.addEventListener("progress", () => {
+      const contentType = request.getResponseHeader("content-type") || "";
+      if (!contentType.includes("application/x-ndjson")) return;
+      responseBuffer += request.responseText.slice(parsedLength);
+      parsedLength = request.responseText.length;
+      const lines = responseBuffer.split("\n");
+      responseBuffer = lines.pop() || "";
+      lines.filter(Boolean).forEach((line) => {
+        try {
+          const data = JSON.parse(line);
+          latestData = data;
+          if (typeof data.progress === "number") onProgress(data.progress);
+        } catch (error) {
+          // Ignore partial NDJSON chunks; the next progress event will complete them.
+        }
+      });
     });
     request.addEventListener("load", () => {
       let data = {};
       try {
-        data = JSON.parse(request.responseText || "{}");
+        const contentType = request.getResponseHeader("content-type") || "";
+        if (contentType.includes("application/x-ndjson")) {
+          request.responseText.split("\n").filter(Boolean).forEach((line) => {
+            latestData = JSON.parse(line);
+          });
+          data = latestData;
+        } else {
+          data = JSON.parse(request.responseText || "{}");
+        }
       } catch (error) {
         reject(new Error("上传响应解析失败"));
         return;

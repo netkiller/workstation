@@ -262,7 +262,8 @@
         const alertTitle = document.querySelector("[data-resource-alert-title]");
         const alertMessage = document.querySelector("[data-resource-alert-message]");
         if (!alert) return;
-        alert.hidden = !visible;
+        const shouldShow = Boolean(visible && (title || message));
+        alert.hidden = !shouldShow;
         if (alertTitle) alertTitle.textContent = title || "";
         if (alertMessage) alertMessage.textContent = message || "";
       }

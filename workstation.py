@@ -10,9 +10,8 @@ from email.policy import default
 from pathlib import Path
 
 try:
-    from fastapi import FastAPI, HTTPException, Query, Request
+    from fastapi import HTTPException, Request
     from fastapi.responses import FileResponse, Response
-    from fastapi.staticfiles import StaticFiles
     from PIL import ExifTags, Image
     try:
         import pillow_heif
@@ -20,13 +19,10 @@ try:
     except ImportError:
         pillow_heif = None
 except ImportError:
-    FastAPI = None
     HTTPException = None
-    Query = None
     Request = None
     FileResponse = None
     Response = None
-    StaticFiles = None
     ExifTags = None
     Image = None
     pillow_heif = None
@@ -47,15 +43,7 @@ class Common:
 
 
 class Workstation:
-    def __init__(
-        self,
-        host: str = "0.0.0.0",
-        port: int = 8000,
-        daemon: bool = False,
-    ):
-        self.host = host
-        self.port = port
-        self.daemon = daemon
+    def __init__(self):
         self.workspace = None
         self.dataset = None
         self.run = None
@@ -77,11 +65,13 @@ class Workstation:
     def _share_url(self):
         mdns = os.environ.get("YOLOUTILS_MDNS", "").strip()
         host = self._normalize_mdns(mdns) if mdns else self._lan_ip_address()
+        configured_host = os.environ.get("YOLOUTILS_HOST", "0.0.0.0")
+        configured_port = os.environ.get("YOLOUTILS_PORT", "8000")
         if not host:
-            host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host
+            host = "127.0.0.1" if configured_host in ("0.0.0.0", "::") else configured_host
         if ":" in host and not host.startswith("["):
             host = f"[{host}]"
-        return f"http://{host}:{self.port}"
+        return f"http://{host}:{configured_port}"
 
     def _lan_ip_address(self):
         try:
@@ -1007,22 +997,3 @@ class Workstation:
         except OSError as error:
             return {"file": str(log_file), "lines": [f"读取日志失败: {error}"]}
         return {"file": str(log_file), "lines": content[-lines:]}
-
-    def _create_app(self):
-        app = FastAPI(title="Yolo Workstation")
-        static_dir = Path(__file__).resolve().parent / "static"
-        app.mount("/static", StaticFiles(directory=static_dir), name="static")
-        from routes.api import create_workstation_api_router
-
-        app.include_router(create_workstation_api_router(self))
-
-        @app.get("/media")
-        def media(path: str, raw: bool = Query(default=False)):
-            file_path = self._safe_path(path)
-            if not self._is_image(file_path):
-                raise HTTPException(status_code=404, detail="image not found")
-            if raw:
-                return FileResponse(file_path)
-            return self._image_response(file_path)
-
-        return app

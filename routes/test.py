@@ -21,6 +21,15 @@ from fastapi.templating import Jinja2Templates
 from routes.dataset import normalize_console_log
 from routes.project import header_context
 from routes.resources import find_resource, read_resources, ssh_connect_kwargs
+from routes.train import (
+    remote_command_output,
+    remote_kill_session_command,
+    remote_session_backend,
+    remote_session_has_command,
+    remote_session_start_command,
+    read_remote_text,
+    tmux_wrap_command,
+)
 
 
 router = APIRouter()
@@ -410,7 +419,7 @@ def remote_rmtree(sftp, remote_path: str):
         sftp.remove(remote_path)
 
 
-def sync_tree_delete(sftp, source_root: Path, remote_root: str, task_id: str | None = None):
+def sync_tree_delete(sftp, source_root: Path, remote_root: str, task_id: str | None = None, on_file=None):
     local_paths = {""}
     for source in source_root.rglob("*"):
         local_paths.add(source.relative_to(source_root).as_posix())
@@ -442,6 +451,8 @@ def sync_tree_delete(sftp, source_root: Path, remote_root: str, task_id: str | N
             if task_id:
                 append_log(task_id, f"复制测试文件 ({file_index}/{len(files)})：{relative}\n")
             upload_file(sftp, source, remote_path)
+            if on_file:
+                on_file(relative)
 
 
 def list_remote_paths(sftp, remote_root: str):
@@ -512,6 +523,44 @@ def remote_model_filename(index: int, model: dict):
     return f"{index:02d}-{slug(model['run'] or model['name'])}{suffix}"
 
 
+def test_session_name(task_id: str, index: int):
+    return f"yoloutils_test_{task_id}_{index:02d}"
+
+
+def run_remote_session_command(client, sftp, task_id: str, backend: str, session: str, command: list[str], remote_log: str, remote_exit: str, remote_cwd: str):
+    active_code, _, _ = remote_command_output(client, remote_session_has_command(backend, session))
+    exit_text = read_remote_text(sftp, remote_exit).strip()
+    if active_code != 0 and not exit_text:
+        remote_command_output(client, f"mkdir -p {shlex.quote(posixpath.dirname(remote_log))}; : > {shlex.quote(remote_log)}; rm -f {shlex.quote(remote_exit)}")
+        wrapped = tmux_wrap_command(shell_join(command), remote_log, remote_exit, remote_cwd)
+        start_command = remote_session_start_command(backend, session, wrapped)
+        append_log(task_id, "$ " + start_command + "\n")
+        code, output, error = remote_command_output(client, start_command)
+        if code != 0:
+            append_log(task_id, (output + error).strip() + "\n")
+            raise RuntimeError(f"{backend} 启动失败，退出码 {code}")
+    elif active_code == 0:
+        append_log(task_id, f"接回远程会话：{session}\n")
+
+    remote_log_offset = 0
+    while True:
+        text = read_remote_text(sftp, remote_log)
+        if len(text) > remote_log_offset:
+            append_log(task_id, text[remote_log_offset:])
+            remote_log_offset = len(text)
+        exit_text = read_remote_text(sftp, remote_exit).strip()
+        if exit_text:
+            return int(exit_text) if exit_text.isdigit() else 1
+        code, _, _ = remote_command_output(client, remote_session_has_command(backend, session))
+        if code != 0:
+            text = read_remote_text(sftp, remote_log)
+            if len(text) > remote_log_offset:
+                append_log(task_id, text[remote_log_offset:])
+            exit_text = read_remote_text(sftp, remote_exit).strip()
+            return int(exit_text) if exit_text.isdigit() else 1
+        time.sleep(1)
+
+
 def run_remote_models(task: dict, project_dir: Path, models: list[dict], images: list[Path], class_names: list[str]):
     task_id = task["id"]
     resource = find_resource(workspace_path(), str(task.get("resource_id") or ""))
@@ -527,6 +576,21 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
     sftp = None
     remote_runs_root = ""
     try:
+        deployment_files = [item for item in (project_dir / "test").rglob("*") if item.is_file()]
+        deployment_total = max(1, len(deployment_files) + len(models))
+        deployment_done = 0
+
+        def mark_deployed():
+            nonlocal deployment_done
+            deployment_done += 1
+            update_task(
+                task_id,
+                progress=round(deployment_done / deployment_total * 100),
+                progress_done=deployment_done,
+                progress_total=deployment_total,
+            )
+
+        update_task(task_id, status="部署中", progress=0, completed_models=0, progress_done=0, progress_total=deployment_total)
         append_log(task_id, f"连接算力服务器：{resource.get('name') or resource.get('host')}\n")
         client.connect(
             hostname=resource["host"],
@@ -540,20 +604,27 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
             **ssh_connect_kwargs(resource),
         )
         sftp = client.open_sftp()
+        backend = remote_session_backend(client)
+        if not backend:
+            raise RuntimeError("远程服务器未安装 tmux 或 screen，无法启动持久测试。请先安装其中一个。")
+        if backend == "screen":
+            append_log(task_id, "远程服务器未安装 tmux，使用 screen 启动持久测试。\n")
         remote_home = remote_home_dir(client, sftp)
         remote_project_root = posixpath.join(remote_home, ".yoloutils", task["project"])
         remote_test = posixpath.join(remote_project_root, "test")
         remote_base = posixpath.join(remote_project_root, "test-tasks", task_id)
         remote_models = posixpath.join(remote_base, "models")
         remote_runs_root = posixpath.join(remote_base, "test-runs")
+        remote_logs = posixpath.join(remote_base, "logs")
         append_log(task_id, f"远程项目目录：{remote_project_root}\n")
         append_log(task_id, f"远程工作目录：{remote_base}\n")
         sftp_mkdirs(sftp, remote_test)
         sftp_mkdirs(sftp, remote_models)
         sftp_mkdirs(sftp, remote_runs_root)
+        sftp_mkdirs(sftp, remote_logs)
 
         append_log(task_id, f"同步测试图片：{len(images)} 张（删除远程多余文件）\n")
-        sync_tree_delete(sftp, project_dir / "test", remote_test, task_id)
+        sync_tree_delete(sftp, project_dir / "test", remote_test, task_id, on_file=lambda _relative: mark_deployed())
         remote_image_count = count_remote_images(sftp, remote_test)
         append_log(task_id, f"远程测试图片：{remote_image_count} 张\n")
         if remote_image_count <= 0:
@@ -564,12 +635,15 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
             remote_model = posixpath.join(remote_models, remote_model_filename(index, model))
             append_log(task_id, f"复制模型文件 ({index}/{len(models)})：{model['name']} -> {remote_model}\n")
             upload_file(sftp, Path(model["path"]), remote_model)
+            mark_deployed()
             remote_model_paths[model["relative_path"]] = remote_model
 
         code = remote_exec_stream(client, task_id, "command -v yolo >/dev/null 2>&1")
         if code != 0:
             raise RuntimeError("远程服务器 yolo 命令不存在，请先安装 ultralytics 或确认 PATH。")
 
+        update_task(task_id, status="进行中", progress=0, completed_models=0, progress_done=0, progress_total=len(models))
+        append_log(task_id, "部署完成，开始远程模型测试。\n")
         results = []
         for index, model in enumerate(models, start=1):
             run_name = f"{task_id}-{slug(model['run'] or model['name'])}"
@@ -586,11 +660,16 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
                 "exist_ok=True",
                 "verbose=False",
             ]
+            update_task(task_id, completed_models=index)
             append_log(task_id, f"远程运行模型 ({index}/{len(models)})：{model['name']}\n")
-            code = remote_exec_stream(client, task_id, shell_join(command))
+            session = test_session_name(task_id, index)
+            remote_log = posixpath.join(remote_logs, f"{index:02d}-{slug(model['run'] or model['name'])}.log")
+            remote_exit = posixpath.join(remote_logs, f"{index:02d}-{slug(model['run'] or model['name'])}.exit")
+            running_processes[task_id] = {"type": f"remote-{backend}", "backend": backend, "client": client, "session": session}
+            code = run_remote_session_command(client, sftp, task_id, backend, session, command, remote_log, remote_exit, remote_base)
             if code != 0:
                 raise RuntimeError(f"{model['name']} 远程退出码 {code}")
-            update_task(task_id, progress=round(index / len(models) * 85))
+            update_task(task_id, progress=round(index / len(models) * 85), progress_done=index, progress_total=len(models))
 
         local_runs_root = project_dir / "test-runs" / task_id
         append_log(task_id, f"下载远程结果：{remote_runs_root}\n")
@@ -680,9 +759,10 @@ def run_task(task: dict):
             if shutil.which("yolo") is None:
                 raise RuntimeError("yolo 命令不存在，请先安装 ultralytics 或确认虚拟环境 PATH。")
             for index, model in enumerate(models, start=1):
+                update_task(task_id, completed_models=index)
                 append_log(task_id, f"运行模型 ({index}/{len(models)})：{model['name']}\n")
                 results.append(run_model(project_dir, task_id, model, images, class_names))
-                update_task(task_id, progress=round(index / len(models) * 90))
+                update_task(task_id, progress=round(index / len(models) * 90), progress_done=index, progress_total=len(models))
     except Exception as error:
         append_log(task_id, f"\n模型测试失败：{error}\n")
         update_task(task_id, status="失败", progress=100, finished_at=datetime.now().isoformat(timespec="seconds"))
@@ -703,7 +783,15 @@ def run_task(task: dict):
 def worker_loop():
     while True:
         with queue_lock:
-            task = next((item for item in load_tasks() if item.get("status") == "排队中"), None)
+            task = next(
+                (
+                    item
+                    for item in load_tasks()
+                    if item.get("status") == "排队中"
+                    or (item.get("target_type") == "remote" and item.get("status") in {"部署中", "进行中"})
+                ),
+                None,
+            )
         if task is None:
             return
         run_task(task)
@@ -720,7 +808,7 @@ def ensure_worker():
 def task_progress(task: dict):
     if task.get("status") in {"完成", "失败", "取消"}:
         return 100
-    if task.get("status") == "进行中":
+    if task.get("status") in {"进行中", "部署中"}:
         return int(task.get("progress") or 10)
     return 0
 
@@ -731,10 +819,18 @@ def task_view(task: dict):
     model_count = len(view.get("model_names") or view.get("models") or [])
     if view.get("status") == "完成":
         completed_models = model_count
+    elif "completed_models" in view:
+        completed_models = min(model_count, max(0, int(view.get("completed_models") or 0))) if model_count else 0
     else:
         completed_models = min(model_count, int((view["progress"] or 0) / 100 * model_count)) if model_count else 0
     view["completed_models"] = completed_models
     view["model_count"] = model_count
+    if view.get("status") == "部署中":
+        view["progress_done"] = max(0, int(view.get("progress_done") or 0))
+        view["progress_total"] = max(0, int(view.get("progress_total") or 0))
+    else:
+        view["progress_done"] = completed_models
+        view["progress_total"] = model_count
     return view
 
 
@@ -854,6 +950,7 @@ async def create_test_task(request: Request):
         "model_names": [model["name"] for model in models],
         "status": "排队中",
         "progress": 0,
+        "completed_models": 0,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     with queue_lock:
@@ -909,7 +1006,16 @@ def test_task_csv(task_id: str):
 @router.post("/test/tasks/{task_id}/cancel")
 def cancel_task(task_id: str):
     process = running_processes.get(task_id)
-    if process and hasattr(process, "poll") and process.poll() is None:
+    if isinstance(process, dict) and str(process.get("type", "")).startswith("remote-"):
+        client = process.get("client")
+        backend = str(process.get("backend") or "").strip()
+        session = str(process.get("session") or "").strip()
+        if client and backend and session:
+            try:
+                remote_command_output(client, remote_kill_session_command(backend, session))
+            except Exception:
+                pass
+    elif process and hasattr(process, "poll") and process.poll() is None:
         process.terminate()
     elif process and hasattr(process, "close"):
         process.close()
@@ -930,6 +1036,7 @@ def retry_task(task_id: str):
             return RedirectResponse(url=f"/test/{task.get('project', '')}", status_code=status.HTTP_303_SEE_OTHER)
         task["status"] = "排队中"
         task["progress"] = 0
+        task["completed_models"] = 0
         task["started_at"] = ""
         task["finished_at"] = ""
         task["updated_at"] = datetime.now().isoformat(timespec="seconds")

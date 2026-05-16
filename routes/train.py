@@ -395,6 +395,8 @@ def model_items(tasks, current_project: str = ""):
     for task in tasks:
         if task.get("status") != COMPLETE_STATUS:
             continue
+        if current_project and task.get("project") != current_project:
+            continue
         run_dir = task_run_dir(task)
         if run_dir.is_dir():
             seen_runs.add(run_dir.resolve())

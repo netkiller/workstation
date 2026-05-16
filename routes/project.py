@@ -15,7 +15,7 @@ from pathlib import PurePosixPath
 from urllib.parse import parse_qs, quote, unquote, urlencode
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 try:
@@ -1041,6 +1041,10 @@ def save_upload(filename: str, content: bytes, target_dir: Path):
     return target
 
 
+def upload_progress_line(**payload):
+    return json.dumps(payload, ensure_ascii=False) + "\n"
+
+
 def remove_empty_dirs(root: Path):
     if not root.exists():
         return
@@ -1474,20 +1478,38 @@ async def upload_images(directory: str, request: Request):
     if path is None or not path.is_dir():
         return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
     files = await uploaded_files(request)
-    saved = [save_upload(filename, content, path / ANNOTATE_DIR) for filename, content in files]
-    saved = [item for item in saved if item is not None]
-    append_upload_log(
-        path,
-        f"上传图片/文件：接收 {len(files)} 个，保存 {len(saved)} 个",
-        [relative_log_entry(path, item) for item in saved],
-    )
-    index = build_project_index(path)
-    return {
-        "ok": True,
-        "saved": len(saved),
-        "count": int(index.get("annotate", {}).get("images") or 0),
-        "dashboard": project_dashboard_payload(path),
-    }
+
+    def stream():
+        total = len(files)
+        saved = []
+        yield upload_progress_line(ok=True, stage="saving", saved=0, total=total, progress=0)
+        for index, (filename, content) in enumerate(files, start=1):
+            item = save_upload(filename, content, path / ANNOTATE_DIR)
+            if item is not None:
+                saved.append(item)
+            yield upload_progress_line(
+                ok=True,
+                stage="saving",
+                saved=len(saved),
+                total=total,
+                progress=round(index / total * 100) if total else 100,
+                file=filename,
+            )
+        append_upload_log(
+            path,
+            f"上传图片/文件：接收 {len(files)} 个，保存 {len(saved)} 个",
+            [relative_log_entry(path, item) for item in saved],
+        )
+        index = build_project_index(path)
+        yield upload_progress_line(
+            ok=True,
+            stage="done",
+            saved=len(saved),
+            count=int(index.get("annotate", {}).get("images") or 0),
+            dashboard=project_dashboard_payload(path),
+        )
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 @router.post("/project/{directory}/upload/images/delete")
@@ -1526,27 +1548,44 @@ async def upload_test_images(directory: str, request: Request):
     if path is None or not path.is_dir():
         return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
     files = await uploaded_files(request)
-    skipped = 0
-    saved = []
-    for filename, content in files:
-        relative = upload_relative_path(filename)
-        if relative is None or relative.suffix.lower() not in IMAGE_EXTS:
-            skipped += 1
-            continue
-        saved.append(save_upload(filename, content, path / TEST_DIR))
-    saved = [item for item in saved if item is not None]
-    append_upload_log(
-        path,
-        f"上传测试图片：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
-        [relative_log_entry(path, item) for item in saved],
-    )
-    index = build_project_index(path)
-    return {
-        "ok": True,
-        "saved": len(saved),
-        "skipped": skipped,
-        "count": int(index.get("test", {}).get("images") or 0),
-    }
+
+    def stream():
+        total = len(files)
+        skipped = 0
+        saved = []
+        yield upload_progress_line(ok=True, stage="saving", saved=0, skipped=0, total=total, progress=0)
+        for index, (filename, content) in enumerate(files, start=1):
+            relative = upload_relative_path(filename)
+            if relative is None or relative.suffix.lower() not in IMAGE_EXTS:
+                skipped += 1
+            else:
+                item = save_upload(filename, content, path / TEST_DIR)
+                if item is not None:
+                    saved.append(item)
+            yield upload_progress_line(
+                ok=True,
+                stage="saving",
+                saved=len(saved),
+                skipped=skipped,
+                total=total,
+                progress=round(index / total * 100) if total else 100,
+                file=filename,
+            )
+        append_upload_log(
+            path,
+            f"上传测试图片：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
+            [relative_log_entry(path, item) for item in saved],
+        )
+        index = build_project_index(path)
+        yield upload_progress_line(
+            ok=True,
+            stage="done",
+            saved=len(saved),
+            skipped=skipped,
+            count=int(index.get("test", {}).get("images") or 0),
+        )
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 @router.post("/project/{directory}/upload/test/delete")
