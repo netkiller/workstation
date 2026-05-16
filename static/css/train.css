@@ -1000,14 +1000,15 @@
 
 .task-dataset-summary {
   display: grid;
-  grid-template-columns: minmax(360px, 1.6fr) minmax(180px, .8fr);
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(112px, 1fr);
   align-items: stretch;
   gap: 10px;
   min-width: 0;
 }
 
 .task-dataset-main,
-.task-compute-main {
+.task-compute-main,
+.task-status-card {
   display: grid;
   align-content: center;
   min-width: 0;
@@ -1018,8 +1019,47 @@
   background: #ffffff;
 }
 
+.task-status-card {
+  text-align: center;
+}
+
+.task-status-card span {
+  color: var(--task-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-status-card strong {
+  color: var(--task-accent);
+  font-size: 17px;
+  font-weight: 850;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.task-status-card.completed strong {
+  color: #047857;
+}
+
+.task-status-card.early-completed strong {
+  color: #c2410c;
+}
+
+.task-status-card.failed strong {
+  color: #b91c1c;
+}
+
+.task-status-card.cancelled strong {
+  color: #64748b;
+}
+
+.task-status-card.running strong,
+.task-status-card.queued strong {
+  color: #1667c7;
+}
+
 .task-dataset-main {
-  grid-template-columns: minmax(120px, 1fr) minmax(220px, 1.35fr);
+  grid-template-columns: minmax(110px, .88fr) minmax(190px, 1.22fr);
   align-items: center;
 }
 
@@ -1801,7 +1841,8 @@
   }
 
   .task-dataset-main,
-  .task-compute-main {
+  .task-compute-main,
+  .task-status-card {
     grid-template-columns: 1fr;
   }
 

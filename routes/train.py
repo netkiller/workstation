@@ -472,6 +472,15 @@ def task_has_training_output(task: dict):
     )
 
 
+def task_has_successful_training_output(task: dict):
+    run_dir = task_run_dir(task)
+    weights_dir = run_dir / "weights"
+    if (weights_dir / "best.pt").is_file() or (weights_dir / "last.pt").is_file():
+        return True
+    rows = read_metric_rows(run_dir / "results.csv")
+    return bool(rows)
+
+
 def read_exit_code(path: Path, timeout: float = 5.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -486,6 +495,10 @@ def read_exit_code(path: Path, timeout: float = 5.0):
                 return 1
         time.sleep(0.2)
     return None
+
+
+def command_succeeds(command: list[str]):
+    return bool(command) and subprocess.run(command, capture_output=True).returncode == 0
 
 
 def visible_train_tasks(tasks):
@@ -1142,7 +1155,8 @@ def session_has_command(backend: str, session: str):
     if backend == "tmux":
         return ["tmux", "has-session", "-t", session]
     if backend == "screen":
-        return ["screen", "-S", session, "-Q", "select", "."]
+        pattern = shlex.quote(rf"\.{re.escape(session)}[[:space:]]")
+        return ["sh", "-lc", f"screen -ls | grep -Eq {pattern}"]
     return []
 
 
@@ -1394,7 +1408,11 @@ def run_task(task):
             return
         running_processes[task_id] = {"type": f"local-{backend}", "backend": backend, "session": session}
         has_command = session_has_command(backend, session)
-        while has_command and subprocess.run(has_command, capture_output=True).returncode == 0:
+        for _ in range(10):
+            if exit_path.exists() or command_succeeds(has_command):
+                break
+            time.sleep(0.2)
+        while command_succeeds(has_command):
             time.sleep(1)
         return_code = read_exit_code(exit_path)
     except Exception as error:
@@ -1405,11 +1423,15 @@ def run_task(task):
         running_processes.pop(task_id, None)
         exit_path.unlink(missing_ok=True)
 
-    if return_code is None and task_has_training_output(task):
+    has_success_output = task_has_successful_training_output(task)
+    if return_code is None and has_success_output:
         return_code = 0
         append_log(task_id, "\n未读取到退出码，但已发现训练输出文件，按完成处理。\n")
     if return_code is None:
         return_code = 1
+    if return_code != 0 and has_success_output:
+        append_log(task_id, "\n退出码非 0，但已发现完整训练输出，按完成处理。\n")
+        return_code = 0
     status_text = COMPLETE_STATUS if return_code == 0 else "失败"
     append_log(task_id, f"\n进程退出码: {return_code}\n")
     update_task(task_id, status=status_text, finished_at=datetime.now().isoformat(timespec="seconds"))

@@ -100,7 +100,6 @@
                         <span class="task-name-text">{{ task.name }}</span>
                         <span class="task-badges">
                           <span class="train-scope {{ 'remote' if task.is_remote else 'local' }}">{{ task.scope_label }}</span>
-                          <span class="status {{ task.status_class }}" data-task-status>{{ task.display_status or task.status }}</span>
                         </span>
                       </h2>
                       <time>{{ task.display_created_at or task.created_at }}</time>
@@ -143,6 +142,10 @@
                       <strong>本地</strong>
                     {% endif %}
                   </div>
+                  <div class="task-status-card {{ task.status_class }}" data-task-status-card>
+                    <span>状态</span>
+                    <strong data-task-status>{{ task.display_status or task.status }}</strong>
+                  </div>
                 </div>
                 {% if task.epoch_snapshot %}
                   <div
@@ -171,15 +174,15 @@
                   </div>
                 {% endif %}
               </div>
-              <div class="task-actions">
+              <div class="task-actions" data-task-actions>
                 <button type="button" data-view-train-log data-log-url="/model/train/tasks/{{ task.id }}/logs">查看</button>
                 {% if task.is_active %}
-                  <form method="post" action="/model/train/tasks/{{ task.id }}/cancel">
+                  <form method="post" action="/model/train/tasks/{{ task.id }}/cancel" data-stop-train-task>
                     <button type="submit">停止</button>
                   </form>
                 {% endif %}
                 {% if not task.is_active and not task.is_completed %}
-                  <form method="post" action="/model/train/tasks/{{ task.id }}/rerun">
+                  <form method="post" action="/model/train/tasks/{{ task.id }}/rerun" data-rerun-train-task>
                     <button type="submit">重跑</button>
                   </form>
                 {% endif %}
@@ -439,6 +442,50 @@
           }
         }, 1000);
       }
+      function currentQueueFilter() {
+        return document.querySelector("[data-queue-filter].active")?.dataset.queueFilter || "all";
+      }
+      function ensureActionForm(actions, selector, action, label, attrName = "") {
+        let form = actions.querySelector(selector);
+        if (form) return form;
+        form = document.createElement("form");
+        form.method = "post";
+        form.action = action;
+        if (attrName) form.setAttribute(attrName, "");
+        const button = document.createElement("button");
+        button.type = "submit";
+        button.textContent = label;
+        form.appendChild(button);
+        actions.appendChild(form);
+        return form;
+      }
+      function updateTaskActions(card, task) {
+        const actions = card.querySelector("[data-task-actions]");
+        if (!actions) return;
+        const taskId = card.dataset.taskId || task.id || "";
+        const isActive = Boolean(task.is_active);
+        const isCompleted = Boolean(task.is_completed);
+        card.dataset.taskCompleted = isCompleted ? "1" : "0";
+        card.classList.toggle("completed-task", isCompleted);
+        card.querySelector("[data-stop-train-task]")?.remove();
+        card.querySelector("[data-rerun-train-task]")?.remove();
+        card.querySelector("[data-delete-train-task]")?.remove();
+        if (isActive) {
+          ensureActionForm(actions, "[data-stop-train-task]", `/model/train/tasks/${taskId}/cancel`, "停止", "data-stop-train-task");
+        } else {
+          if (!isCompleted) {
+            ensureActionForm(actions, "[data-rerun-train-task]", `/model/train/tasks/${taskId}/rerun`, "重跑", "data-rerun-train-task");
+          }
+          ensureActionForm(actions, "[data-delete-train-task]", `/model/train/tasks/${taskId}/delete`, "删除", "data-delete-train-task");
+        }
+        const epochCard = card.querySelector("[data-epoch-card]");
+        if (epochCard && isCompleted && taskId) {
+          epochCard.dataset.modelUrl = `/model/train/models/${taskId}`;
+          epochCard.setAttribute("role", "link");
+          epochCard.tabIndex = 0;
+        }
+        applyQueueFilter(currentQueueFilter());
+      }
       async function loadTaskLog(button, openConsole = true) {
         const requestStartedAt = Date.now();
         const logUrl = button.dataset.logUrl;
@@ -468,9 +515,13 @@
           const statusNode = card.querySelector("[data-task-status]");
           if (statusNode) {
             statusNode.textContent = task.display_status || task.status || "";
-            statusNode.className = `status ${task.status_class || ""}`.trim();
+          }
+          const statusCard = card.querySelector("[data-task-status-card]");
+          if (statusCard) {
+            statusCard.className = `task-status-card ${task.status_class || ""}`.trim();
           }
           renderEpochCard(card, task.epoch_snapshot);
+          updateTaskActions(card, task);
         }
         return data;
       }
@@ -519,12 +570,13 @@
         button.addEventListener("click", () => applyQueueFilter(button.dataset.queueFilter || "all"));
       });
       applyQueueFilter(new URL(window.location.href).searchParams.get("queue") || "{{ queue_filter }}");
-      document.querySelectorAll("[data-delete-train-task]").forEach(form => {
-        form.addEventListener("submit", event => {
+      document.addEventListener("submit", event => {
+        const form = event.target.closest("[data-delete-train-task]");
+        if (form) {
           if (!confirm("确认删除该训练任务？")) {
             event.preventDefault();
           }
-        });
+        }
       });
       document.querySelectorAll("[data-train-task]").forEach(card => {
         const button = card.querySelector("[data-view-train-log]");
@@ -554,20 +606,21 @@
           navigate(event);
         });
       });
-      document.querySelectorAll("[data-model-url]").forEach(card => {
-        const navigateModel = event => {
+      function navigateModelCard(card, event) {
+        if (!card) return;
           if (event.target.closest("a, button, form, input, select, textarea")) return;
           if (event.target.closest("[data-navigate-url]")) return;
           if (window.getSelection()?.toString().trim()) return;
           event.preventDefault();
           event.stopPropagation();
           window.location.assign(card.dataset.modelUrl);
-        };
-        card.addEventListener("click", navigateModel);
-        card.addEventListener("keydown", event => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          navigateModel(event);
-        });
+      }
+      document.addEventListener("click", event => {
+        navigateModelCard(event.target.closest("[data-model-url]"), event);
+      });
+      document.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        navigateModelCard(event.target.closest("[data-model-url]"), event);
       });
       document.querySelector("[data-footer-console-toggle]")?.addEventListener("click", () => {
         setTimeout(() => {
