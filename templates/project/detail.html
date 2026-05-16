@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260516-project-overview">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260516-upload-processing">
 {% endblock %}
 
 {% block content %}
@@ -207,5 +207,5 @@
   {% set footer_console_url = "/project/" ~ project.directory ~ "/logs" %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260516-project-overview"></script>
+  <script src="/static/js/project.js?v=20260516-upload-processing"></script>
 {% endblock %}

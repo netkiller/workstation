@@ -397,6 +397,147 @@
   overflow: visible;
 }
 
+.model-entry-tools {
+  gap: 12px;
+}
+
+.model-entry-panel {
+  --entry-accent: #1667c7;
+  --entry-soft: #f6faff;
+  --entry-line: #c7ddf6;
+  min-height: 236px;
+  position: relative;
+  align-content: space-between;
+  overflow: hidden;
+  border-color: var(--entry-line);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .92), rgba(255, 255, 255, .72)),
+    radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--entry-accent) 18%, transparent), transparent 38%),
+    var(--entry-soft);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .07);
+}
+
+.model-entry-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .82);
+}
+
+.model-entry-train {
+  --entry-accent: #1667c7;
+  --entry-soft: #f6faff;
+  --entry-line: #bfd7f4;
+}
+
+.model-entry-val {
+  --entry-accent: #0f8f6f;
+  --entry-soft: #f4fcf8;
+  --entry-line: #b9ead8;
+}
+
+.model-entry-predict {
+  --entry-accent: #a25d08;
+  --entry-soft: #fffaf2;
+  --entry-line: #efd3aa;
+}
+
+.model-entry-copy {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.model-entry-visual {
+  height: 104px;
+  display: grid;
+  place-items: center;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--entry-line) 72%, #ffffff);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .62);
+}
+
+.model-entry-visual svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.model-entry-visual .chart-grid,
+.model-entry-visual .chart-radar-grid {
+  fill: none;
+  stroke: color-mix(in srgb, var(--entry-accent) 18%, #cbd5e1);
+  stroke-width: 1;
+}
+
+.model-entry-visual .chart-area,
+.model-entry-visual .chart-radar {
+  fill: color-mix(in srgb, var(--entry-accent) 18%, transparent);
+}
+
+.model-entry-visual .chart-line,
+.model-entry-visual .chart-flow,
+.model-entry-visual .chart-mini-line {
+  fill: none;
+  stroke: var(--entry-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.model-entry-visual .chart-bars rect,
+.model-entry-visual .chart-dots circle,
+.model-entry-visual .chart-box,
+.model-entry-visual .chart-meter rect:nth-child(2) {
+  fill: var(--entry-accent);
+}
+
+.model-entry-visual .chart-ring-muted {
+  fill: none;
+  stroke: color-mix(in srgb, var(--entry-accent) 13%, #e2e8f0);
+  stroke-width: 9;
+}
+
+.model-entry-visual .chart-ring {
+  fill: none;
+  stroke: var(--entry-accent);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-dasharray: 78 100;
+  transform: rotate(-90deg);
+  transform-origin: 54px 46px;
+}
+
+.model-entry-visual .chart-frame {
+  fill: rgba(255, 255, 255, .62);
+  stroke: color-mix(in srgb, var(--entry-accent) 42%, #cbd5e1);
+  stroke-width: 2;
+}
+
+.model-entry-visual .chart-meter rect:first-child {
+  fill: color-mix(in srgb, var(--entry-accent) 14%, #e2e8f0);
+}
+
+.model-entry-panel h2 {
+  color: var(--entry-accent);
+  font-size: 17px;
+}
+
+.model-entry-panel p {
+  color: var(--muted);
+}
+
+.model-entry-button {
+  width: 100%;
+  justify-self: stretch;
+  border-color: color-mix(in srgb, var(--entry-accent) 28%, var(--line));
+  color: var(--entry-accent);
+  background: rgba(255, 255, 255, .78);
+}
+
 .model-card {
   --model-accent: #1667c7;
   --model-soft: #f5faff;

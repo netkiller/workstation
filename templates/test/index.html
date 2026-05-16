@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260516-independent">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260516-upload-processing">
 {% endblock %}
 
 {% block content %}
@@ -87,22 +87,46 @@
         </div>
         <span class="count" data-test-count>{{ image_count }} 个文件</span>
       </div>
-      <div class="test-drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
-        <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
-        <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
-        <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-        <span>点击上传测试图片，或拖拽到这里</span>
-        <span class="upload-options">
-          <span>选择文件</span>
-          <button type="button" data-directory-button>选择目录</button>
-        </span>
+      <div class="test-upload-body">
+        <div class="test-drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
+          <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
+          <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-directory-input>
+          <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
+          <span>点击上传测试图片，或拖拽到这里</span>
+          <span class="upload-options">
+            <button type="button" class="upload-delete-button" data-clear-upload="test" title="删除已上传测试图片" aria-label="删除已上传测试图片">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+            </button>
+            <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
+            </button>
+          </span>
+        </div>
+        <div class="test-image-type-panel" aria-labelledby="test-image-type-title">
+          <div class="test-image-type-head">
+            <h3 id="test-image-type-title">图像类型</h3>
+            <p>按 test 目录扩展名统计</p>
+          </div>
+          <div class="test-extension-chart">
+            <span class="test-extension-pie" style="background: {{ extension_chart.style }}"><b>{{ extension_chart.total }}</b></span>
+            <div class="test-extension-legend">
+              {% if extension_chart["items"] %}
+                {% for item in extension_chart["items"] %}
+                  <span><i style="background: {{ item.color }}"></i><strong>.{{ item.ext }}</strong>{{ item.count }} 张 · {{ item.percent }}%</span>
+                {% endfor %}
+              {% else %}
+                <span><i></i><strong>暂无</strong>0 张</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
     {% if tasks %}
       <section class="test-task-list" aria-label="测试任务">
         {% for task in tasks[:8] %}
-          <article class="test-task-card">
+          <article class="test-task-card test-task-card-{{ task.status }}">
             <div class="test-task-main">
               <div class="test-task-head">
                 <div class="test-task-title-row">
@@ -133,7 +157,7 @@
                 </form>
               {% endif %}
             </div>
-            {% if task.status not in ["完成", "取消"] %}
+            {% if task.status not in ["完成", "取消", "失败"] %}
               <div class="test-task-progress-row">
                 <b data-test-progress-text>{{ task.progress or 0 }}%</b>
                 <div class="test-task-progress" aria-label="任务进度 {{ task.progress or 0 }}%">
@@ -146,32 +170,13 @@
       </section>
     {% endif %}
 
-    <section class="test-extension-card" aria-labelledby="test-extension-title">
-      <div>
-        <h2 id="test-extension-title">测试图片扩展名</h2>
-        <p>项目 {{ project_name or current_project }} / test 下的图片数量统计。</p>
-      </div>
-      <div class="test-extension-chart">
-        <span class="test-extension-pie" style="background: {{ extension_chart.style }}"><b>{{ extension_chart.total }}</b></span>
-        <div class="test-extension-legend">
-          {% if extension_chart["items"] %}
-            {% for item in extension_chart["items"] %}
-              <span><i style="background: {{ item.color }}"></i><strong>.{{ item.ext }}</strong>{{ item.count }} 张 · {{ item.percent }}%</span>
-            {% endfor %}
-          {% else %}
-            <span><i></i><strong>暂无</strong>0 张</span>
-          {% endif %}
-        </div>
-      </div>
-    </section>
-
   </main>
 
   {% set footer_id = "stats" %}
   {% set footer_left = workspace %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260516-test-upload"></script>
+  <script src="/static/js/project.js?v=20260516-upload-processing"></script>
   <script>
     (() => {
       const dialog = document.querySelector("[data-test-dialog]");
@@ -221,15 +226,25 @@
         const tagsNode = card?.querySelector(".test-task-tags");
         const progressBar = card?.querySelector("[data-test-progress-bar]");
         const progressText = card?.querySelector("[data-test-progress-text]");
+        const progressRow = card?.querySelector(".test-task-progress-row");
         if (statusNode) {
           statusNode.textContent = task.status || "";
           statusNode.className = `test-status test-status-${task.status || ""}`;
+        }
+        if (card) {
+          Array.from(card.classList)
+            .filter(name => name.startsWith("test-task-card-"))
+            .forEach(name => card.classList.remove(name));
+          if (task.status) card.classList.add(`test-task-card-${task.status}`);
         }
         if (tagsNode) {
           tagsNode.className = `test-task-tags test-task-tags-${task.status || ""}`;
           const tags = Array.from(tagsNode.querySelectorAll("span"));
           const completed = Number(task.completed_models || 0);
           tags.forEach((tag, index) => tag.classList.toggle("passed", index < completed));
+        }
+        if (progressRow) {
+          progressRow.hidden = ["完成", "取消", "失败"].includes(task.status || "");
         }
         if (progressBar) {
           const progress = Number(task.progress || 0);

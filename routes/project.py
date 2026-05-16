@@ -29,7 +29,22 @@ templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "
 PROJECT_DIR_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 ANNOTATE_DIR = "annotate"
 TEST_DIR = "test"
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic", ".heif"}
+IMAGE_EXTS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".webp",
+    ".tif",
+    ".tiff",
+    ".heic",
+    ".heif",
+    ".avif",
+    ".dng",
+    ".mpo",
+    ".jp2",
+    ".jpeg2000",
+}
 MODEL_EXTS = {".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel"}
 USER_HEARTBEAT_TIMEOUT = 45
 PROJECT_UPLOAD_LOG = ".project.log"
@@ -366,12 +381,17 @@ def share_url(request: Request):
 def header_context(request: Request, workspace: Path):
     is_team_mode = team_mode_enabled()
     username = current_username(request, workspace) if is_team_mode else ""
+    requested_project = request.path_params.get("project") or request.path_params.get("directory") or request.query_params.get("project") or request.cookies.get("current_project", "")
+    current_project_path = project_dir(workspace, str(requested_project or ""))
+    current_project_meta = read_project_meta(current_project_path, read_project_registry(workspace)) if current_project_path and current_project_path.is_dir() else None
     return {
         "username": username,
         "username_initial": username[:1],
         "username_color": user_color(username) if username else "",
         "is_team_mode": is_team_mode,
         "share_url": share_url(request) if is_team_mode else "",
+        "header_project_name": current_project_meta["name"] if current_project_meta else "",
+        "header_project_icon": current_project_meta["icon"] if current_project_meta else "",
     }
 
 
@@ -1041,12 +1061,23 @@ async def uploaded_files(request: Request):
         b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + body
     )
     files = []
+    paths = []
+    file_index = 0
     for part in message.iter_parts():
+        field_name = part.get_param("name", header="content-disposition")
+        if field_name == "paths":
+            payload = part.get_payload(decode=True) or b""
+            paths.append(payload.decode("utf-8", errors="replace"))
+            continue
+        if field_name != "files":
+            continue
         filename = part.get_filename()
         if not filename:
             continue
         payload = part.get_payload(decode=True) or b""
-        files.append((filename, payload))
+        upload_name = paths[file_index] if file_index < len(paths) and paths[file_index] else filename
+        files.append((upload_name, payload))
+        file_index += 1
     return files
 
 
@@ -1495,15 +1526,51 @@ async def upload_test_images(directory: str, request: Request):
     if path is None or not path.is_dir():
         return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
     files = await uploaded_files(request)
-    saved = [save_upload(filename, content, path / TEST_DIR) for filename, content in files]
+    skipped = 0
+    saved = []
+    for filename, content in files:
+        relative = upload_relative_path(filename)
+        if relative is None or relative.suffix.lower() not in IMAGE_EXTS:
+            skipped += 1
+            continue
+        saved.append(save_upload(filename, content, path / TEST_DIR))
     saved = [item for item in saved if item is not None]
     append_upload_log(
         path,
-        f"上传测试图片/文件：接收 {len(files)} 个，保存 {len(saved)} 个",
+        f"上传测试图片：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
         [relative_log_entry(path, item) for item in saved],
     )
     index = build_project_index(path)
-    return {"ok": True, "saved": len(saved), "count": int(index.get("test", {}).get("images") or 0)}
+    return {
+        "ok": True,
+        "saved": len(saved),
+        "skipped": skipped,
+        "count": int(index.get("test", {}).get("images") or 0),
+    }
+
+
+@router.post("/project/{directory}/upload/test/delete")
+async def delete_uploaded_test_images(directory: str):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    test_dir = path / TEST_DIR
+    removed = []
+    if test_dir.exists():
+        for item in test_dir.rglob("*"):
+            if not item.is_file():
+                continue
+            item.unlink()
+            removed.append(item)
+        remove_empty_dirs(test_dir)
+    append_upload_log(
+        path,
+        f"删除测试图片/文件：{len(removed)} 个",
+        [relative_log_entry(path, item) for item in removed],
+    )
+    index = build_project_index(path)
+    return {"ok": True, "deleted": len(removed), "count": int(index.get("test", {}).get("images") or 0)}
 
 
 @router.post("/project/{directory}/upload/classes")

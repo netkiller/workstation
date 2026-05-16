@@ -374,7 +374,7 @@ function readDirectoryEntries(reader) {
   return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
 }
 
-async function filesFromEntry(entry, prefix = "") {
+async function filesFromEntry(entry, prefix = "", keepDirectoryName = false) {
   if (entry.isFile) {
     const file = await fileEntryFile(entry);
     return [{file, path: `${prefix}${file.name}`}];
@@ -386,23 +386,61 @@ async function filesFromEntry(entry, prefix = "") {
 
   const reader = entry.createReader();
   const files = [];
+  const nextPrefix = `${prefix}${keepDirectoryName ? `${entry.name}/` : ""}`;
   while (true) {
     const entries = await readDirectoryEntries(reader);
     if (!entries.length) {
       break;
     }
     for (const child of entries) {
-      files.push(...await filesFromEntry(child, `${prefix}${entry.name}/`));
+      files.push(...await filesFromEntry(child, nextPrefix, true));
     }
   }
   return files;
 }
 
 function filesFromFileList(files) {
-  return Array.from(files).map((file) => ({
+  const items = Array.from(files).map((file) => ({
     file,
     path: file.webkitRelativePath || file.name,
   }));
+  const relativeItems = items.filter((item) => item.path.includes("/"));
+  if (!relativeItems.length || relativeItems.length !== items.length) {
+    return items;
+  }
+  const roots = new Set(relativeItems.map((item) => item.path.split("/")[0]).filter(Boolean));
+  if (roots.size !== 1) {
+    return items;
+  }
+  return items.map((item) => ({
+    ...item,
+    path: item.path.split("/").slice(1).join("/") || item.file.name,
+  }));
+}
+
+const TEST_IMAGE_EXTENSIONS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".bmp",
+  ".webp",
+  ".tif",
+  ".tiff",
+  ".heic",
+  ".heif",
+  ".avif",
+  ".dng",
+  ".mpo",
+  ".jp2",
+  ".jpeg2000",
+]);
+
+function isTestImageUpload(item) {
+  const file = item.file || item;
+  const path = item.path || file.webkitRelativePath || file.name || "";
+  const dotIndex = path.lastIndexOf(".");
+  const ext = dotIndex >= 0 ? path.slice(dotIndex).toLowerCase() : "";
+  return TEST_IMAGE_EXTENSIONS.has(ext);
 }
 
 async function filesFromDataTransfer(dataTransfer) {
@@ -423,13 +461,21 @@ async function filesFromDataTransfer(dataTransfer) {
 }
 
 async function uploadFiles(zone, files) {
-  const uploads = Array.from(files);
+  const kind = zone.dataset.uploadKind;
+  let uploads = Array.from(files);
+  if (kind === "test") {
+    const before = uploads.length;
+    uploads = uploads.filter(isTestImageUpload);
+    if (!uploads.length) {
+      if (before > 0) alert("未发现可上传的图片文件。");
+      return;
+    }
+  }
   if (!uploads.length) {
     return;
   }
 
   const project = document.querySelector("[data-project]")?.dataset.project;
-  const kind = zone.dataset.uploadKind;
   if (!project || !kind) {
     return;
   }
@@ -438,27 +484,33 @@ async function uploadFiles(zone, files) {
   uploads.forEach((item) => {
     const file = item.file || item;
     const path = item.path || file.webkitRelativePath || file.name;
-    formData.append("files", file, path);
+    formData.append("paths", path);
+    formData.append("files", file, file.name);
   });
   setUploadProgress(zone, 0);
   zone.classList.add("uploading");
-  zone.classList.remove("upload-complete");
+  zone.classList.remove("upload-complete", "upload-processing");
 
   try {
     const {status, data} = await uploadWithProgress(`/project/${project}/upload/${kind}`, formData, (percent) => {
       setUploadProgress(zone, percent);
+      zone.classList.toggle("upload-processing", percent >= 100);
     });
     if (status < 200 || status >= 300 || !data.ok) {
       throw new Error(data.error || "上传失败");
     }
     setUploadProgress(zone, 100);
     zone.classList.add("upload-complete");
+    zone.classList.remove("upload-processing");
     if (kind === "images") {
       document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
       setAnnotateReady({imagesReady: data.count > 0});
       updateProjectDashboard(data.dashboard);
     } else if (kind === "test") {
       document.querySelector("[data-test-count]").textContent = `${data.count} 个文件`;
+      if (data.saved === 0 && data.skipped > 0) {
+        alert("未保存新图片，已跳过非图片文件。");
+      }
       if (document.querySelector("[data-test-page]")) {
         window.setTimeout(() => window.location.reload(), 500);
       }
@@ -480,7 +532,7 @@ async function uploadFiles(zone, files) {
     alert(error.message);
   } finally {
     window.setTimeout(() => {
-      zone.classList.remove("uploading", "upload-complete");
+      zone.classList.remove("uploading", "upload-complete", "upload-processing");
       setUploadProgress(zone, 0);
     }, zone.classList.contains("upload-complete") ? 500 : 0);
   }
@@ -491,14 +543,18 @@ async function clearUploadedImages(button) {
   if (!project) {
     return;
   }
-  if (!window.confirm("确认删除已上传图片和对应标注文件？classes.txt 会保留。")) {
+  const zone = button.closest("[data-upload-zone]");
+  const kind = zone?.dataset.uploadKind || button.dataset.clearUpload || "images";
+  const isTestUpload = kind === "test";
+  const message = isTestUpload ? "确认删除已上传测试图片？" : "确认删除已上传图片和对应标注文件？classes.txt 会保留。";
+  if (!window.confirm(message)) {
     return;
   }
 
-  const zone = button.closest("[data-upload-zone]");
   button.disabled = true;
   try {
-    const response = await fetch(`/project/${encodeURIComponent(project)}/upload/images/delete`, {
+    const endpoint = isTestUpload ? "test" : "images";
+    const response = await fetch(`/project/${encodeURIComponent(project)}/upload/${endpoint}/delete`, {
       method: "POST",
       headers: {"Accept": "application/json"},
     });
@@ -506,9 +562,19 @@ async function clearUploadedImages(button) {
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "删除失败");
     }
-    document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
-    setAnnotateReady({imagesReady: data.count > 0});
-    updateProjectDashboard(data.dashboard);
+    if (isTestUpload) {
+      const counter = document.querySelector("[data-test-count]");
+      if (counter) {
+        counter.textContent = `${data.count} 个文件`;
+      }
+      if (document.querySelector("[data-test-page]")) {
+        window.setTimeout(() => window.location.reload(), 300);
+      }
+    } else {
+      document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
+      setAnnotateReady({imagesReady: data.count > 0});
+      updateProjectDashboard(data.dashboard);
+    }
     zone?.classList.remove("uploading", "upload-complete", "dragging");
     if (zone) setUploadProgress(zone, 0);
     window.yoloutilsReloadFooterConsole?.();

@@ -26,7 +26,22 @@ from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
 MODEL_EXTS = {".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel"}
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic", ".heif"}
+IMAGE_EXTS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".webp",
+    ".tif",
+    ".tiff",
+    ".heic",
+    ".heif",
+    ".avif",
+    ".dng",
+    ".mpo",
+    ".jp2",
+    ".jpeg2000",
+}
 queue_lock = threading.Lock()
 worker_thread = None
 running_processes = {}
@@ -395,7 +410,7 @@ def remote_rmtree(sftp, remote_path: str):
         sftp.remove(remote_path)
 
 
-def sync_tree_delete(sftp, source_root: Path, remote_root: str):
+def sync_tree_delete(sftp, source_root: Path, remote_root: str, task_id: str | None = None):
     local_paths = {""}
     for source in source_root.rglob("*"):
         local_paths.add(source.relative_to(source_root).as_posix())
@@ -409,13 +424,23 @@ def sync_tree_delete(sftp, source_root: Path, remote_root: str):
         remote_items = []
     for relative, remote_path in remote_items:
         if relative not in local_paths:
+            if task_id:
+                append_log(task_id, f"删除远程多余文件：{relative}\n")
             remote_rmtree(sftp, remote_path)
-    for source in sorted(source_root.rglob("*"), key=lambda item: item.as_posix().lower()):
+    sources = sorted(source_root.rglob("*"), key=lambda item: item.as_posix().lower())
+    files = [source for source in sources if source.is_file()]
+    file_index = 0
+    for source in sources:
         relative = source.relative_to(source_root).as_posix()
         remote_path = posixpath.join(remote_root, relative)
         if source.is_dir():
+            if task_id:
+                append_log(task_id, f"创建远程目录：{relative}/\n")
             sftp_mkdirs(sftp, remote_path)
         elif source.is_file():
+            file_index += 1
+            if task_id:
+                append_log(task_id, f"复制测试文件 ({file_index}/{len(files)})：{relative}\n")
             upload_file(sftp, source, remote_path)
 
 
@@ -431,6 +456,17 @@ def list_remote_paths(sftp, remote_root: str):
             for child_relative, child_path in list_remote_paths(sftp, remote_path):
                 items.append((posixpath.join(relative, child_relative), child_path))
     return items
+
+
+def count_remote_images(sftp, remote_root: str):
+    try:
+        return sum(
+            1
+            for relative, remote_path in list_remote_paths(sftp, remote_root)
+            if not stat_module.S_ISDIR(sftp.stat(remote_path).st_mode) and Path(relative).suffix.lower() in IMAGE_EXTS
+        )
+    except OSError:
+        return 0
 
 
 def download_remote_tree(sftp, remote_path: str, local_path: Path):
@@ -517,11 +553,16 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         sftp_mkdirs(sftp, remote_runs_root)
 
         append_log(task_id, f"同步测试图片：{len(images)} 张（删除远程多余文件）\n")
-        sync_tree_delete(sftp, project_dir / "test", remote_test)
+        sync_tree_delete(sftp, project_dir / "test", remote_test, task_id)
+        remote_image_count = count_remote_images(sftp, remote_test)
+        append_log(task_id, f"远程测试图片：{remote_image_count} 张\n")
+        if remote_image_count <= 0:
+            raise RuntimeError(f"远程 test 目录没有可测试图片：{remote_test}")
         remote_model_paths = {}
         append_log(task_id, f"上传模型：{len(models)} 个\n")
         for index, model in enumerate(models, start=1):
             remote_model = posixpath.join(remote_models, remote_model_filename(index, model))
+            append_log(task_id, f"复制模型文件 ({index}/{len(models)})：{model['name']} -> {remote_model}\n")
             upload_file(sftp, Path(model["path"]), remote_model)
             remote_model_paths[model["relative_path"]] = remote_model
 

@@ -12,7 +12,10 @@ from routes.project import (
     current_username as project_current_username,
     project_annotate_workspace,
     project_display_name,
+    project_icon,
     project_root_workspace,
+    read_project_meta,
+    read_project_registry,
     read_online_users,
     team_mode_enabled,
     user_color,
@@ -70,11 +73,11 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
     project_url = f"/project/{quote(project, safe='')}" if project else "/project"
     project_query = f"?project={quote(project, safe='')}" if project else ""
     team_url = f"/team/{quote(project, safe='')}" if project else "/team"
-    close_project_button = (
-        '<button class="enterprise-link close-current-project" type="button" title="关闭当前项目" onclick="location.href=\'/project\'">'
-        '<span class="header-icon">×</span><span>关闭项目</span></button>'
-        if project else ""
-    )
+    project_root = project_root_workspace(project) if project else None
+    project_meta = read_project_meta(project_root, read_project_registry(workspace)) if project_root and project_root.is_dir() else None
+    header_project_name = project_meta["name"] if project_meta else ""
+    header_project_icon = project_meta["icon"] if project_meta else project_icon("")
+    close_project_button = ""
     project_button = (
         '<button id="projectButton" class="header-button" '
         f'title="项目" onclick="location.href=\'{project_url}\'">'
@@ -85,6 +88,12 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
         '<button id="resourcesButton" class="header-button" title="算力" '
         f'onclick="location.href=\'{resources_url}\'">'
         '<span class="header-icon">▥</span><span>算力</span></button>'
+    )
+    test_url = f"/test/{quote(project, safe='')}" if project else "/test"
+    test_button = (
+        '<button id="testButton" class="header-button" title="测试" '
+        f'onclick="location.href=\'{test_url}\'">'
+        '<span class="header-icon">◉</span><span>测试</span></button>'
     )
     team_button = (
         '<button id="teamButton" class="header-button" title="团队" '
@@ -111,7 +120,23 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
         .replace("`/media", "`/annotate/media")
         .replace(
             '<a class="brand-link" href="https://www.netkiller.cn" target="_blank" rel="noopener noreferrer">Yolo Workstation</a>',
-            f"{user_header}{close_project_button}",
+            (
+                f'<a class="brand-link" href="{project_url}" title="{html_escape(header_project_name)}">'
+                f"{html_escape(header_project_name)}</a>{user_header}{close_project_button}"
+                if project and header_project_name
+                else f"{user_header}{close_project_button}"
+            ),
+            1,
+        )
+        .replace(
+            '<a class="header-home-link" href="https://saas.netkiller.cn" target="_blank" rel="noopener noreferrer" title="Home" aria-label="Home">\n        <svg class="header-home-icon" viewBox="0 0 24 24" aria-hidden="true">\n          <path d="M3 11.5 12 4l9 7.5"></path>\n          <path d="M5.5 10.5V20h13v-9.5"></path>\n          <path d="M9.5 20v-6h5v6"></path>\n        </svg>\n      </a>',
+            (
+                f'<a class="header-home-link header-project-icon-link" href="{project_url}" '
+                f'title="{html_escape(header_project_name)}" aria-label="{html_escape(header_project_name)}">'
+                f'<span class="header-project-icon">{html_escape(header_project_icon)}</span></a>'
+                if project and header_project_name
+                else '<a class="header-home-link" href="https://saas.netkiller.cn" target="_blank" rel="noopener noreferrer" title="Home" aria-label="Home">\n        <svg class="header-home-icon" viewBox="0 0 24 24" aria-hidden="true">\n          <path d="M3 11.5 12 4l9 7.5"></path>\n          <path d="M5.5 10.5V20h13v-9.5"></path>\n          <path d="M9.5 20v-6h5v6"></path>\n        </svg>\n      </a>'
+            ),
             1,
         )
         .replace(
@@ -127,6 +152,11 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
         .replace(
             '<button id="annotateModeButton"',
             f'{team_button}{project_button}{resources_button}<button id="annotateModeButton"',
+            1,
+        )
+        .replace(
+            '</button>\n    </div>\n    <div class="header-actions">',
+            f'</button>{test_button}\n    </div>\n    <div class="header-actions">',
             1,
         )
         .replace(

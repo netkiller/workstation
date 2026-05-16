@@ -98,6 +98,22 @@ header :where(a, button) {
   stroke-linejoin: round;
 }
 
+.header-project-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.header-project-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .username-badge {
   max-width: 160px;
   overflow: hidden;
@@ -588,6 +604,15 @@ main > :where(
 .model-head-actions .model-subnav {
   justify-content: flex-end;
   margin: 0;
+}
+
+.model-head-actions .model-subnav a {
+  min-width: 72px !important;
+  height: 36px !important;
+  justify-content: center !important;
+  padding: 0 14px !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
 }
 
 .secondary-button,

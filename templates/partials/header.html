@@ -1,12 +1,19 @@
 <header>
   <div class="brand-title">
-    <a class="header-home-link" href="https://saas.netkiller.cn" target="_blank" rel="noopener noreferrer" title="Home" aria-label="Home">
-      <svg class="header-home-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3 11.5 12 4l9 7.5"></path>
-        <path d="M5.5 10.5V20h13v-9.5"></path>
-        <path d="M9.5 20v-6h5v6"></path>
-      </svg>
-    </a>
+    {% if current_project and header_project_name %}
+      <a class="header-home-link header-project-icon-link" href="/project/{{ current_project }}" title="{{ header_project_name }}" aria-label="{{ header_project_name }}"><span class="header-project-icon">{{ header_project_icon or "▤" }}</span></a>
+    {% else %}
+      <a class="header-home-link" href="https://saas.netkiller.cn" target="_blank" rel="noopener noreferrer" title="Home" aria-label="Home">
+        <svg class="header-home-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 11.5 12 4l9 7.5"></path>
+          <path d="M5.5 10.5V20h13v-9.5"></path>
+          <path d="M9.5 20v-6h5v6"></path>
+        </svg>
+      </a>
+    {% endif %}
+    {% if current_project and header_project_name %}
+      <strong class="header-project-name">{{ header_project_name }}</strong>
+    {% endif %}
     {% if username %}
       <span class="user-avatar" style="--user-color: {{ username_color | default('#3b82f6') }}" aria-hidden="true">{{ username_initial | default(username[:1]) }}</span>
       <span class="username-badge">{{ username }}</span>
@@ -17,7 +24,9 @@
         <a class="close-current-project" href="/project" title="关闭当前项目"><span class="nav-icon">×</span><span>关闭项目</span></a>
       {% endif %}
     {% else %}
-      <strong>Yolo Workstation</strong>
+      {% if not current_project or not header_project_name %}
+        <strong>Yolo Workstation</strong>
+      {% endif %}
     {% endif %}
   </div>
   <nav aria-label="主导航">
