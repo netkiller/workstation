@@ -26,13 +26,23 @@ from routes.project import (
     current_username,
     is_inside,
     project_annotate_workspace,
+    project_root_workspace,
     router as project_router,
     team_mode_enabled,
     workspace_path,
 )
 from routes.predict import router as predict_router
 from routes.resources import router as resources_router
-from routes.test import ensure_worker as ensure_test_worker, router as test_router
+from routes.test import (
+    ensure_worker as ensure_test_worker,
+    load_tasks as load_test_tasks,
+    prediction_image_path,
+    read_report as read_test_report,
+    report_model_run_dir,
+    report_row_image_name,
+    router as test_router,
+    test_images_dir,
+)
 from routes.train import router as train_router
 from routes.val import router as validate_router
 
@@ -41,7 +51,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 MEDIA_CONVERT_EXTS = {".heic", ".heif", ".tif", ".tiff"}
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     try:
         import pillow_heif
@@ -190,14 +200,21 @@ def annotate(request: Request):
 def _media_workspace(request: Request, project: str = ""):
     requested_project = project or request.query_params.get("project") or request.cookies.get("current_project", "")
     if requested_project:
-        annotate_workspace = project_annotate_workspace(requested_project)
-        if annotate_workspace is not None:
-            return annotate_workspace
+        if request.url.path.startswith("/annotate/media"):
+            annotate_workspace = project_annotate_workspace(requested_project)
+            if annotate_workspace is not None:
+                return annotate_workspace
+        project_workspace = project_root_workspace(requested_project)
+        if project_workspace is not None:
+            return project_workspace
     return workspace_path().resolve()
 
 
 def _media_path(request: Request, path: str, project: str = ""):
     workspace = _media_workspace(request, project)
+    path_parts = [part for part in Path(path or "").parts if part not in ("", ".")]
+    if request.url.path == "/media" and len(path_parts) >= 2 and path_parts[0] == TEST_DIR and path_parts[1] == "tasks":
+        raise HTTPException(status_code=404, detail="image not found")
     file_path = (workspace / (path or "")).resolve()
     if file_path != workspace and not is_inside(file_path, workspace):
         raise HTTPException(status_code=400, detail="invalid path")
@@ -229,6 +246,70 @@ def _media_image_response(path: Path):
     except Exception as error:
         raise HTTPException(status_code=415, detail=f"图片转换失败: {error}") from error
     return Response(buffer.getvalue(), media_type="image/jpeg")
+
+
+def _report_media_path(task_id: str, image_index: int, model: int | None = None):
+    report = read_test_report(task_id)
+    task = next((item for item in load_test_tasks() if item.get("id") == task_id), None)
+    if report is None or task is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    project = str(task.get("project") or report.get("project") or "")
+    project_workspace = project_root_workspace(project)
+    if project_workspace is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    image_name = report_row_image_name(report, image_index)
+    if model is None:
+        image_path = test_images_dir(project_workspace) / image_name
+    else:
+        models = report.get("models") or []
+        if model < 0 or model >= len(models):
+            raise HTTPException(status_code=404, detail="model not found")
+        run_dir = report_model_run_dir(project_workspace, report, models[model])
+        image_path = prediction_image_path(run_dir, image_name) if run_dir else None
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="image not found")
+    resolved = image_path.resolve()
+    if not is_inside(resolved, project_workspace.resolve()):
+        raise HTTPException(status_code=400, detail="invalid image")
+    if not resolved.is_file() or resolved.suffix.lower() not in IMAGE_EXTS:
+        raise HTTPException(status_code=404, detail="image not found")
+    return resolved
+
+
+def _thumbnail_response(path: Path):
+    if Image is None:
+        return FileResponse(path)
+    try:
+        with Image.open(path) as image:
+            thumbnail = image.info.get("thumbnail")
+            if isinstance(thumbnail, bytes) and thumbnail:
+                image = Image.open(BytesIO(thumbnail))
+            image = ImageOps.exif_transpose(image)
+            if image.mode in ("RGBA", "LA") or (
+                image.mode == "P" and "transparency" in image.info
+            ):
+                canvas = Image.new("RGB", image.size, (255, 255, 255))
+                rgba_image = image.convert("RGBA")
+                canvas.paste(rgba_image, mask=rgba_image.getchannel("A"))
+                image = canvas
+            else:
+                image = image.convert("RGB")
+            image.thumbnail((520, 520))
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=82, optimize=True)
+    except Exception as error:
+        raise HTTPException(status_code=415, detail=f"缩略图生成失败: {error}") from error
+    return Response(buffer.getvalue(), media_type="image/jpeg")
+
+
+@app.get("/media/original/reports/{task_id}/{image_index}")
+def media_report_original(task_id: str, image_index: int, model: int | None = Query(default=None)):
+    return _media_image_response(_report_media_path(task_id, image_index, model))
+
+
+@app.get("/media/thumbnail/reports/{task_id}/{image_index}")
+def media_report_thumbnail(task_id: str, image_index: int, model: int | None = Query(default=None)):
+    return _thumbnail_response(_report_media_path(task_id, image_index, model))
 
 
 @app.get("/media")

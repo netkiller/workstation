@@ -517,15 +517,20 @@ async function uploadFiles(zone, files) {
     } else if (kind === "model") {
       document.querySelector("[data-model-count]").textContent = `${data.count} 个文件`;
       setActionEnabled("[data-model-action]", data.count > 0);
-    } else if (kind === "classes") {
+    } else if (kind === "classes" || kind === "test-classes") {
       const label = zone.querySelector("[data-upload-label]");
       if (label) {
         label.textContent = "classes.txt 已上传";
       }
-      const status = document.querySelector("[data-classes-status]");
+      const status = document.querySelector(kind === "test-classes" ? "[data-test-classes-status]" : "[data-classes-status]");
       if (status) status.textContent = "已上传";
-      const buttonLabel = document.querySelector("[data-classes-edit-label]");
-      if (buttonLabel) buttonLabel.textContent = "编辑";
+      if (kind === "classes") {
+        const buttonLabel = document.querySelector("[data-classes-edit-label]");
+        if (buttonLabel) buttonLabel.textContent = "编辑";
+      }
+      if (kind === "test-classes" && document.querySelector("[data-test-page]")) {
+        window.setTimeout(() => window.location.reload(), 500);
+      }
     }
     window.yoloutilsReloadFooterConsole?.();
   } catch (error) {

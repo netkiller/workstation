@@ -543,6 +543,7 @@
   --model-soft: #f5faff;
   --model-line: #b8d4f5;
   --model-muted: #5b7da7;
+  position: relative;
   break-inside: avoid;
   display: grid;
   gap: 12px;
@@ -611,6 +612,10 @@
   min-width: 0;
 }
 
+.model-card.has-downloads .model-card-main {
+  padding-right: 210px;
+}
+
 .model-card-preview {
   grid-column: 1 / -1;
   overflow: hidden;
@@ -647,6 +652,10 @@
 }
 
 .model-card-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -672,6 +681,17 @@
   border-color: var(--accent);
   color: var(--accent);
   background: #eef6ff;
+}
+
+@media (max-width: 720px) {
+  .model-card.has-downloads .model-card-main {
+    padding-right: 0;
+  }
+
+  .model-card-actions {
+    position: static;
+    justify-content: flex-start;
+  }
 }
 
 .model-metrics {

@@ -4,7 +4,7 @@
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
-  <link rel="stylesheet" href="/static/css/train.css?v=20260516-model-entry-charts">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260516-model-downloads-top">
 {% endblock %}
 
 {% block content %}
@@ -97,7 +97,7 @@
     {% if models %}
       <section class="model-list model-overview-list" aria-label="训练结果列表">
         {% for model in models %}
-          <article class="model-card">
+          <article class="model-card{% if model.has_best or model.has_last %} has-downloads{% endif %}">
             <a class="model-card-link" href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}" aria-label="查看模型 {{ model.task.name }}">
               <div class="model-card-main">
                 <h2>{{ model.task.name }}</h2>

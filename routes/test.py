@@ -14,11 +14,12 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from routes.dataset import normalize_console_log
+from routes.dataset import prepare_remote_auth, remote_target, rsync_file_output_args, rsync_ssh_args
 from routes.project import header_context
 from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 from routes.train import (
@@ -239,7 +240,7 @@ def test_extension_chart(project_dir: Path | None):
 
 
 def read_classes(project_dir: Path):
-    for candidate in (project_dir / "annotate" / "classes.txt", project_dir / "classes.txt"):
+    for candidate in (project_dir / TEST_DIR / "classes.txt", project_dir / "annotate" / "classes.txt", project_dir / "classes.txt"):
         if candidate.is_file():
             items = [line.strip() for line in candidate.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
             if items:
@@ -293,7 +294,7 @@ def parse_label_file(path: Path, class_names: list[str]):
             confidence = float(parts[-1]) if len(parts) >= 6 else None
         except ValueError:
             continue
-        label = class_names[class_id] if 0 <= class_id < len(class_names) else f"class_{class_id}"
+        label = class_names[class_id] if 0 <= class_id < len(class_names) else str(class_id)
         detections.append({"label": label, "confidence": confidence})
     return detections
 
@@ -423,6 +424,192 @@ def upload_file(sftp, source: Path, target: str):
     sftp.put(str(source), target)
 
 
+def transfer_tool(preferred: str = ""):
+    rsync = shutil.which("rsync") if preferred in {"", "rsync"} else None
+    if rsync and preferred != "scp":
+        return "rsync", rsync
+    scp = shutil.which("scp") if preferred in {"", "scp"} else None
+    if scp:
+        return "scp", scp
+    return "", ""
+
+
+def display_command(command: list[str]):
+    masked = list(command)
+    if masked and Path(masked[0]).name == "sshpass" and len(masked) > 2:
+        masked[2] = "******"
+    return " ".join(shlex.quote(str(part)) for part in masked)
+
+
+def run_transfer_command(task_id: str, command: list[str]):
+    append_log(task_id, "$ " + display_command(command) + "\n")
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert process.stdout is not None
+    output_parts = []
+    for line in process.stdout:
+        output_parts.append(line)
+        append_log(task_id, line)
+    return process.wait(), "".join(output_parts)
+
+
+def remote_transfer_base(resource: dict, temp_files: list[Path], task_id: str, preferred: str = ""):
+    tool_name, tool_path = transfer_tool(preferred)
+    if not tool_name:
+        return "", "", [], [], None, "本机未安装 rsync 或 scp"
+    prefix, ssh_key, auth_error = prepare_remote_auth(resource, temp_files)
+    if auth_error:
+        return "", "", [], [], None, auth_error
+    append_log(task_id, f"传输工具：{tool_name}\n")
+    if tool_name == "rsync":
+        base = [*prefix, tool_path, "-auvz", *rsync_file_output_args(tool_path), "-e", rsync_ssh_args(resource, ssh_key)]
+    else:
+        base = [*prefix, tool_path, "-r", "-P", str(resource.get("port") or 22), "-o", "StrictHostKeyChecking=no"]
+        if ssh_key:
+            base.extend(["-i", str(ssh_key)])
+    return tool_name, tool_path, prefix, base, ssh_key, ""
+
+
+def rsync_missing_failure(code: int, output: str):
+    text = output.lower()
+    return code == 127 or "rsync: command not found" in text or "rsync: not found" in text or "rsync: connection unexpectedly closed" in text
+
+
+def transfer_directory_to_remote(client, resource: dict, task_id: str, source: Path, remote_path: str, delete: bool = False):
+    temp_files: list[Path] = []
+    try:
+        tool_name, _tool_path, _prefix, base, _ssh_key, error = remote_transfer_base(resource, temp_files, task_id)
+        if error:
+            append_log(task_id, f"{error}，改用 SFTP 传输。\n")
+            return False
+        target = remote_target(resource, remote_path.rstrip("/") + "/")
+        if tool_name == "rsync":
+            command = [*base]
+            if delete:
+                command.append("--delete")
+            command.extend([str(source) + "/", target])
+        else:
+            if delete:
+                append_log(task_id, f"scp 不支持 --delete，先清空远程目录：{remote_path}\n")
+                cleanup = f"rm -rf {shlex.quote(remote_path)} && mkdir -p {shlex.quote(remote_path)}"
+                code, output, error_text = remote_command_output(client, cleanup)
+                if output:
+                    append_log(task_id, output)
+                if error_text:
+                    append_log(task_id, error_text)
+                if code != 0:
+                    raise RuntimeError(f"清空远程目录失败，退出码 {code}")
+            command = [*base, str(source / "."), target]
+        code, output = run_transfer_command(task_id, command)
+        if tool_name == "rsync" and code != 0 and rsync_missing_failure(code, output):
+            append_log(task_id, "rsync 不可用，改用 scp 传输。\n")
+            for temp_file in temp_files:
+                temp_file.unlink(missing_ok=True)
+            temp_files.clear()
+            tool_name, _tool_path, _prefix, base, _ssh_key, error = remote_transfer_base(resource, temp_files, task_id, preferred="scp")
+            if error:
+                append_log(task_id, f"{error}，改用 SFTP 传输。\n")
+                return False
+            if delete:
+                append_log(task_id, f"scp 不支持 --delete，先清空远程目录：{remote_path}\n")
+                cleanup = f"rm -rf {shlex.quote(remote_path)} && mkdir -p {shlex.quote(remote_path)}"
+                cleanup_code, cleanup_output, cleanup_error = remote_command_output(client, cleanup)
+                if cleanup_output:
+                    append_log(task_id, cleanup_output)
+                if cleanup_error:
+                    append_log(task_id, cleanup_error)
+                if cleanup_code != 0:
+                    raise RuntimeError(f"清空远程目录失败，退出码 {cleanup_code}")
+            code, output = run_transfer_command(task_id, [*base, str(source / "."), target])
+        if code != 0:
+            raise RuntimeError(f"{tool_name} 传输失败，退出码 {code}")
+        return True
+    finally:
+        for temp_file in temp_files:
+            temp_file.unlink(missing_ok=True)
+
+
+def transfer_file_to_remote(client, resource: dict, task_id: str, source: Path, remote_path: str):
+    temp_files: list[Path] = []
+    try:
+        tool_name, _tool_path, _prefix, base, _ssh_key, error = remote_transfer_base(resource, temp_files, task_id)
+        if error:
+            append_log(task_id, f"{error}，改用 SFTP 传输。\n")
+            return False
+        code, _output, error_text = remote_command_output(client, f"mkdir -p {shlex.quote(posixpath.dirname(remote_path))}")
+        if error_text:
+            append_log(task_id, error_text)
+        if code != 0:
+            raise RuntimeError(f"创建远程目录失败，退出码 {code}")
+        target = remote_target(resource, remote_path)
+        if tool_name == "rsync":
+            command = [*base, str(source), target]
+        else:
+            command = [*base, str(source), target]
+        code, output = run_transfer_command(task_id, command)
+        if tool_name == "rsync" and code != 0 and rsync_missing_failure(code, output):
+            append_log(task_id, "rsync 不可用，改用 scp 传输。\n")
+            for temp_file in temp_files:
+                temp_file.unlink(missing_ok=True)
+            temp_files.clear()
+            tool_name, _tool_path, _prefix, base, _ssh_key, error = remote_transfer_base(resource, temp_files, task_id, preferred="scp")
+            if error:
+                append_log(task_id, f"{error}，改用 SFTP 传输。\n")
+                return False
+            code, output = run_transfer_command(task_id, [*base, str(source), target])
+        if code != 0:
+            raise RuntimeError(f"{tool_name} 传输失败，退出码 {code}")
+        return True
+    finally:
+        for temp_file in temp_files:
+            temp_file.unlink(missing_ok=True)
+
+
+def transfer_directory_from_remote(resource: dict, task_id: str, remote_path: str, local_path: Path):
+    temp_files: list[Path] = []
+    try:
+        tool_name, _tool_path, _prefix, base, _ssh_key, error = remote_transfer_base(resource, temp_files, task_id)
+        if error:
+            append_log(task_id, f"{error}，改用 SFTP 下载。\n")
+            return False
+        local_path.mkdir(parents=True, exist_ok=True)
+        if tool_name == "rsync":
+            command = [*base, "--delete", remote_target(resource, remote_path.rstrip("/") + "/"), str(local_path) + "/"]
+        else:
+            append_log(task_id, f"scp 不支持 --delete，先清空本地目录：{local_path}\n")
+            if local_path.exists():
+                shutil.rmtree(local_path)
+            local_path.mkdir(parents=True, exist_ok=True)
+            command = [*base, remote_target(resource, posixpath.join(remote_path, ".")), str(local_path)]
+        code, output = run_transfer_command(task_id, command)
+        if tool_name == "rsync" and code != 0 and rsync_missing_failure(code, output):
+            append_log(task_id, "rsync 不可用，改用 scp 下载。\n")
+            for temp_file in temp_files:
+                temp_file.unlink(missing_ok=True)
+            temp_files.clear()
+            tool_name, _tool_path, _prefix, base, _ssh_key, error = remote_transfer_base(resource, temp_files, task_id, preferred="scp")
+            if error:
+                append_log(task_id, f"{error}，改用 SFTP 下载。\n")
+                return False
+            append_log(task_id, f"scp 不支持 --delete，先清空本地目录：{local_path}\n")
+            if local_path.exists():
+                shutil.rmtree(local_path)
+            local_path.mkdir(parents=True, exist_ok=True)
+            code, output = run_transfer_command(task_id, [*base, remote_target(resource, posixpath.join(remote_path, ".")), str(local_path)])
+        if code != 0:
+            raise RuntimeError(f"{tool_name} 下载失败，退出码 {code}")
+        return True
+    finally:
+        for temp_file in temp_files:
+            temp_file.unlink(missing_ok=True)
+
+
 def upload_tree(sftp, source_root: Path, remote_root: str):
     for source in sorted(source_root.rglob("*"), key=lambda item: item.as_posix().lower()):
         if not source.is_file():
@@ -535,7 +722,7 @@ def download_remote_tree(sftp, remote_path: str, local_path: Path, on_file=None)
             local_child.parent.mkdir(parents=True, exist_ok=True)
             sftp.get(remote_child, str(local_child))
             if on_file:
-                on_file(remote_child)
+                on_file(remote_child, local_child)
 
 
 def remote_exec_stream(client, task_id: str, command: str):
@@ -684,29 +871,36 @@ def download_remote_results(task: dict, project_dir: Path, models: list[dict], i
         local_runs_root = task_output_dir(project_dir, task)
         append_log(task_id, f"重新下载远程结果：{remote_runs_root}\n")
         run_names = [f"{task_id}-{slug(model['run'] or model['name'])}" for model in models]
-        remote_results = [
-            item
+        remote_result_groups = [
+            (run_name, remote_file_paths(sftp, posixpath.join(remote_runs_root, run_name)))
             for run_name in run_names
-            for item in remote_file_paths(sftp, posixpath.join(remote_runs_root, run_name))
         ]
+        remote_results = [item for _run_name, items in remote_result_groups for item in items]
         download_total = max(1, len(remote_results))
         download_done = 0
         running_processes[task_id] = client
 
-        def mark_downloaded(_remote_path):
+        def mark_downloaded(remote_path, local_path, count: int = 1):
             nonlocal download_done
-            download_done += 1
+            download_done = min(download_total, download_done + max(0, count))
+            append_log(task_id, f"下载结果文件 ({download_done}/{download_total})：{remote_path} -> {local_path}\n")
             update_task(
                 task_id,
                 progress=round(download_done / download_total * 100),
                 progress_done=download_done,
                 progress_total=download_total,
-                progress_label="下载",
             )
 
-        update_task(task_id, status="模型下载", progress=0, completed_models=len(models), progress_done=0, progress_total=download_total, progress_label="下载")
-        for run_name in run_names:
-            download_remote_tree(sftp, posixpath.join(remote_runs_root, run_name), local_runs_root / run_name, on_file=mark_downloaded)
+        update_task(task_id, status="模型下载", progress=0, completed_models=len(models), progress_done=0, progress_total=download_total)
+        for run_name, files in remote_result_groups:
+            remote_run = posixpath.join(remote_runs_root, run_name)
+            local_run = local_runs_root / run_name
+            if transfer_directory_from_remote(resource, task_id, remote_run, local_run):
+                mark_downloaded(remote_run, local_run, len(files))
+            else:
+                download_remote_tree(sftp, remote_run, local_run, on_file=mark_downloaded)
+        if download_done < download_total:
+            update_task(task_id, progress=100, progress_done=download_total, progress_total=download_total)
         append_log(task_id, f"已下载到本地：{local_runs_root}\n")
         return build_results_from_runs(project_dir, task_id, models, images, class_names)
     finally:
@@ -736,9 +930,9 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         deployment_total = max(1, len(deployment_files) + len(models))
         deployment_done = 0
 
-        def mark_deployed():
+        def mark_deployed(count: int = 1):
             nonlocal deployment_done
-            deployment_done += 1
+            deployment_done += count
             update_task(
                 task_id,
                 progress=round(deployment_done / deployment_total * 100),
@@ -780,7 +974,10 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         sftp_mkdirs(sftp, remote_logs)
 
         append_log(task_id, f"同步测试图片：{len(images)} 张（删除远程多余文件）\n")
-        sync_tree_delete(sftp, local_test_images, remote_test, task_id, on_file=lambda _relative: mark_deployed())
+        if transfer_directory_to_remote(client, resource, task_id, local_test_images, remote_test, delete=True):
+            mark_deployed(len(deployment_files))
+        else:
+            sync_tree_delete(sftp, local_test_images, remote_test, task_id, on_file=lambda _relative: mark_deployed())
         remote_image_count = count_remote_images(sftp, remote_test)
         append_log(task_id, f"远程测试图片：{remote_image_count} 张\n")
         if remote_image_count <= 0:
@@ -790,7 +987,8 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         for index, model in enumerate(models, start=1):
             remote_model = posixpath.join(remote_models, remote_model_filename(index, model))
             append_log(task_id, f"复制模型文件 ({index}/{len(models)})：{model['name']} -> {remote_model}\n")
-            upload_file(sftp, Path(model["path"]), remote_model)
+            if not transfer_file_to_remote(client, resource, task_id, Path(model["path"]), remote_model):
+                upload_file(sftp, Path(model["path"]), remote_model)
             mark_deployed()
             remote_model_paths[model["relative_path"]] = remote_model
 
@@ -830,34 +1028,41 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
                 if is_no_space_error(remote_log_text):
                     raise RuntimeError(f"{model['name']} 远程空间不足：No space left on device")
                 raise RuntimeError(f"{model['name']} 远程退出码 {code}")
-            update_task(task_id, progress=round(index / len(models) * 85), progress_done=index, progress_total=len(models))
+            update_task(task_id, progress=round(index / len(models) * 100), progress_done=index, progress_total=len(models))
 
         local_runs_root = task_output_dir(project_dir, task)
         append_log(task_id, f"下载远程结果：{remote_runs_root}\n")
         run_names = [f"{task_id}-{slug(model['run'] or model['name'])}" for model in models]
-        remote_results = [
-            item
+        remote_result_groups = [
+            (run_name, remote_file_paths(sftp, posixpath.join(remote_runs_root, run_name)))
             for run_name in run_names
-            for item in remote_file_paths(sftp, posixpath.join(remote_runs_root, run_name))
         ]
+        remote_results = [item for _run_name, items in remote_result_groups for item in items]
         download_total = max(1, len(remote_results))
         download_done = 0
         running_processes[task_id] = client
 
-        def mark_downloaded(_remote_path):
+        def mark_downloaded(remote_path, local_path, count: int = 1):
             nonlocal download_done
-            download_done += 1
+            download_done = min(download_total, download_done + max(0, count))
+            append_log(task_id, f"下载结果文件 ({download_done}/{download_total})：{remote_path} -> {local_path}\n")
             update_task(
                 task_id,
                 progress=round(download_done / download_total * 100),
                 progress_done=download_done,
                 progress_total=download_total,
-                progress_label="下载",
             )
 
-        update_task(task_id, status="模型下载", progress=0, completed_models=len(models), progress_done=0, progress_total=download_total, progress_label="下载")
-        for run_name in run_names:
-            download_remote_tree(sftp, posixpath.join(remote_runs_root, run_name), local_runs_root / run_name, on_file=mark_downloaded)
+        update_task(task_id, status="模型下载", progress=0, completed_models=len(models), progress_done=0, progress_total=download_total)
+        for run_name, files in remote_result_groups:
+            remote_run = posixpath.join(remote_runs_root, run_name)
+            local_run = local_runs_root / run_name
+            if transfer_directory_from_remote(resource, task_id, remote_run, local_run):
+                mark_downloaded(remote_run, local_run, len(files))
+            else:
+                download_remote_tree(sftp, remote_run, local_run, on_file=mark_downloaded)
+        if download_done < download_total:
+            update_task(task_id, progress=100, progress_done=download_total, progress_total=download_total)
         append_log(task_id, f"已下载到本地：{local_runs_root}\n")
 
         return build_results_from_runs(project_dir, task_id, models, images, class_names)
@@ -876,16 +1081,39 @@ def build_report(task: dict, model_results: list[dict], images: list[Path], proj
         for model in model_results:
             cells[model["name"]] = format_detections(model["detections"].get(image_name, []))
         rows.append({"image": image_name, "cells": cells})
+    label_counts = {}
+    for model in model_results:
+        for detections in model["detections"].values():
+            for detection in detections:
+                label = str(detection.get("label") or "unknown")
+                label_counts[label] = label_counts.get(label, 0) + 1
+    best_model = max(
+        model_results,
+        key=lambda item: item["average_confidence"] if item["average_confidence"] is not None else -1,
+        default=None,
+    )
     return {
         "task_id": task["id"],
         "project": task["project"],
         "name": task["name"],
         "created_at": task["created_at"],
+        "image_count": len(image_names),
+        "model_count": len(model_results),
+        "total_detections": sum(item["detection_count"] for item in model_results),
+        "best_model": best_model["name"] if best_model else "",
+        "labels": [
+            {"label": label, "count": count}
+            for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
         "models": [
             {
                 "name": item["name"],
+                "run": item.get("run", ""),
+                "run_dir": item.get("run_dir", ""),
+                "relative_path": item.get("relative_path", ""),
                 "average_confidence": item["average_confidence"],
                 "detection_count": item["detection_count"],
+                "detected_images": sum(1 for detections in item["detections"].values() if detections),
             }
             for item in model_results
         ],
@@ -928,7 +1156,7 @@ def run_task(task: dict):
                 update_task(task_id, completed_models=index)
                 append_log(task_id, f"运行模型 ({index}/{len(models)})：{model['name']}\n")
                 results.append(run_model(project_dir, task_id, model, images, class_names))
-                update_task(task_id, progress=round(index / len(models) * 90), progress_done=index, progress_total=len(models))
+                update_task(task_id, progress=round(index / len(models) * 100), progress_done=index, progress_total=len(models))
     except Exception as error:
         append_log(task_id, f"\n模型测试失败：{error}\n")
         latest_task = next((item for item in load_tasks() if item.get("id") == task_id), task)
@@ -1016,9 +1244,7 @@ def task_view(task: dict):
     else:
         view["progress_done"] = completed_models
         view["progress_total"] = model_count
-    if view.get("status") == "模型下载":
-        view["progress_label"] = "下载"
-    elif view.get("progress_total"):
+    if view.get("progress_total"):
         view["progress_label"] = f"({view['progress_done']}/{view['progress_total']})"
     else:
         view["progress_label"] = ""
@@ -1041,6 +1267,292 @@ def read_report(task_id: str):
         return None
 
 
+def report_source_image_url(project: str, task_id: str, image_index: int):
+    return f"/media/thumbnail/reports/{task_id}/{image_index}"
+
+
+def report_prediction_image_url(project: str, task_id: str, image_index: int, model_index: int):
+    return f"/media/thumbnail/reports/{task_id}/{image_index}?model={model_index}"
+
+
+def report_original_source_image_url(task_id: str, image_index: int):
+    return f"/media/original/reports/{task_id}/{image_index}"
+
+
+def report_original_prediction_image_url(task_id: str, image_index: int, model_index: int):
+    return f"/media/original/reports/{task_id}/{image_index}?model={model_index}"
+
+
+def detection_confidence_values(text: str):
+    if not text or text == "未识别":
+        return []
+    values = []
+    for segment in str(text).split("；"):
+        parts = segment.strip().split()
+        if not parts:
+            continue
+        try:
+            values.append(float(parts[-1]))
+        except ValueError:
+            continue
+    return values
+
+
+def label_from_token(token: str, class_names: list[str]):
+    label = str(token or "").strip()
+    if label.startswith("class_") and label[6:].isdigit():
+        label = label[6:]
+    if label.isdigit():
+        index = int(label)
+        return class_names[index] if 0 <= index < len(class_names) else label
+    return label
+
+
+def remap_detection_text(text: str, class_names: list[str]):
+    if not text or text == "未识别":
+        return text or "未识别"
+    parts = []
+    for segment in str(text).split("；"):
+        tokens = segment.strip().split()
+        if not tokens:
+            continue
+        if len(tokens) >= 2:
+            label = label_from_token(" ".join(tokens[:-1]), class_names)
+            parts.append(f"{label} {tokens[-1]}")
+        else:
+            parts.append(label_from_token(tokens[0], class_names))
+    return "；".join(parts) if parts else "未识别"
+
+
+def csv_detection_text(text: str, class_names: list[str]):
+    if not text or text == "未识别":
+        return "-"
+    class_index = {name: str(index) for index, name in enumerate(class_names)}
+    parts = []
+    for segment in str(text).split("；"):
+        tokens = segment.strip().split()
+        if not tokens:
+            continue
+        confidence = ""
+        label_token = tokens[0]
+        if len(tokens) >= 2:
+            confidence = tokens[-1]
+            label_token = " ".join(tokens[:-1])
+        label = str(label_token or "").strip()
+        if label.startswith("class_") and label[6:].isdigit():
+            label = label[6:]
+        elif label in class_index:
+            label = class_index[label]
+        parts.append(f"{label} {confidence}".strip())
+    return "；".join(parts) if parts else "-"
+
+
+def detection_labels(text: str):
+    if not text or text == "未识别":
+        return []
+    labels = []
+    for segment in str(text).split("；"):
+        parts = segment.strip().split()
+        if not parts:
+            continue
+        label = " ".join(parts[:-1]) if len(parts) > 1 else parts[0]
+        labels.append(label or parts[0])
+    return labels
+
+
+def detection_table_tags(text: str, class_names: list[str]):
+    if not text or text == "未识别":
+        return []
+    tags = []
+    class_index = {name: str(index) for index, name in enumerate(class_names)}
+    for segment in str(text).split("；"):
+        tokens = segment.strip().split()
+        if not tokens:
+            continue
+        confidence = ""
+        label_token = tokens[0]
+        if len(tokens) >= 2:
+            confidence = tokens[-1]
+            label_token = " ".join(tokens[:-1])
+        raw_label = str(label_token or "").strip()
+        normalized = raw_label[6:] if raw_label.startswith("class_") and raw_label[6:].isdigit() else raw_label
+        if normalized.isdigit():
+            index = normalized
+            label = class_names[int(index)] if int(index) < len(class_names) else index
+        else:
+            index = class_index.get(normalized, normalized)
+            label = normalized
+        tags.append({"index": index, "label": label, "confidence": confidence})
+    return tags
+
+
+def row_model_score(row: dict, model_name: str):
+    values = detection_confidence_values((row.get("cells") or {}).get(model_name, ""))
+    return sum(values) / len(values) if values else None
+
+
+def format_report_rank(item: dict | None):
+    if not item:
+        return "-"
+    return item.get("name") or "-"
+
+
+def prediction_image_path(run_dir: Path, image_name: str):
+    candidates = [
+        run_dir / image_name,
+        run_dir / Path(image_name).name,
+    ]
+    image_path = Path(image_name)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    for candidate in sorted(run_dir.rglob(image_path.name), key=lambda item: item.as_posix().lower()):
+        if candidate.is_file() and candidate.suffix.lower() in IMAGE_EXTS:
+            return candidate
+    return None
+
+
+def report_model_run_dir(project_dir: Path, report: dict, model: dict):
+    run_dir = str(model.get("run_dir") or "").strip()
+    if run_dir:
+        path = Path(run_dir)
+        if path.is_dir():
+            return path
+    task = next((item for item in load_tasks() if item.get("id") == report.get("task_id")), {})
+    output_root = task_output_dir(project_dir, task or {"id": report.get("task_id"), "name": report.get("name")})
+    run_name = f"{report.get('task_id')}-{slug(model.get('run') or model.get('name') or '')}"
+    path = output_root / run_name
+    return path if path.is_dir() else None
+
+
+def report_view(project: str, project_dir: Path, report: dict):
+    view = dict(report)
+    rows = []
+    class_names = read_classes(project_dir)
+    image_count = int(report.get("image_count") or len(report.get("rows") or []))
+    total_detections = int(report.get("total_detections") or sum(int(model.get("detection_count") or 0) for model in report.get("models") or []))
+    total_slots = image_count * max(1, len(report.get("models") or []))
+    raw_rows = report.get("rows") or []
+    display_raw_rows = []
+    for row in raw_rows:
+        row_view = dict(row)
+        row_view["cells"] = {
+            name: remap_detection_text(value, class_names)
+            for name, value in (row.get("cells") or {}).items()
+        }
+        display_raw_rows.append(row_view)
+    labels = list(report.get("labels") or [])
+    if not labels:
+        label_counts = {}
+        for row in display_raw_rows:
+            for value in (row.get("cells") or {}).values():
+                for label in detection_labels(value):
+                    label_counts[label] = label_counts.get(label, 0) + 1
+        labels = [
+            {"label": label, "count": count}
+            for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+    else:
+        label_counts = {}
+        for item in labels:
+            label = label_from_token(str(item.get("label") or ""), class_names)
+            label_counts[label] = label_counts.get(label, 0) + int(item.get("count") or 0)
+        labels = [
+            {"label": label, "count": count}
+            for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+    models = []
+    for model in report.get("models") or []:
+        item = dict(model)
+        model_name = str(item.get("name") or "")
+        detected_images = item.get("detected_images")
+        if detected_images is None:
+            detected_images = sum(
+                1
+            for row in display_raw_rows
+                if (row.get("cells") or {}).get(model_name) and (row.get("cells") or {}).get(model_name) != "未识别"
+            )
+        detected_images = int(detected_images or 0)
+        item["detected_images"] = detected_images
+        item["coverage"] = round(detected_images / image_count * 100) if image_count else 0
+        item["coverage_style"] = f"conic-gradient(#2563eb 0 {item['coverage']}%, #e2e8f0 {item['coverage']}% 100%)"
+        item["confidence_percent"] = round(float(item.get("average_confidence") or 0) * 100)
+        item["confidence_label"] = f"{float(item['average_confidence']):.4f}" if item.get("average_confidence") is not None else "-"
+        item["run_dir_path"] = report_model_run_dir(project_dir, report, item)
+        models.append(item)
+    for image_index, row in enumerate(display_raw_rows):
+        image_name = str(row.get("image") or "")
+        previews = {}
+        for model_index, model in enumerate(models):
+            run_dir = model.get("run_dir_path")
+            predicted = prediction_image_path(run_dir, image_name) if run_dir else None
+            if predicted:
+                previews[model["name"]] = report_prediction_image_url(project, report["task_id"], image_index, model_index)
+        scored_models = [
+            {"name": model["name"], "score": row_model_score(row, model["name"])}
+            for model in models
+        ]
+        scored_models = [item for item in scored_models if item["score"] is not None]
+        best_model = max(scored_models, key=lambda item: item["score"], default=None)
+        worst_model = min(scored_models, key=lambda item: item["score"], default=None)
+        row_view = dict(row)
+        raw_cells = (raw_rows[image_index].get("cells") or {}) if image_index < len(raw_rows) else {}
+        row_view["cell_tags"] = {
+            model["name"]: detection_table_tags(raw_cells.get(model["name"], ""), class_names)
+            for model in models
+        }
+        row_view["index"] = image_index
+        row_view["image_url"] = report_source_image_url(project, report["task_id"], image_index)
+        row_view["original_url"] = report_original_source_image_url(report["task_id"], image_index)
+        row_view["previews"] = previews
+        row_view["original_previews"] = {
+            model["name"]: report_original_prediction_image_url(report["task_id"], image_index, model_index)
+            for model_index, model in enumerate(models)
+            if model["name"] in previews
+        }
+        row_view["best_model"] = format_report_rank(best_model)
+        row_view["worst_model"] = format_report_rank(worst_model)
+        row_view["detected_count"] = sum(1 for value in (row.get("cells") or {}).values() if value and value != "未识别")
+        rows.append(row_view)
+    view["rows"] = rows
+    view["models"] = models
+    view["image_count"] = image_count
+    view["model_count"] = int(report.get("model_count") or len(models))
+    view["total_detections"] = total_detections
+    view["best_model"] = report.get("best_model") or (max(models, key=lambda item: item.get("average_confidence") or -1)["name"] if models else "")
+    view["labels"] = labels[:12]
+    view["preview_rows"] = rows
+    covered_slots = sum(1 for row in rows for value in (row.get("cells") or {}).values() if value and value != "未识别")
+    coverage = round(covered_slots / total_slots * 100) if total_slots else 0
+    view["coverage"] = {
+        "covered": covered_slots,
+        "total": total_slots,
+        "percent": coverage,
+        "style": f"conic-gradient(#2563eb 0 {coverage}%, #e2e8f0 {coverage}% 100%)",
+    }
+    return view
+
+
+def report_row_image_name(report: dict, image_index: int):
+    rows = report.get("rows") or []
+    if image_index < 0 or image_index >= len(rows):
+        raise HTTPException(status_code=404, detail="image not found")
+    image_name = str(rows[image_index].get("image") or "")
+    if not image_name:
+        raise HTTPException(status_code=404, detail="image not found")
+    return image_name
+
+
+def report_for_project(project: str, task_id: str):
+    workspace = workspace_path()
+    project_dir = project_path(workspace, project)
+    report = read_report(task_id)
+    task = next((item for item in load_tasks() if item.get("id") == task_id), None)
+    if project_dir is None or report is None or not task or task.get("project") != project:
+        raise HTTPException(status_code=404, detail="report not found")
+    return project_dir, report, task
+
+
 def test_context(request: Request, current_project: str):
     workspace = workspace_path()
     path = project_path(workspace, current_project)
@@ -1054,6 +1566,7 @@ def test_context(request: Request, current_project: str):
         "models": run_model_items(path) if path else [],
         "compute_options": compute_options(workspace),
         "image_count": len(test_images(path)) if path else 0,
+        "has_test_classes": (path / TEST_DIR / "classes.txt").is_file() if path else False,
         "extension_chart": test_extension_chart(path),
         "tasks": tasks,
         **header_context(request, workspace),
@@ -1085,11 +1598,11 @@ def test_with_project(request: Request, project: str):
 @router.get("/test/{project}/reports/{task_id}")
 def test_report_page(request: Request, project: str, task_id: str):
     workspace = workspace_path()
-    project_dir = project_path(workspace, project)
-    report = read_report(task_id)
-    task = next((item for item in load_tasks() if item.get("id") == task_id), None)
-    if project_dir is None or report is None or not task or task.get("project") != project:
+    try:
+        project_dir, report, task = report_for_project(project, task_id)
+    except HTTPException:
         return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
+    view_report = report_view(project, project_dir, report)
     response = templates.TemplateResponse(
         request=request,
         name="test/report.html",
@@ -1100,7 +1613,7 @@ def test_report_page(request: Request, project: str, task_id: str):
             "current_project": project,
             "project_name": read_project_name(project_dir),
             "task": task,
-            "report": report,
+            "report": view_report,
             **header_context(request, workspace),
         },
     )
@@ -1182,12 +1695,15 @@ def test_task_csv(task_id: str):
     report = read_report(task_id)
     if report is None:
         return JSONResponse({"ok": False, "error": "报告不存在"}, status_code=404)
+    task = next((item for item in load_tasks() if item.get("id") == task_id), {})
+    project_dir = project_path(workspace_path(), str(task.get("project") or report.get("project") or ""))
+    class_names = read_classes(project_dir) if project_dir is not None else []
     output = StringIO()
     writer = csv.writer(output)
     model_names = [model["name"] for model in report["models"]]
-    writer.writerow(["图片", *model_names])
+    writer.writerow(["原始图片", *model_names])
     for row in report["rows"]:
-        writer.writerow([row["image"], *[row["cells"].get(name, "") for name in model_names]])
+        writer.writerow([row["image"], *[csv_detection_text(row["cells"].get(name, ""), class_names) for name in model_names]])
     writer.writerow([])
     writer.writerow(["汇总", *[f"平均置信度 {model['average_confidence'] if model['average_confidence'] is not None else '-'}" for model in report["models"]]])
     writer.writerow(["识别数量", *[model["detection_count"] for model in report["models"]]])

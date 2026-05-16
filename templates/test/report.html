@@ -3,57 +3,162 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试报告{% else %}测试报告{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260516-report-page">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260516-report-lightbox-scroll">
 {% endblock %}
 
 {% block content %}
-  <main class="test-main">
-    <section class="test-head" aria-labelledby="test-report-title">
+  <main class="test-main test-report-page">
+    <section class="test-head test-report-head" aria-labelledby="test-report-title">
       <div>
-        <h1 id="test-report-title">测试报告</h1>
-        <p>{{ report.name }} · {{ report.created_at }}</p>
+        <h1 id="test-report-title">{{ report.name }}</h1>
+        <p>{{ project_name }} · {{ report.created_at }}</p>
       </div>
       <div class="model-head-actions">
         <a class="secondary-button" href="/test/{{ current_project }}">返回测试</a>
-        <a class="secondary-button" href="/test/tasks/{{ report.task_id }}/csv">下载 CSV</a>
       </div>
     </section>
 
+    <section class="test-report-summary" aria-label="报告摘要">
+      <article>
+        <span>测试图片</span>
+        <strong>{{ report.image_count }}</strong>
+        <small>test/images</small>
+      </article>
+      <article>
+        <span>测试模型</span>
+        <strong>{{ report.model_count }}</strong>
+        <small>参与评估</small>
+      </article>
+      <article>
+        <span>识别总数</span>
+        <strong>{{ report.total_detections }}</strong>
+        <small>所有模型合计</small>
+      </article>
+      <article>
+        <span>最高置信</span>
+        <strong>{{ report.best_model or "-" }}</strong>
+        <small>按平均置信度</small>
+      </article>
+      <article class="test-report-summary-labels">
+        <span>标签统计</span>
+        {% if report.labels %}
+          <div class="test-report-summary-tags">
+            {% for item in report.labels[:4] %}
+              <b>{{ item.label }} <em>{{ item.count }}</em></b>
+            {% endfor %}
+          </div>
+        {% else %}
+          <strong>-</strong>
+          <small>暂无识别标签</small>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="test-report-grid" aria-label="报告概览">
+      <div class="test-report-panel test-report-models">
+        <div class="test-report-section-head">
+          <div>
+            <h2>模型表现</h2>
+            <p>平均置信度</p>
+          </div>
+        </div>
+        <div class="test-report-model-list">
+          {% for model in report.models %}
+            <article class="test-report-model-card">
+              <h3>{{ model.name }}</h3>
+              <div class="test-report-score-line">
+                <div class="test-report-meter" aria-label="平均置信度 {{ model.confidence_label }}">
+                  <i style="width: {{ model.confidence_percent }}%"></i>
+                </div>
+                <b>{{ model.confidence_label }}</b>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="test-report-panel test-report-coverage" aria-label="覆盖率">
+        <div class="test-report-section-head">
+          <div>
+            <h2>覆盖率</h2>
+            <p>覆盖率表示有识别结果的图片比例。</p>
+          </div>
+        </div>
+        <div class="test-report-coverage-list">
+          {% for model in report.models %}
+            <article>
+              <span class="test-report-coverage-pie" style="background: {{ model.coverage_style }}">
+                <b>{{ model.coverage }}%</b>
+              </span>
+              <div>
+                <strong>{{ model.detected_images }}/{{ report.image_count }}</strong>
+                <span>{{ model.name }}</span>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="test-report-panel" aria-label="图片结果预览">
+      <div class="test-report-section-head">
+        <div>
+          <h2>图片结果</h2>
+          <p>查看原图与各模型输出的带框结果，用于快速对比同一张图片的识别差异。</p>
+        </div>
+        <div class="test-report-pager">
+          <button type="button" data-report-prev>上一张</button>
+          <span><b data-report-current>1</b>/<b>{{ report.image_count }}</b></span>
+          <button type="button" data-report-next>下一张</button>
+        </div>
+      </div>
+      <article class="test-report-preview-card" data-report-preview></article>
+    </section>
+
     <section class="test-report-panel" aria-label="测试报告表格">
+      <div class="test-report-section-head">
+        <div>
+          <h2>评估数据</h2>
+          <p>按图片横向汇总每个模型的识别标签和置信度，便于定位单张图片上的最好与最差模型。</p>
+        </div>
+        <a class="secondary-button" href="/test/tasks/{{ report.task_id }}/csv">下载 CSV</a>
+      </div>
       <div class="test-report-table-wrap">
         <table class="test-report-table">
           <thead>
             <tr>
-              <th>图片</th>
+              <th>原始图片</th>
               {% for model in report.models %}
                 <th>{{ model.name }}</th>
               {% endfor %}
+              <th class="test-report-rank-col">最差模型</th>
+              <th class="test-report-rank-col">最好模型</th>
             </tr>
           </thead>
           <tbody>
             {% for row in report.rows %}
-              <tr>
-                <th>{{ row.image }}</th>
+              <tr data-report-table-row="{{ loop.index0 }}">
+                <th>
+                  <button type="button" class="test-report-image-link" data-report-image-index="{{ loop.index0 }}">{{ row.image }}</button>
+                </th>
                 {% for model in report.models %}
-                  <td>{{ row.cells.get(model.name, "未识别") }}</td>
+                  <td>
+                    {% set tags = row.cell_tags.get(model.name, []) %}
+                    {% if tags %}
+                      <div class="test-report-cell-tags">
+                        {% for tag in tags %}
+                          <span title="{{ tag.label }}">{{ tag.index }}{% if tag.confidence %} {{ tag.confidence }}{% endif %}</span>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <span class="test-report-missed">未识别</span>
+                    {% endif %}
+                  </td>
                 {% endfor %}
+                <td class="test-report-rank-col">{{ row.worst_model }}</td>
+                <td class="test-report-rank-col">{{ row.best_model }}</td>
               </tr>
             {% endfor %}
           </tbody>
-          <tfoot>
-            <tr>
-              <th>平均置信度</th>
-              {% for model in report.models %}
-                <td>{{ model.average_confidence if model.average_confidence is not none else "-" }}</td>
-              {% endfor %}
-            </tr>
-            <tr>
-              <th>识别数量</th>
-              {% for model in report.models %}
-                <td>{{ model.detection_count }}</td>
-              {% endfor %}
-            </tr>
-          </tfoot>
         </table>
       </div>
     </section>
@@ -62,4 +167,172 @@
   {% set footer_id = "stats" %}
   {% set footer_left = workspace %}
   {% include "partials/footer.html" %}
+  <dialog class="test-report-lightbox" data-report-lightbox>
+    <div>
+      <button type="button" data-report-lightbox-close aria-label="关闭">×</button>
+      <figure>
+        <img src="" alt="" data-report-lightbox-image>
+        <figcaption data-report-lightbox-title></figcaption>
+      </figure>
+      <div class="test-report-lightbox-strip" data-report-lightbox-strip></div>
+    </div>
+  </dialog>
+  <script type="application/json" id="test-report-preview-data">{{ report.preview_rows|tojson }}</script>
+  <script>
+    (() => {
+      const dataNode = document.getElementById("test-report-preview-data");
+      const rows = dataNode ? JSON.parse(dataNode.textContent || "[]") : [];
+      const preview = document.querySelector("[data-report-preview]");
+      const current = document.querySelector("[data-report-current]");
+      const prev = document.querySelector("[data-report-prev]");
+      const next = document.querySelector("[data-report-next]");
+      const lightbox = document.querySelector("[data-report-lightbox]");
+      const lightboxImage = document.querySelector("[data-report-lightbox-image]");
+      const lightboxTitle = document.querySelector("[data-report-lightbox-title]");
+      const lightboxStrip = document.querySelector("[data-report-lightbox-strip]");
+      let index = 0;
+      let scale = 1;
+      let lightboxItems = [];
+      let lightboxItemIndex = 0;
+      const models = {{ report.models|map(attribute="name")|list|tojson }};
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, char => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[char]));
+      }
+
+      function imageButton(src, original, label, title = "") {
+        if (!src) return `<span class="test-report-no-preview">无结果图</span>`;
+        return `<button type="button" class="test-report-thumb" data-original="${escapeHtml(original || src)}" data-title="${escapeHtml(title || label)}">
+          <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}">
+        </button>`;
+      }
+
+      function lightboxItemsForRow(row) {
+        const previews = row.previews || {};
+        const originals = row.original_previews || {};
+        const items = [];
+        if (row.image_url) {
+          items.push({label: row.image, thumb: row.image_url, original: row.original_url || row.image_url});
+        }
+        models.forEach(name => {
+          if (previews[name]) {
+            items.push({
+              label: name,
+              thumb: previews[name],
+              original: originals[name] || previews[name]
+            });
+          }
+        });
+        return items;
+      }
+
+      function centerLightboxItem(behavior = "smooth") {
+        if (!lightboxStrip) return;
+        const active = lightboxStrip.querySelector(`[data-lightbox-item="${lightboxItemIndex}"]`);
+        if (!active) return;
+        const left = active.offsetLeft - (lightboxStrip.clientWidth - active.offsetWidth) / 2;
+        lightboxStrip.scrollTo({left: Math.max(0, left), behavior});
+      }
+
+      function setLightboxImage(nextIndex) {
+        if (!lightboxImage || !lightboxItems.length) return;
+        lightboxItemIndex = Math.max(0, Math.min(lightboxItems.length - 1, nextIndex));
+        const item = lightboxItems[lightboxItemIndex];
+        scale = 1;
+        lightboxImage.style.transform = "scale(1)";
+        lightboxImage.src = item.original || item.thumb || "";
+        lightboxImage.alt = item.label || "";
+        if (lightboxTitle) lightboxTitle.textContent = item.label || "";
+        lightboxStrip?.querySelectorAll("[data-lightbox-item]").forEach(button => {
+          button.classList.toggle("active", Number(button.dataset.lightboxItem) === lightboxItemIndex);
+        });
+        if (lightbox?.open) centerLightboxItem();
+      }
+
+      function openLightbox(title, original) {
+        if (!lightbox) return;
+        const row = rows[index] || {};
+        lightboxItems = lightboxItemsForRow(row);
+        let selectedIndex = lightboxItems.findIndex(item => item.original === original);
+        if (selectedIndex < 0) selectedIndex = lightboxItems.findIndex(item => item.label === title);
+        selectedIndex = Math.max(0, selectedIndex);
+        if (lightboxStrip) {
+          lightboxStrip.innerHTML = lightboxItems.map((item, itemIndex) => `
+            <button type="button" data-lightbox-item="${itemIndex}" title="${escapeHtml(item.label)}">
+              <img src="${escapeHtml(item.thumb || item.original)}" alt="${escapeHtml(item.label)}">
+              <span>${escapeHtml(item.label)}</span>
+            </button>
+          `).join("");
+        }
+        setLightboxImage(selectedIndex);
+        lightbox.showModal();
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => centerLightboxItem("auto"));
+        });
+      }
+
+      function render() {
+        if (!preview || !rows.length) return;
+        const row = rows[index];
+        const previews = row.previews || {};
+        const originals = row.original_previews || {};
+        preview.innerHTML = `
+          <div class="test-report-preview-original">
+            <span>${escapeHtml(row.image)}</span>
+            ${imageButton(row.image_url, row.original_url, row.image, row.image)}
+          </div>
+          <div class="test-report-preview-models">
+            ${models.map(name => `<div><strong>${escapeHtml(name)}</strong>${imageButton(previews[name], originals[name], `${row.image} ${name}`, `${row.image} · ${name}`)}</div>`).join("")}
+          </div>
+        `;
+        if (current) current.textContent = String(index + 1);
+        if (prev) prev.disabled = index <= 0;
+        if (next) next.disabled = index >= rows.length - 1;
+        document.querySelectorAll("[data-report-table-row]").forEach(rowNode => {
+          rowNode.classList.toggle("active", Number(rowNode.dataset.reportTableRow) === index);
+        });
+      }
+
+      function setPreviewIndex(nextIndex) {
+        index = Math.max(0, Math.min(rows.length - 1, nextIndex));
+        render();
+      }
+
+      preview?.addEventListener("click", event => {
+        const button = event.target.closest("[data-original]");
+        if (!button || !lightbox || !lightboxImage) return;
+        openLightbox(button.dataset.title || "", button.dataset.original || "");
+      });
+      lightboxStrip?.addEventListener("click", event => {
+        const button = event.target.closest("[data-lightbox-item]");
+        if (!button) return;
+        setLightboxImage(Number(button.dataset.lightboxItem || 0));
+      });
+      prev?.addEventListener("click", () => {
+        setPreviewIndex(index - 1);
+      });
+      next?.addEventListener("click", () => {
+        setPreviewIndex(index + 1);
+      });
+      document.querySelector(".test-report-table")?.addEventListener("click", event => {
+        const button = event.target.closest("[data-report-image-index]");
+        if (!button) return;
+        setPreviewIndex(Number(button.dataset.reportImageIndex || 0));
+        document.querySelector("[data-report-preview]")?.scrollIntoView({behavior: "smooth", block: "nearest"});
+      });
+      document.querySelector("[data-report-lightbox-close]")?.addEventListener("click", () => lightbox?.close());
+      lightboxImage?.addEventListener("wheel", event => {
+        event.preventDefault();
+        scale = Math.max(1, Math.min(4, scale + (event.deltaY < 0 ? .18 : -.18)));
+        lightboxImage.style.transform = `scale(${scale})`;
+      }, {passive: false});
+      render();
+    })();
+  </script>
 {% endblock %}

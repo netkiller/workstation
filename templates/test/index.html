@@ -103,19 +103,33 @@
         <span class="count" data-test-count>{{ image_count }} 个文件</span>
       </div>
       <div class="test-upload-body">
-        <div class="test-drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
-          <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
-          <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-directory-input>
-          <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-          <span>点击上传测试图片，或拖拽到这里</span>
-          <span class="upload-options">
-            <button type="button" class="upload-delete-button" data-clear-upload="test" title="删除已上传测试图片" aria-label="删除已上传测试图片">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
-            </button>
-            <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
-            </button>
-          </span>
+        <div class="test-upload-stack">
+          <div class="test-drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
+            <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
+            <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-directory-input>
+            <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
+            <span>点击上传测试图片，或拖拽到这里</span>
+            <span class="upload-options">
+              <button type="button" class="upload-delete-button" data-clear-upload="test" title="删除已上传测试图片" aria-label="删除已上传测试图片">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+              </button>
+              <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
+              </button>
+            </span>
+          </div>
+          <div class="test-classes-upload" data-upload-zone data-upload-kind="test-classes" role="button" tabindex="0">
+            <input type="file" name="files" accept=".txt,text/plain" hidden data-file-input>
+            <span>
+              <strong>classes.txt</strong>
+              <small>上传 classes.txt 用于测试报告标签展示。</small>
+            </span>
+            <b data-test-classes-status>{% if has_test_classes %}已上传{% else %}未上传{% endif %}</b>
+            <span class="test-classes-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path></svg>
+            </span>
+            <span data-upload-label hidden>上传 classes.txt</span>
+          </div>
         </div>
         <div class="test-image-type-panel" aria-labelledby="test-image-type-title">
           <div class="test-image-type-head">
@@ -149,7 +163,7 @@
                   <span class="test-status test-status-{{ task.status }}">{{ task.status }}</span>
                 </div>
                 <div class="test-task-actions">
-                  {% if task.target_type == "remote" and task.resource_id %}
+                  {% if task.target_type == "remote" and task.resource_id and task.status != "完成" %}
                     <a class="secondary-button test-task-icon-button" href="/resources/{{ task.project }}/server/{{ task.resource_id }}" title="监控" aria-label="监控">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 1 1 16 0"></path><path d="M12 14l4-4"></path><path d="M5 18h14"></path><path d="M8 18v2"></path><path d="M16 18v2"></path></svg>
                       <span>监控</span>

@@ -1633,6 +1633,26 @@ async def upload_classes(directory: str, request: Request):
     return JSONResponse({"ok": False, "error": "请选择 classes.txt"}, status_code=400)
 
 
+@router.post("/project/{directory}/upload/test-classes")
+async def upload_test_classes(directory: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+
+    files = await uploaded_files(request)
+    for filename, content in files:
+        if PurePosixPath((filename or "").replace("\\", "/")).name.lower() != "classes.txt":
+            continue
+        target = path / TEST_DIR / "classes.txt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        append_upload_log(path, "上传测试 classes.txt", [relative_log_entry(path, target)])
+        build_project_index(path)
+        return {"ok": True, "saved": 1}
+    return JSONResponse({"ok": False, "error": "请选择 classes.txt"}, status_code=400)
+
+
 @router.post("/project/{directory}/classes")
 async def save_classes(directory: str, request: Request):
     workspace = workspace_path()
