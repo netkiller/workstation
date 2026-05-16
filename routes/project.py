@@ -411,6 +411,31 @@ def project_dir(workspace: Path, directory: str):
     return path
 
 
+def project_root_workspace(project: str):
+    if not project:
+        return None
+    path = project_dir(workspace_path(), project)
+    return path if path is not None and path.is_dir() else None
+
+
+def project_annotate_workspace(project: str):
+    root = project_root_workspace(project)
+    if root is None:
+        return None
+    annotate_dir = root / ANNOTATE_DIR
+    annotate_dir.mkdir(parents=True, exist_ok=True)
+    return annotate_dir.resolve()
+
+
+def project_display_name(project: str):
+    if not project:
+        return "根目录"
+    root = project_root_workspace(project)
+    if root is None:
+        return project
+    return read_project_meta(root, read_project_registry(workspace_path()))["name"]
+
+
 def read_project_registry(workspace: Path):
     registry_file = workspace / ".project"
     if not registry_file.is_file():

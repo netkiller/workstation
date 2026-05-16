@@ -2,11 +2,7 @@ import os
 import json
 import shutil
 import socket
-import subprocess
-import sys
-import threading
 import time
-import urllib.request
 from io import BytesIO
 from datetime import datetime
 from email.parser import BytesParser
@@ -15,9 +11,8 @@ from pathlib import Path
 
 try:
     from fastapi import FastAPI, HTTPException, Query, Request
-    from fastapi.responses import FileResponse, HTMLResponse, Response
+    from fastapi.responses import FileResponse, Response
     from fastapi.staticfiles import StaticFiles
-    import uvicorn
     from PIL import ExifTags, Image
     try:
         import pillow_heif
@@ -30,10 +25,8 @@ except ImportError:
     Query = None
     Request = None
     FileResponse = None
-    HTMLResponse = None
     Response = None
     StaticFiles = None
-    uvicorn = None
     ExifTags = None
     Image = None
     pillow_heif = None
@@ -81,67 +74,6 @@ class Workstation:
         self.statistics_cache = None
         self.statistics_cache_at = 0.0
 
-    def main(
-        self,
-        workspace: str,
-        dataset: str = None,
-        run: str = None,
-        classes_file: str = None,
-        open_browser: bool = False,
-        team_mode: bool = False,
-        mdns: str = "netkiller.local",
-    ):
-        if FastAPI is None or uvicorn is None:
-            print("缺少依赖: fastapi/uvicorn，请先安装: pip install fastapi uvicorn")
-            return
-
-        self.workspace = Path(workspace).expanduser().resolve()
-        self.log_root = self.workspace
-        if not self.workspace.is_dir():
-            print(f"workspace 目录不存在: {self.workspace}")
-            return
-        self.dataset = Path(dataset).expanduser().resolve() if dataset else None
-        self.run = Path(run).expanduser().resolve() if run else None
-        self.requested_classes_file = classes_file
-        self.open_browser = open_browser
-        self.team_mode = team_mode
-        self.mdns = self._normalize_mdns(mdns)
-
-        if self.daemon:
-            self._start_daemon()
-            return
-
-        try:
-            self.class_groups = self._load_class_groups()
-        except FileNotFoundError as error:
-            print(error)
-            return
-        self.classes_file = self.class_groups[0]["path"] if self.class_groups else None
-        self.classes = self.class_groups[0]["classes"] if self.class_groups else []
-        app = self._create_app()
-
-        url = self._server_url()
-        print(f"Yolo Workstation: {url}")
-        print(f"Workspace: {self.workspace}")
-        if self.dataset:
-            print(f"Dataset: {self.dataset}")
-        if self.run:
-            print(f"Run: {self.run}")
-        if self.classes_file:
-            print(f"Classes: {self.classes_file}")
-        else:
-            print("Classes: 未找到 classes.txt")
-        if self.open_browser:
-            self._start_browser_opener(url)
-            print("Browser: opening")
-        uvicorn.run(app, host=self.host, port=self.port)
-
-    def _server_url(self):
-        host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host
-        if ":" in host and not host.startswith("["):
-            host = f"[{host}]"
-        return f"http://{host}:{self.port}"
-
     def _share_url(self):
         mdns = os.environ.get("YOLOUTILS_MDNS", "").strip()
         host = self._normalize_mdns(mdns) if mdns else self._lan_ip_address()
@@ -176,114 +108,8 @@ class Workstation:
         name = name.split("/", 1)[0].split(":", 1)[0]
         return name if name.endswith(".local") else f"{name}.local"
 
-    def _start_browser_opener(self, url: str):
-        def open_and_keep_alive():
-            time.sleep(1)
-            self._open_app_window(url)
-            while True:
-                try:
-                    request = urllib.request.Request(
-                        url,
-                        headers={"User-Agent": "Yolo-Workstation-Headless/1.0"},
-                    )
-                    with urllib.request.urlopen(request, timeout=5) as response:
-                        response.read(2048)
-                except Exception:
-                    pass
-                time.sleep(60)
-
-        threading.Thread(target=open_and_keep_alive, daemon=True, name="yoloutils-browser-opener").start()
-
-    def _open_app_window(self, url: str):
-        if sys.platform == "darwin":
-            for app_name in ("Google Chrome", "Microsoft Edge", "Brave Browser", "Chromium"):
-                try:
-                    result = subprocess.run(
-                        ["open", "-na", app_name, "--args", f"--app={url}", "--new-window"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                        timeout=3,
-                    )
-                except (OSError, subprocess.TimeoutExpired):
-                    continue
-                if result.returncode == 0:
-                    return
-        commands = [
-            ["google-chrome", f"--app={url}", "--new-window"],
-            ["chrome", f"--app={url}", "--new-window"],
-            ["chromium", f"--app={url}", "--new-window"],
-            ["chromium-browser", f"--app={url}", "--new-window"],
-            ["microsoft-edge", f"--app={url}", "--new-window"],
-            ["brave-browser", f"--app={url}", "--new-window"],
-        ]
-        for command in commands:
-            try:
-                subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return
-            except OSError:
-                continue
-
-    def _pid_file(self):
-        return (self.log_root or self.workspace) / ".yoloutils-workstation.pid"
-
     def _log_file(self):
         return (self.log_root or self.workspace) / ".project.log"
-
-    def _is_process_running(self, pid: int):
-        try:
-            os.kill(pid, 0)
-            return True
-        except OSError:
-            return False
-
-    def _existing_pid(self):
-        pid_file = self._pid_file()
-        if not pid_file.exists():
-            return None
-        try:
-            pid = int(pid_file.read_text(encoding="utf-8").strip())
-        except ValueError:
-            return None
-        if self._is_process_running(pid):
-            return pid
-        pid_file.unlink(missing_ok=True)
-        return None
-
-    def _daemon_command(self):
-        args = list(sys.argv)
-        args = [arg for arg in args if arg not in ("-d", "--daemon")]
-
-        executable = Path(args[0])
-        if executable.exists():
-            return [sys.executable] + args
-        return args
-
-    def _start_daemon(self):
-        pid = self._existing_pid()
-        if pid is not None:
-            print(f"Yolo Workstation 已在后台运行: pid={pid}")
-            print(f"Yolo Workstation: http://{self.host}:{self.port}")
-            print(f"PID: {self._pid_file()}")
-            print(f"LOG: {self._log_file()}")
-            return
-
-        log_file = self._log_file()
-        with open(log_file, "ab") as output:
-            process = subprocess.Popen(
-                self._daemon_command(),
-                stdin=subprocess.DEVNULL,
-                stdout=output,
-                stderr=output,
-                cwd=os.getcwd(),
-                start_new_session=True,
-                close_fds=True,
-            )
-        self._pid_file().write_text(str(process.pid), encoding="utf-8")
-        print(f"Yolo Workstation 已后台启动: pid={process.pid}")
-        print(f"Yolo Workstation: http://{self.host}:{self.port}")
-        print(f"PID: {self._pid_file()}")
-        print(f"LOG: {log_file}")
 
     def _safe_path(self, relative_path: str = ""):
         relative_path = relative_path or ""
@@ -1187,10 +1013,6 @@ class Workstation:
         static_dir = Path(__file__).resolve().parent / "static"
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-        @app.get("/", response_class=HTMLResponse)
-        def index():
-            return HTMLResponse(self._html())
-
         @app.get("/api/config")
         def config():
             return {"team_mode": self.team_mode, "share_url": self._share_url() if self.team_mode else ""}
@@ -1368,13 +1190,3 @@ class Workstation:
             return self._image_response(file_path)
 
         return app
-
-    def _html(self):
-        template_root = Path(__file__).resolve().parent / "templates"
-        framework = (template_root / "framework.html").read_text(encoding="utf-8")
-        annotate = (template_root / "annotate" / "index.html").read_text(encoding="utf-8")
-        html = framework.replace("__ANNOTATE_CONTENT__", annotate)
-        return html.replace(
-            "__BODY_CLASS__",
-            "team-mode username-required" if self.team_mode else "",
-        ).replace("__TEAM_MODE__", "true" if self.team_mode else "false")

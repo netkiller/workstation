@@ -2,24 +2,30 @@ import os
 import asyncio
 import json
 import html
-import time
 import traceback
 from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 from fastapi import Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from routes.project import (
+    current_username as project_current_username,
+    project_annotate_workspace,
+    project_display_name,
+    project_root_workspace,
+    read_online_users,
+    team_mode_enabled,
+    user_color,
+    user_items,
+    workspace_path,
+    write_user_project,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 
 from workstation import Workstation
-
-
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
-USER_HEARTBEAT_TIMEOUT = 45
 
 
 class SiteWorkstation(Workstation):
@@ -31,157 +37,7 @@ class SiteWorkstation(Workstation):
 
 
 def site_workspace():
-    workspace = os.environ.get("YOLOUTILS_WORKSPACE")
-    return Path(workspace).expanduser().resolve() if workspace else PROJECT_ROOT
-
-
-def read_users_data():
-    path = site_workspace() / ".users"
-    if not path.is_file():
-        return {"users": [], "projects": {}, "seen_at": {}}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"users": [], "projects": {}, "seen_at": {}}
-    users = data.get("users", [])
-    projects = data.get("projects", {})
-    seen_at = data.get("seen_at", {})
-    users = [str(user).strip() for user in users if str(user).strip()] if isinstance(users, list) else []
-    projects = {
-        str(user).strip(): str(directory).strip()
-        for user, directory in projects.items()
-        if str(user).strip()
-    } if isinstance(projects, dict) else {}
-    seen_at = {
-        str(user).strip(): float(timestamp or 0)
-        for user, timestamp in seen_at.items()
-        if str(user).strip()
-    } if isinstance(seen_at, dict) else {}
-    return {"users": users, "projects": projects, "seen_at": seen_at}
-
-
-def read_online_users():
-    now = time.time()
-    data = read_users_data()
-    users = data["users"]
-    seen_at = data["seen_at"]
-    return [user for user in users if now - seen_at.get(user, 0) <= USER_HEARTBEAT_TIMEOUT]
-
-
-def write_user_project(username: str, project: str):
-    username = (username or "").strip()
-    if not username:
-        return
-    path = site_workspace() / ".users"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-    except (OSError, json.JSONDecodeError):
-        data = {}
-    users = data.get("users", [])
-    users = [str(user).strip() for user in users if str(user).strip()] if isinstance(users, list) else []
-    if username not in users:
-        return
-    projects = data.get("projects", {})
-    projects = {
-        str(user).strip(): str(directory).strip()
-        for user, directory in projects.items()
-        if str(user).strip()
-    } if isinstance(projects, dict) else {}
-    if project:
-        projects[username] = project
-    else:
-        projects.pop(username, None)
-    seen_at = data.get("seen_at", {})
-    seen_at = {
-        str(user).strip(): float(timestamp or 0)
-        for user, timestamp in seen_at.items()
-        if str(user).strip()
-    } if isinstance(seen_at, dict) else {}
-    seen_at[username] = time.time()
-    path.write_text(
-        json.dumps(
-            {"users": sorted(set(users), key=str.lower), "projects": projects, "seen_at": seen_at},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-
-def current_username(request: Request):
-    username = unquote(request.cookies.get("workstation_username") or "").strip()
-    if username not in read_users_data()["users"]:
-        return ""
-    write_user_project(username, request.cookies.get("current_project", ""))
-    return username
-
-
-def user_color(value: str):
-    colors = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899"]
-    total = sum(ord(char) for char in value or "")
-    return colors[total % len(colors)]
-
-
-def user_items(users: list[str]):
-    return [
-        {
-            "name": user,
-            "initial": user[:1],
-            "color": user_color(user),
-        }
-        for user in users
-    ]
-
-
-def team_mode_enabled():
-    return os.environ.get("YOLOUTILS_TEAM", "").lower() in ("1", "true", "yes", "on")
-
-
-def is_inside(path: Path, parent: Path):
-    try:
-        path.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
-def project_images_workspace(project: str):
-    if not project:
-        return None
-    workspace = site_workspace()
-    project_dir = (workspace / project).resolve()
-    if project_dir == workspace or not is_inside(project_dir, workspace):
-        return None
-    images_dir = project_dir / "annotate"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    return images_dir.resolve()
-
-
-def project_root_workspace(project: str):
-    if not project:
-        return None
-    workspace = site_workspace()
-    project_dir = (workspace / project).resolve()
-    if project_dir == workspace or not is_inside(project_dir, workspace):
-        return None
-    return project_dir if project_dir.is_dir() else None
-
-
-def project_display_name(project: str):
-    if not project:
-        return "根目录"
-    workspace = site_workspace()
-    project_dir = (workspace / project).resolve()
-    if project_dir == workspace or not is_inside(project_dir, workspace):
-        return project
-    meta_file = project_dir / ".project"
-    if not meta_file.is_file():
-        return project_dir.name
-    try:
-        data = json.loads(meta_file.read_text(encoding="utf-8"))
-        return str(data.get("name") or project_dir.name)
-    except (OSError, json.JSONDecodeError):
-        return project_dir.name
+    return workspace_path()
 
 
 def write_error_log(workstation: Workstation, error: Exception):
@@ -194,10 +50,23 @@ def write_error_log(workstation: Workstation, error: Exception):
         fallback.write_text(traceback.format_exc(), encoding="utf-8")
 
 
+def annotate_base_html(team_mode: bool):
+    framework = (TEMPLATES_DIR / "framework.html").read_text(encoding="utf-8")
+    annotate = (TEMPLATES_DIR / "annotate" / "index.html").read_text(encoding="utf-8")
+    body_class = "team-mode username-required" if team_mode else ""
+    return (
+        framework
+        .replace("__ANNOTATE_CONTENT__", annotate)
+        .replace("__BODY_CLASS__", body_class)
+        .replace("__TEAM_MODE__", "true" if team_mode else "false")
+    )
+
+
 def workstation_html(workstation: Workstation, active_mode: str = "annotate", project: str = "", username: str = ""):
-    html = workstation._html()
+    html = annotate_base_html(workstation.team_mode)
     escaped_username = html_escape(username)
-    online_users = user_items(read_online_users())
+    workspace = site_workspace()
+    online_users = user_items(read_online_users(workspace))
     project_url = f"/project/{quote(project, safe='')}" if project else "/project"
     project_query = f"?project={quote(project, safe='')}" if project else ""
     team_url = f"/team/{quote(project, safe='')}" if project else "/team"
@@ -389,7 +258,7 @@ def create_workstation():
 
 
 def apply_project_workspace(workstation: Workstation, project: str):
-    images_dir = project_images_workspace(project)
+    images_dir = project_annotate_workspace(project)
     workstation.workspace = images_dir if images_dir is not None else site_workspace()
     project_root = project_root_workspace(project) if images_dir is not None else None
     workstation.model_root = project_root if project_root is not None else workstation.workspace
@@ -427,14 +296,6 @@ def create_annotate_app():
     workstation = create_workstation()
     app = workstation._create_app()
     app.state.project_workspace_lock = asyncio.Lock()
-    app.router.routes = [
-        route
-        for route in app.router.routes
-        if not (
-            getattr(route, "path", None) == "/"
-            and "GET" in getattr(route, "methods", set())
-        )
-    ]
 
     @app.middleware("http")
     async def project_workspace_middleware(request: Request, call_next):
@@ -452,12 +313,13 @@ def create_annotate_app():
     @app.get("/")
     def index(request: Request):
         try:
-            username = current_username(request)
+            workspace = site_workspace()
+            username = project_current_username(request, workspace)
             if team_mode_enabled() and not username:
                 return RedirectResponse(url="/team", status_code=status.HTTP_303_SEE_OTHER)
             project = request.query_params.get("project") or request.cookies.get("current_project", "")
             if team_mode_enabled():
-                write_user_project(username, project)
+                write_user_project(workspace, username, project)
             apply_project_workspace(workstation, project)
             response = HTMLResponse(workstation_html(workstation, "annotate", project, username))
             if project:
@@ -473,11 +335,12 @@ def create_annotate_app():
     @app.get("/{project}")
     def index_project(request: Request, project: str):
         try:
-            username = current_username(request)
+            workspace = site_workspace()
+            username = project_current_username(request, workspace)
             if team_mode_enabled() and not username:
                 return RedirectResponse(url="/team", status_code=status.HTTP_303_SEE_OTHER)
             if team_mode_enabled():
-                write_user_project(username, project)
+                write_user_project(workspace, username, project)
             apply_project_workspace(workstation, project)
             response = HTMLResponse(workstation_html(workstation, "annotate", project, username))
             response.set_cookie("current_project", project, httponly=True, samesite="lax")

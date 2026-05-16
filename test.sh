@@ -1,1 +1,1 @@
-python3 start.py -w workspace
+python3 main.py -w workspace

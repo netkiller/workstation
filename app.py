@@ -167,3 +167,18 @@ def annotate(request: Request):
 
 
 app.mount("/annotate", create_annotate_app())
+
+
+def run(host: str | None = None, port: int | None = None, reload: bool = False):
+    import uvicorn
+
+    host = host or os.environ.get("YOLOUTILS_HOST", "0.0.0.0")
+    try:
+        port = int(port if port is not None else os.environ.get("YOLOUTILS_PORT", "8000"))
+    except (TypeError, ValueError):
+        port = 8000
+    uvicorn.run("app:app", host=host, port=port, reload=reload)
+
+
+if __name__ == "__main__":
+    run()
