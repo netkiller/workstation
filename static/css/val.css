@@ -138,6 +138,37 @@
   font-size: 12px;
 }
 
+.validate-optional-params {
+  display: grid;
+  gap: 12px;
+}
+
+.validate-optional-toggle {
+  min-height: 36px;
+  display: inline-flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: start;
+  gap: 8px !important;
+  width: max-content;
+  color: var(--text) !important;
+  font-weight: 650;
+}
+
+.validate-optional-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.validate-optional-params [hidden] {
+  display: none !important;
+}
+
+.validate-options-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .compare-panel {
   grid-template-rows: auto minmax(90px, 1fr) auto;
 }

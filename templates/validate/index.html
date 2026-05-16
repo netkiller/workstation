@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 验证{% else %}验证{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
+  <link rel="stylesheet" href="/static/css/val.css?v=20260516-val-options">
 {% endblock %}
 
 {% block content %}
@@ -65,6 +65,34 @@
           </label>
         </div>
 
+        <section class="validate-optional-params" aria-label="YOLO Val 可选参数">
+          <label class="validate-optional-toggle">
+            <input type="checkbox" data-val-options-toggle>
+            <span>可选参数</span>
+          </label>
+          <div class="validate-form-grid validate-options-grid" data-val-options-fields hidden>
+            <label><span title="每批验证图片数量，留空使用 YOLO 默认值。">batch</span><input name="batch" type="number" min="1" placeholder="自动" disabled></label>
+            <label><span title="置信度阈值，数值越高越严格。">conf</span><input name="conf" type="number" min="0" max="1" step="0.001" placeholder="默认" disabled></label>
+            <label><span title="NMS IoU 阈值，用于合并重叠检测框。">iou</span><input name="iou" type="number" min="0" max="1" step="0.001" placeholder="默认" disabled></label>
+            <label><span title="单张图片最多保留的检测目标数量。">max_det</span><input name="max_det" type="number" min="1" placeholder="默认" disabled></label>
+            <label><span title="使用 FP16 半精度验证，通常用于 GPU。">half</span><select name="half" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="OpenCV DNN 推理模式，通常用于 ONNX。">dnn</span><select name="dnn" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="保存验证曲线、混淆矩阵等图表。">plots</span><select name="plots" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="矩形推理，减少 padding 并提高效率。">rect</span><select name="rect" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="保存 COCO JSON 格式验证结果。">save_json</span><select name="save_json" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="保存混合标签，用于自动标注或分析。">save_hybrid</span><select name="save_hybrid" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="保存预测框为 YOLO txt 文件。">save_txt</span><select name="save_txt" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="保存 txt 时同时写入置信度。">save_conf</span><select name="save_conf" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="输出更详细的验证日志。">verbose</span><select name="verbose" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="启用测试时增强，速度更慢但可能提升指标。">augment</span><select name="augment" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="类别无关 NMS，不按类别区分合并框。">agnostic_nms</span><select name="agnostic_nms" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="把所有类别当作单类别验证。">single_cls</span><select name="single_cls" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+            <label><span title="只验证指定类别，例如 0 或 0,1,2。">classes</span><input name="classes" type="text" placeholder="例如 0 或 0,1,2" disabled></label>
+            <label><span title="数据加载线程数。">workers</span><input name="workers" type="number" min="0" placeholder="自动" disabled></label>
+            <label><span title="允许覆盖已存在的验证输出目录。">exist_ok</span><select name="exist_ok" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          </div>
+        </section>
+
         <button type="submit" {% if not current_project or not datasets %}disabled{% endif %}>开始验证</button>
       </form>
     </section>
@@ -116,11 +144,25 @@
       const fileInput = document.getElementById("valModelFile");
       const dropZone = document.querySelector("[data-val-model-drop]");
       const modelName = document.querySelector("[data-val-model-name]");
+      const optionsToggle = document.querySelector("[data-val-options-toggle]");
+      const optionsFields = document.querySelector("[data-val-options-fields]");
+
+      function renderOptionalParams() {
+        if (!optionsFields) return;
+        const enabled = Boolean(optionsToggle?.checked);
+        optionsFields.hidden = !enabled;
+        optionsFields.querySelectorAll("input, select, textarea").forEach(input => {
+          input.disabled = !enabled;
+        });
+      }
 
       function renderModelName() {
         const file = fileInput?.files?.[0];
         if (modelName) modelName.textContent = file ? file.name : "拖放 *.pt 模型到这里";
       }
+
+      optionsToggle?.addEventListener("change", renderOptionalParams);
+      renderOptionalParams();
 
       dropZone?.addEventListener("click", () => fileInput?.click());
       fileInput?.addEventListener("change", renderModelName);

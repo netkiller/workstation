@@ -9,10 +9,10 @@ StartLimitBurst=5
 [Service]
 #Environment="TMP=/tmp/yoloutils" "PORT=8084"
 EnvironmentFile=-/etc/default/yoloutils
-WorkingDirectory=/srv/yoloutils/workstation
+WorkingDirectory=/srv/workstation/workstation
 User=nobody
 Type=idle
-ExecStart=/bin/bash -c "/srv/yoloutils/.venv/bin/python /srv/yoloutils/workstation/start.py --host ${HOST} -p ${PORT} -w ${NAME} -t --demo"
+ExecStart=/bin/bash -c "/srv/workstation/.venv/bin/python /srv/workstation/start.py --host ${HOST} -p ${PORT} -w ${NAME} -t --demo"
 Restart=always
 RestartSec=10s
 StartLimitInterval=0

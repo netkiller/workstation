@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260515-page-width-uniform">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260516-dashboard-charts">
 {% endblock %}
 
 {% block content %}
@@ -96,6 +96,25 @@
                   {% endfor %}
                 </div>
               </div>
+              <div class="class-dashboard" aria-label="图片类型统计">
+                <h3>图片类型</h3>
+                <span class="dashboard-pie" style="background: {{ dashboard.image_type_chart_style }}"></span>
+                <div class="dashboard-legend">
+                  {% if dashboard.image_type_items %}
+                    {% for item in dashboard.image_type_items %}
+                      <div class="dashboard-legend-row">
+                        <span class="legend-swatch" style="background: {{ item.color }}" aria-hidden="true"></span>
+                        <span class="legend-text"><span class="legend-label">{{ item.label }}</span><span class="legend-metric"><strong>{{ item.count }}</strong><span>{{ item.percent }}</span></span></span>
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <div class="dashboard-legend-row">
+                      <span class="legend-swatch" aria-hidden="true"></span>
+                      <span class="legend-text"><span class="legend-label">暂无图片</span><span class="legend-metric"><strong>0</strong><span>0.0%</span></span></span>
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -112,8 +131,8 @@
               <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
               <span>点击上传图片，或拖拽到这里</span>
               <span class="upload-options">
-                <span>选择文件</span>
-                <button type="button" data-directory-button>选择目录</button>
+                <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">🗑</button>
+                <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">▣</button>
               </span>
             </div>
             <a
@@ -123,23 +142,6 @@
               data-image-action
               data-images-ready="{{ '1' if project.has_images else '0' }}"
             >去标注</a>
-          </article>
-
-          <article class="upload-panel">
-            <div class="panel-head">
-              <h2>测试图片</h2>
-              <span class="count" data-test-count>{{ project.test_count }} 个文件</span>
-            </div>
-            <div class="drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
-              <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
-              <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
-              <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-              <span>点击上传测试图片，或拖拽到这里</span>
-              <span class="upload-options">
-                <span>选择文件</span>
-                <button type="button" data-directory-button>选择目录</button>
-              </span>
-            </div>
           </article>
 
           <article class="upload-panel classes-panel">
@@ -218,5 +220,5 @@
   {% set footer_console_url = "/project/" ~ project.directory ~ "/logs" %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260512-test-upload"></script>
+  <script src="/static/js/project.js?v=20260516-upload-delete"></script>
 {% endblock %}

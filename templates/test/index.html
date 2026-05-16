@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/static/css/test.css?v=20260516-independent">
+{% endblock %}
+
+{% block content %}
+  <main class="test-main" data-test-page data-project="{{ current_project }}">
+    <section class="test-head" aria-labelledby="test-title">
+      <div>
+        <h1 id="test-title">{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试评估{% endif %}</h1>
+        <p>使用项目 test 文件夹图片，对已训练模型批量推理并生成横向评估表。</p>
+      </div>
+      <div class="model-head-actions">
+        <button class="secondary-button" type="button" data-open-test-dialog>新建测试任务</button>
+        <a class="secondary-button" href="/model{% if current_project %}/{{ current_project }}{% endif %}">返回模型</a>
+      </div>
+    </section>
+
+    <dialog class="test-dialog" data-test-dialog>
+      <form class="test-run-panel" method="post" action="/test/run">
+        <input type="hidden" name="project" value="{{ current_project }}">
+        <div class="test-panel-head">
+          <div>
+            <h2>新建测试任务</h2>
+            <p>从已训练模型中选择一个或多个，系统会使用项目目录下 <code>test</code> 文件夹图片逐一评估。</p>
+          </div>
+          <button class="test-dialog-close" type="button" data-close-test-dialog aria-label="关闭">×</button>
+        </div>
+
+        <div class="test-form-row">
+          <label class="test-name-field">
+            <span>任务名称</span>
+            <input name="name" type="text" placeholder="留空自动生成">
+          </label>
+          <div class="test-image-field">
+            <span>测试图片</span>
+            <strong>{{ image_count }} 张</strong>
+          </div>
+        </div>
+
+        <label class="test-compute-field">
+          <span>算力</span>
+          <select name="resource_id">
+            {% for item in compute_options %}
+              <option value="{{ item.id }}">{{ item.name }}{% if item.address and item.id != "local" %} · {{ item.address }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="test-select-all">
+          <input type="checkbox" data-select-all-models>
+          <span>全选</span>
+        </label>
+
+        {% if models %}
+          <div class="test-model-list">
+            {% for model in models %}
+              <label class="test-model-option">
+                <input type="checkbox" name="models" value="{{ model.relative_path }}">
+                <span>
+                  <strong>{{ model.name }}</strong>
+                  <small>{{ model.modified }} · {{ model.size_mb }} MB{% if model.metrics.map50 %} · mAP50 {{ model.metrics.map50 }}{% endif %}</small>
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty compact">当前项目还没有已训练模型。</div>
+        {% endif %}
+
+        {% if current_project and image_count == 0 %}
+          <div class="resource-alert"><strong>缺少测试图片</strong><span>请把图片放到项目目录的 test 文件夹后再运行评估。</span></div>
+        {% endif %}
+
+        <button type="submit" {% if not current_project or not models or image_count == 0 %}disabled{% endif %}>开始测试评估</button>
+      </form>
+    </dialog>
+
+    <section class="test-upload-card" aria-labelledby="test-upload-title">
+      <div class="test-upload-head">
+        <div>
+          <h2 id="test-upload-title">测试图片</h2>
+          <p>上传到项目目录的 <code>test</code> 文件夹，远程算力会同步使用这一份测试数据。</p>
+        </div>
+        <span class="count" data-test-count>{{ image_count }} 个文件</span>
+      </div>
+      <div class="test-drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
+        <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
+        <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
+        <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
+        <span>点击上传测试图片，或拖拽到这里</span>
+        <span class="upload-options">
+          <span>选择文件</span>
+          <button type="button" data-directory-button>选择目录</button>
+        </span>
+      </div>
+    </section>
+
+    {% if tasks %}
+      <section class="test-task-list" aria-label="测试任务">
+        {% for task in tasks[:8] %}
+          <article class="test-task-card">
+            <div class="test-task-main">
+              <div class="test-task-head">
+                <div class="test-task-title-row">
+                  <h2>{{ task.name }}</h2>
+                  <p>{{ task.resource_name or "本地" }} · {{ task.created_at }}</p>
+                  <span class="test-status test-status-{{ task.status }}">{{ task.status }}</span>
+                </div>
+              </div>
+              <div class="test-task-tags test-task-tags-{{ task.status }}" aria-label="测试模型">
+                {% for model_name in task.model_names %}
+                  <span class="tag-color-{{ loop.index0 % 6 }}{% if loop.index <= task.completed_models %} passed{% endif %}">{{ model_name }}</span>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="test-task-actions">
+              <button type="button" data-view-test-log data-log-url="/test/tasks/{{ task.id }}/logs">控制台</button>
+              {% if task.status == "完成" %}
+                <a class="secondary-button" href="/test/{{ task.project }}/reports/{{ task.id }}">查看</a>
+              {% endif %}
+              {% if task.status in ["失败", "取消"] %}
+                <form method="post" action="/test/tasks/{{ task.id }}/retry">
+                  <button type="submit">重新运行</button>
+                </form>
+              {% endif %}
+              {% if task.status in ["排队中", "进行中"] %}
+                <form method="post" action="/test/tasks/{{ task.id }}/cancel">
+                  <button type="submit">取消</button>
+                </form>
+              {% endif %}
+            </div>
+            {% if task.status not in ["完成", "取消"] %}
+              <div class="test-task-progress-row">
+                <b data-test-progress-text>{{ task.progress or 0 }}%</b>
+                <div class="test-task-progress" aria-label="任务进度 {{ task.progress or 0 }}%">
+                  <span style="width: {{ task.progress or 0 }}%" data-test-progress-bar></span>
+                </div>
+              </div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    <section class="test-extension-card" aria-labelledby="test-extension-title">
+      <div>
+        <h2 id="test-extension-title">测试图片扩展名</h2>
+        <p>项目 {{ project_name or current_project }} / test 下的图片数量统计。</p>
+      </div>
+      <div class="test-extension-chart">
+        <span class="test-extension-pie" style="background: {{ extension_chart.style }}"><b>{{ extension_chart.total }}</b></span>
+        <div class="test-extension-legend">
+          {% if extension_chart["items"] %}
+            {% for item in extension_chart["items"] %}
+              <span><i style="background: {{ item.color }}"></i><strong>.{{ item.ext }}</strong>{{ item.count }} 张 · {{ item.percent }}%</span>
+            {% endfor %}
+          {% else %}
+            <span><i></i><strong>暂无</strong>0 张</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  {% set footer_id = "stats" %}
+  {% set footer_left = workspace %}
+  {% include "partials/footer.html" %}
+
+  <script src="/static/js/project.js?v=20260516-test-upload"></script>
+  <script>
+    (() => {
+      const dialog = document.querySelector("[data-test-dialog]");
+      const selectAllModels = document.querySelector("[data-select-all-models]");
+      const activeStatuses = new Set(["排队中", "进行中"]);
+      const logOffsets = new Map();
+      let activeLogTimer = null;
+
+      document.querySelector("[data-open-test-dialog]")?.addEventListener("click", () => dialog?.showModal());
+      document.querySelector("[data-close-test-dialog]")?.addEventListener("click", () => dialog?.close());
+      dialog?.addEventListener("click", event => {
+        if (event.target === dialog) dialog.close();
+      });
+      selectAllModels?.addEventListener("change", () => {
+        document.querySelectorAll(".test-model-option input[name='models']").forEach(input => {
+          input.checked = selectAllModels.checked;
+        });
+      });
+
+      function openFooterConsole(text, status = "", progress = 0) {
+        const header = status ? [`状态：${status}`, `进度：${progress || 0}%`, ""].join("\n") : "";
+        window.yoloutilsFooterConsole?.open(`${header}${text || "控制台暂无输出"}`);
+      }
+
+      function updateFooterConsole(text) {
+        if (text) window.yoloutilsFooterConsole?.append(text);
+      }
+
+      async function loadTaskLog(button, openConsole = true) {
+        const logUrl = button.dataset.logUrl;
+        const offset = openConsole ? 0 : Number(logOffsets.get(logUrl) || 0);
+        const url = new URL(logUrl, window.location.origin);
+        if (offset > 0) url.searchParams.set("offset", String(offset));
+        const response = await fetch(url, {cache: "no-store"});
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          if (openConsole) openFooterConsole(data.error || "测试日志读取失败");
+          else updateFooterConsole(data.error || "测试日志读取失败");
+          return null;
+        }
+        const task = data.task || {};
+        logOffsets.set(logUrl, Number(data.size || 0));
+        if (openConsole) openFooterConsole(data.log || "暂无日志", task.status || "", task.progress || 0);
+        else updateFooterConsole(data.log || "");
+        const card = button.closest(".test-task-card");
+        const statusNode = card?.querySelector(".test-status");
+        const tagsNode = card?.querySelector(".test-task-tags");
+        const progressBar = card?.querySelector("[data-test-progress-bar]");
+        const progressText = card?.querySelector("[data-test-progress-text]");
+        if (statusNode) {
+          statusNode.textContent = task.status || "";
+          statusNode.className = `test-status test-status-${task.status || ""}`;
+        }
+        if (tagsNode) {
+          tagsNode.className = `test-task-tags test-task-tags-${task.status || ""}`;
+          const tags = Array.from(tagsNode.querySelectorAll("span"));
+          const completed = Number(task.completed_models || 0);
+          tags.forEach((tag, index) => tag.classList.toggle("passed", index < completed));
+        }
+        if (progressBar) {
+          const progress = Number(task.progress || 0);
+          progressBar.style.width = `${Math.max(0, Math.min(progress, 100))}%`;
+          progressBar.parentElement?.setAttribute("aria-label", `任务进度 ${progress}%`);
+          if (progressText) progressText.textContent = `${progress}%`;
+        }
+        return data;
+      }
+
+      function watchTaskLog(button) {
+        if (activeLogTimer) clearInterval(activeLogTimer);
+        activeLogTimer = null;
+        loadTaskLog(button).then(data => {
+          const status = data?.task?.status || "";
+          if (!activeStatuses.has(status)) return;
+          activeLogTimer = setInterval(async () => {
+            if (!window.yoloutilsFooterConsole?.isOpen()) {
+              clearInterval(activeLogTimer);
+              activeLogTimer = null;
+              return;
+            }
+            const latest = await loadTaskLog(button, false).catch(() => null);
+            const latestStatus = latest?.task?.status || "";
+            if (latestStatus && !activeStatuses.has(latestStatus)) {
+              clearInterval(activeLogTimer);
+              activeLogTimer = null;
+              location.reload();
+            }
+          }, 1200);
+        });
+      }
+
+      document.querySelectorAll("[data-view-test-log]").forEach(button => {
+        button.addEventListener("click", () => watchTaskLog(button));
+        const status = button.closest(".test-task-card")?.querySelector(".test-status")?.textContent || "";
+        if (activeStatuses.has(status)) watchTaskLog(button);
+      });
+    })();
+  </script>
+{% endblock %}

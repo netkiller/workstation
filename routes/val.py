@@ -24,6 +24,27 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic"
 queue_lock = threading.Lock()
 worker_thread = None
 running_processes = {}
+VAL_OPTION_KEYS = [
+    "batch",
+    "conf",
+    "iou",
+    "max_det",
+    "half",
+    "dnn",
+    "plots",
+    "rect",
+    "save_json",
+    "save_hybrid",
+    "save_txt",
+    "save_conf",
+    "verbose",
+    "augment",
+    "agnostic_nms",
+    "single_cls",
+    "classes",
+    "workers",
+    "exist_ok",
+]
 
 
 def workspace_path():
@@ -302,7 +323,7 @@ def validate_command(task):
     project = project_path(workspace_path(), task["project"])
     model_path = (project / task["model"]).resolve()
     data_yaml = write_data_yaml(task)
-    return [
+    command = [
         "yolo",
         "detect",
         "val",
@@ -312,7 +333,12 @@ def validate_command(task):
         f"imgsz={task['imgsz']}",
         f"project={project / 'validate-runs'}",
         f"name={task['name']}",
-    ] + ([f"device={task['device']}"] if task.get("device") else [])
+    ]
+    for key in ["device", *VAL_OPTION_KEYS]:
+        value = task.get(key)
+        if value not in (None, ""):
+            command.append(f"{key}={value}")
+    return command
 
 
 def run_task(task):
@@ -479,6 +505,7 @@ async def create_validate_task(request: Request):
         imgsz = int(form.get("imgsz") or 640)
     except ValueError:
         imgsz = 640
+    yolo_options = {key: str(form.get(key) or "").strip() for key in VAL_OPTION_KEYS}
     task = {
         "id": uuid4().hex[:12],
         "name": str(form.get("name") or "").strip() or default_name,
@@ -492,6 +519,7 @@ async def create_validate_task(request: Request):
         "device": str(form.get("device") or "").strip(),
         "status": "排队中",
         "created_at": datetime.now().isoformat(timespec="seconds"),
+        **{key: value for key, value in yolo_options.items() if value},
     }
     with queue_lock:
         tasks = load_tasks()

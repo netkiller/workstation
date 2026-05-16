@@ -513,6 +513,7 @@ def _scan_image_labels(root: Path):
         "txt_empty": 0,
         "txt_invalid": 0,
         "txt_valid": 0,
+        "extensions": {},
         "class_counts": {},
     }
     if not root.is_dir():
@@ -523,6 +524,8 @@ def _scan_image_labels(root: Path):
         if not image_path.is_file() or image_path.suffix.lower() not in IMAGE_EXTS:
             continue
         result["images"] += 1
+        ext = image_path.suffix.lower().lstrip(".") or "unknown"
+        result["extensions"][ext] = result["extensions"].get(ext, 0) + 1
         label_file = image_path.with_suffix(".txt")
         if not label_file.is_file():
             result["txt_missing"] += 1
@@ -581,6 +584,7 @@ def empty_project_index():
             "txt_empty": 0,
             "txt_invalid": 0,
             "txt_valid": 0,
+            "extensions": {},
             "class_counts": {},
         },
         "test": {"images": 0},
@@ -641,27 +645,32 @@ def read_classes(path: Path):
 def project_dashboard(projects: list[dict]):
     total_images = 0
     total_labels = 0
-    total_test_images = 0
+    total_datasets = 0
     total_models = 0
     total_classes_files = 0
     class_counts: dict[str, int] = {}
-    colors = ["#2563eb", "#16a34a", "#f97316", "#7c3aed"]
+    extension_counts: dict[str, int] = {}
+    colors = ["#2563eb", "#16a34a", "#f97316", "#7c3aed", "#0891b2", "#db2777", "#0f766e", "#ca8a04"]
 
     for project in projects:
         path = project["path"]
         index = project_index(path)
         annotate = index.get("annotate", {})
+        if "extensions" not in annotate:
+            annotate = _scan_image_labels(path / ANNOTATE_DIR)
         total_images += int(annotate.get("images") or 0)
         total_labels += int(annotate.get("labels") or 0)
-        total_test_images += int(index.get("test", {}).get("images") or 0)
+        total_datasets += int(index.get("datasets", {}).get("count") or 0)
         total_models += int(index.get("models", {}).get("count") or 0)
         total_classes_files += 1 if (path / ANNOTATE_DIR / "classes.txt").is_file() or (path / "classes.txt").is_file() else 0
+        for ext, count in (annotate.get("extensions") or {}).items():
+            extension_counts[ext] = extension_counts.get(ext, 0) + int(count or 0)
         for label, count in (annotate.get("class_counts") or {}).items():
             class_counts[label] = class_counts.get(label, 0) + int(count or 0)
 
     resource_items = [
         {"label": "标注资源", "count": total_images + total_labels, "detail": f"{total_images} 图像 / {total_labels} txt", "color": colors[0]},
-        {"label": "测试资源", "count": total_test_images, "detail": f"{total_test_images} 图像", "color": colors[1]},
+        {"label": "数据集", "count": total_datasets, "detail": f"{total_datasets} 数据集", "color": colors[1]},
         {"label": "模型资源", "count": total_models, "detail": f"{total_models} 模型", "color": colors[2]},
     ]
     resource_total = sum(item["count"] for item in resource_items)
@@ -691,6 +700,26 @@ def project_dashboard(projects: list[dict]):
             annotate_segments.append(f"{item['color']} {annotate_start:.2f}% {annotate_end:.2f}%")
         annotate_start = annotate_end
 
+    extension_total = sum(extension_counts.values())
+    extension_items = []
+    extension_start = 0.0
+    extension_segments = []
+    for index, (ext, count) in enumerate(sorted(extension_counts.items(), key=lambda item: (-item[1], item[0]))):
+        percent = (count / extension_total * 100) if extension_total else 0
+        extension_end = extension_start + percent
+        color = colors[index % len(colors)]
+        extension_items.append(
+            {
+                "label": f".{ext}",
+                "count": count,
+                "percent": f"{percent:.1f}%",
+                "color": color,
+            }
+        )
+        if count:
+            extension_segments.append(f"{color} {extension_start:.2f}% {extension_end:.2f}%")
+        extension_start = extension_end
+
     total_annotations = sum(class_counts.values())
     legend = []
     start = 0.0
@@ -715,13 +744,16 @@ def project_dashboard(projects: list[dict]):
         "label_count": total_labels,
         "remaining_count": max(total_images - total_labels, 0),
         "progress_percent": max(0, min(round((total_labels / total_images * 100) if total_images else 0), 100)),
-        "test_count": total_test_images,
+        "dataset_count": total_datasets,
         "model_count": total_models,
         "classes_count": total_classes_files,
         "resource_items": resource_items,
         "resource_chart_style": f"conic-gradient({', '.join(resource_segments)})" if resource_segments else "#e2e8f0",
         "annotate_items": annotate_items,
         "annotate_chart_style": f"conic-gradient({', '.join(annotate_segments)})" if annotate_segments else "#e2e8f0",
+        "image_type_items": extension_items,
+        "image_type_chart_style": f"conic-gradient({', '.join(extension_segments)})" if extension_segments else "#e2e8f0",
+        "image_type_total": extension_total,
         "total_annotations": total_annotations,
         "legend": legend,
         "chart_style": f"conic-gradient({', '.join(segments)})" if segments else "#e2e8f0",
@@ -938,6 +970,16 @@ def save_upload(filename: str, content: bytes, target_dir: Path):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
+
+
+def remove_empty_dirs(root: Path):
+    if not root.exists():
+        return
+    for directory in sorted((item for item in root.rglob("*") if item.is_dir()), key=lambda item: len(item.parts), reverse=True):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
 
 
 async def uploaded_files(request: Request):
@@ -1277,7 +1319,7 @@ def project_detail(directory: str, request: Request):
         write_user_project(workspace, username, directory)
     try:
         meta = read_project_meta(path, read_project_registry(workspace))
-        index = project_index(path)
+        index = build_project_index(path)
         image_count = int(index.get("annotate", {}).get("images") or 0)
         test_count = int(index.get("test", {}).get("images") or 0)
         model_count = int(index.get("models", {}).get("count") or 0)
@@ -1361,6 +1403,30 @@ async def upload_images(directory: str, request: Request):
     )
     index = build_project_index(path)
     return {"ok": True, "saved": len(saved), "count": int(index.get("annotate", {}).get("images") or 0)}
+
+
+@router.post("/project/{directory}/upload/images/delete")
+async def delete_uploaded_images(directory: str):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    annotate_dir = path / ANNOTATE_DIR
+    removed = []
+    if annotate_dir.exists():
+        for item in annotate_dir.rglob("*"):
+            if not item.is_file() or item.name == "classes.txt":
+                continue
+            item.unlink()
+            removed.append(item)
+        remove_empty_dirs(annotate_dir)
+    append_upload_log(
+        path,
+        f"删除上传图片/标注文件：{len(removed)} 个",
+        [relative_log_entry(path, item) for item in removed],
+    )
+    index = build_project_index(path)
+    return {"ok": True, "deleted": len(removed), "count": int(index.get("annotate", {}).get("images") or 0)}
 
 
 @router.post("/project/{directory}/upload/test")

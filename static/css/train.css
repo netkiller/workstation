@@ -1410,6 +1410,10 @@
   display: none;
 }
 
+.optional-params .train-options-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
 .back-link {
   display: inline-flex;
   margin-bottom: 10px;

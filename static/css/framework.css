@@ -18,6 +18,8 @@ header { height: 44px; display: grid; grid-template-columns: minmax(160px, 1fr) 
 .header-button:hover { background: #e6f0ff; color: #243b53; }
 .header-button.active { border-color: #2563eb; background: #dbeafe; color: #1d4ed8; }
 .header-icon { font-size: 15px; line-height: 1; }
+#editModeToggle .header-icon { color: #94a3b8; }
+#editModeToggle.annotation-mode-on .header-icon { color: #dc2626; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 button:disabled:hover { background: transparent; color: inherit; }
 main { height: calc(100vh - 84px); display: grid; grid-template-columns: minmax(360px, 520px) 1px minmax(420px, 1fr) 220px; overflow: hidden; }
@@ -34,6 +36,8 @@ aside, section { min-width: 0; overflow: auto; border-right: 1px solid #d9e2ec; 
 section.viewer { background: #f5f7fa; display: flex; flex-direction: column; }
 main.files-hidden .viewer-file-nav { display: flex; }
 main:not(.files-hidden) .viewer-file-nav { display: none; }
+#showRight { display: none; }
+main.right-hidden #showRight { display: inline-flex; }
 h2 { margin: 0; padding: 12px 14px; font-size: 13px; border-bottom: 1px solid #e4e7eb; background: #f8fafc; }
 .pane-header { flex: 0 0 34px; height: 34px; min-height: 34px; max-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px 0 12px; overflow: hidden; border-bottom: 1px solid #e4e7eb; background: #f8fafc; }
 .pane-header h2 { flex: 1 1 auto; min-width: 0; padding: 0; overflow: hidden; border: 0; background: transparent; line-height: 1; white-space: nowrap; text-overflow: ellipsis; }

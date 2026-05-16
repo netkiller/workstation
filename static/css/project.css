@@ -236,7 +236,7 @@ textarea {
 
 .dashboard-chart-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -1485,6 +1485,7 @@ button.close-project-link {
 }
 
 .drop-zone {
+  position: relative;
   min-height: 180px;
   display: grid;
   gap: 12px;
@@ -1507,6 +1508,45 @@ button.close-project-link {
 }
 
 .drop-zone.uploading {
+  pointer-events: none;
+}
+
+.upload-delete-button,
+.upload-option-icon-button {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.upload-delete-button:hover {
+  border-color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.upload-option-icon-button {
+  border-color: var(--line);
+  color: #334e68;
+  font-size: 18px;
+}
+
+.upload-option-icon-button:hover {
+  border-color: #cbd5e1;
+  background: #e6f0ff;
+  color: #243b53;
+}
+
+.drop-zone.uploading .upload-delete-button {
   pointer-events: none;
 }
 
@@ -1579,22 +1619,6 @@ button.close-project-link {
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
-}
-
-.upload-options button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #ffffff;
-  color: #334e68;
-  font: inherit;
-  cursor: pointer;
-}
-
-.upload-options button:hover {
-  background: #e6f0ff;
-  color: #243b53;
 }
 
 .action-link {

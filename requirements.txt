@@ -11,6 +11,7 @@ texttable
 tqdm
 #dominate
 fastapi
+python-multipart
 uvicorn
 websockets
 jinja2

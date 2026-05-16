@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}{% if project_name %}项目 {{ project_name }} 测试报告{% else %}测试报告{% endif %}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/static/css/test.css?v=20260516-report-page">
+{% endblock %}
+
+{% block content %}
+  <main class="test-main">
+    <section class="test-head" aria-labelledby="test-report-title">
+      <div>
+        <h1 id="test-report-title">测试报告</h1>
+        <p>{{ report.name }} · {{ report.created_at }}</p>
+      </div>
+      <div class="model-head-actions">
+        <a class="secondary-button" href="/test/{{ current_project }}">返回测试</a>
+        <a class="secondary-button" href="/test/tasks/{{ report.task_id }}/csv">下载 CSV</a>
+      </div>
+    </section>
+
+    <section class="test-report-panel" aria-label="测试报告表格">
+      <div class="test-report-table-wrap">
+        <table class="test-report-table">
+          <thead>
+            <tr>
+              <th>图片</th>
+              {% for model in report.models %}
+                <th>{{ model.name }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in report.rows %}
+              <tr>
+                <th>{{ row.image }}</th>
+                {% for model in report.models %}
+                  <td>{{ row.cells.get(model.name, "未识别") }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>平均置信度</th>
+              {% for model in report.models %}
+                <td>{{ model.average_confidence if model.average_confidence is not none else "-" }}</td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <th>识别数量</th>
+              {% for model in report.models %}
+                <td>{{ model.detection_count }}</td>
+              {% endfor %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  {% set footer_id = "stats" %}
+  {% set footer_left = workspace %}
+  {% include "partials/footer.html" %}
+{% endblock %}

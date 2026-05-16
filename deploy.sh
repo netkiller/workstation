@@ -1,0 +1,1 @@
+rsync -auzv * --exclude workspace root@saas.netkiller.cn:/srv/workstation

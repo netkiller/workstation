@@ -1116,10 +1116,10 @@
     }
 
     function updateAnnotationButtons() {
-      editModeToggle.classList.toggle("active", annotateMode);
-      editModeToggle.querySelector(".header-icon").textContent = annotateMode ? "●" : "◌";
-      editModeToggle.querySelector("span:last-child").textContent = annotateMode ? "打标" : "只读";
-      editModeToggle.title = annotateMode ? "当前为打标状态" : "当前为只读状态";
+      editModeToggle.classList.toggle("annotation-mode-on", annotateMode);
+      editModeToggle.querySelector(".header-icon").textContent = "●";
+      editModeToggle.querySelector("span:last-child").textContent = "标注";
+      editModeToggle.title = annotateMode ? "当前为标注状态" : "当前未开启标注";
       canvas.classList.toggle("annotating", annotateMode);
       const locked = Boolean(lockedByOther);
       saveAnnotation.disabled = locked || !currentPath || (!boxesDirty && Boolean(currentLabelFile));

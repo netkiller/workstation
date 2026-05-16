@@ -2,12 +2,15 @@
 import argparse
 import base64
 import os
+import socket
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
 from pathlib import Path
+
+APP_ROOT = Path(__file__).resolve().parent
 
 
 def build_parser():
@@ -84,6 +87,7 @@ def apply_environment(args):
             os.environ[key] = str(Path(value).expanduser().resolve())
         else:
             os.environ.pop(key, None)
+    os.chdir(workspace)
     return workspace
 
 
@@ -125,6 +129,18 @@ def basic_auth_header(auth: str | None):
     return {"Authorization": f"Basic {token}"}
 
 
+def ensure_port_available(host: str, port: int):
+    bind_host = "::" if host == "::" else host
+    family = socket.AF_INET6 if ":" in bind_host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((bind_host, int(port)))
+        except OSError as exc:
+            display = server_url(host, port)
+            raise SystemExit(f"端口已被占用，未打开浏览器。请关闭旧服务或换端口: {display}") from exc
+
+
 def start_browser_opener(url: str, auth: str | None = None):
     def open_and_keep_alive():
         time.sleep(1)
@@ -152,7 +168,7 @@ def start_browser_opener(url: str, auth: str | None = None):
 
 
 def daemon_command(args):
-    command = [sys.executable, str(Path(__file__).resolve())]
+    command = [sys.executable, str(APP_ROOT / "start.py")]
     for option, attr in (
         ("host", "host"),
         ("port", "port"),
@@ -199,7 +215,7 @@ def start_daemon(args, workspace: Path):
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=output,
-            cwd=Path(__file__).resolve().parent,
+            cwd=workspace,
             start_new_session=True,
             close_fds=True,
             env=os.environ.copy(),
@@ -235,6 +251,7 @@ def main():
         return
 
     check_dependencies()
+    ensure_port_available(args.host, args.port)
 
     print(f"Yolo Workstation: {url}")
     print(f"Workspace: {workspace}")
@@ -251,6 +268,8 @@ def main():
 
     import uvicorn
 
+    if str(APP_ROOT) not in sys.path:
+        sys.path.insert(0, str(APP_ROOT))
     uvicorn.run("app:app", host=args.host, port=args.port, reload=args.reload)
 
 

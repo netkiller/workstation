@@ -26,6 +26,7 @@ from routes.project import (
 )
 from routes.predict import router as predict_router
 from routes.resources import router as resources_router
+from routes.test import router as test_router
 from routes.train import router as train_router
 from routes.val import router as validate_router
 
@@ -39,6 +40,7 @@ app.include_router(help_router)
 app.include_router(project_router)
 app.include_router(predict_router)
 app.include_router(resources_router)
+app.include_router(test_router)
 app.include_router(train_router)
 app.include_router(validate_router)
 app.include_router(model_router)

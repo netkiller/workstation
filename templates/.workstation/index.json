@@ -7,6 +7,7 @@
     "txt_empty": 0,
     "txt_invalid": 0,
     "txt_valid": 0,
+    "extensions": {},
     "class_counts": {}
   },
   "test": {
@@ -18,5 +19,5 @@
   "models": {
     "count": 0
   },
-  "updated_at": "2026-05-15T23:12:54"
+  "updated_at": "2026-05-16T14:29:29"
 }

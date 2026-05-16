@@ -426,6 +426,9 @@ async function uploadFiles(zone, files) {
       setAnnotateReady({imagesReady: data.count > 0});
     } else if (kind === "test") {
       document.querySelector("[data-test-count]").textContent = `${data.count} 个文件`;
+      if (document.querySelector("[data-test-page]")) {
+        window.setTimeout(() => window.location.reload(), 500);
+      }
     } else if (kind === "model") {
       document.querySelector("[data-model-count]").textContent = `${data.count} 个文件`;
       setActionEnabled("[data-model-action]", data.count > 0);
@@ -447,6 +450,38 @@ async function uploadFiles(zone, files) {
       zone.classList.remove("uploading", "upload-complete");
       setUploadProgress(zone, 0);
     }, zone.classList.contains("upload-complete") ? 500 : 0);
+  }
+}
+
+async function clearUploadedImages(button) {
+  const project = document.querySelector("[data-project]")?.dataset.project;
+  if (!project) {
+    return;
+  }
+  if (!window.confirm("确认删除已上传图片和对应标注文件？classes.txt 会保留。")) {
+    return;
+  }
+
+  const zone = button.closest("[data-upload-zone]");
+  button.disabled = true;
+  try {
+    const response = await fetch(`/project/${encodeURIComponent(project)}/upload/images/delete`, {
+      method: "POST",
+      headers: {"Accept": "application/json"},
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "删除失败");
+    }
+    document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
+    setAnnotateReady({imagesReady: data.count > 0});
+    zone?.classList.remove("uploading", "upload-complete", "dragging");
+    if (zone) setUploadProgress(zone, 0);
+    window.yoloutilsReloadFooterConsole?.();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -484,12 +519,16 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   const input = zone.querySelector("[data-file-input]") || zone.querySelector("input");
   const directoryInput = zone.querySelector("[data-directory-input]");
   const directoryButton = zone.querySelector("[data-directory-button]");
+  const clearButton = zone.querySelector("[data-clear-upload]");
 
   zone.addEventListener("click", (event) => {
     if (event.target.closest("input")) {
       return;
     }
     if (event.target.closest("[data-directory-button]")) {
+      return;
+    }
+    if (event.target.closest("[data-clear-upload]")) {
       return;
     }
     input.click();
@@ -513,6 +552,11 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
     event.preventDefault();
     event.stopPropagation();
     directoryInput?.click();
+  });
+  clearButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearUploadedImages(clearButton);
   });
   zone.addEventListener("dragover", (event) => {
     event.preventDefault();
