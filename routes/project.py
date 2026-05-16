@@ -29,6 +29,7 @@ templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "
 PROJECT_DIR_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 ANNOTATE_DIR = "annotate"
 TEST_DIR = "test"
+TEST_IMAGES_DIR = Path(TEST_DIR) / "images"
 IMAGE_EXTS = {
     ".jpg",
     ".jpeg",
@@ -611,7 +612,7 @@ def build_project_index(path: Path):
     index = {
         "version": 1,
         "annotate": annotate,
-        "test": {"images": count_files(path / TEST_DIR, IMAGE_EXTS)},
+        "test": {"images": count_files(path / TEST_IMAGES_DIR, IMAGE_EXTS)},
         "datasets": {"count": count_dataset_dirs(path)},
         "models": {"count": count_files(path / "models", MODEL_EXTS)},
     }
@@ -1559,7 +1560,7 @@ async def upload_test_images(directory: str, request: Request):
             if relative is None or relative.suffix.lower() not in IMAGE_EXTS:
                 skipped += 1
             else:
-                item = save_upload(filename, content, path / TEST_DIR)
+                item = save_upload(filename, content, path / TEST_IMAGES_DIR)
                 if item is not None:
                     saved.append(item)
             yield upload_progress_line(
@@ -1594,7 +1595,7 @@ async def delete_uploaded_test_images(directory: str):
     path = project_dir(workspace, directory)
     if path is None or not path.is_dir():
         return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
-    test_dir = path / TEST_DIR
+    test_dir = path / TEST_IMAGES_DIR
     removed = []
     if test_dir.exists():
         for item in test_dir.rglob("*"):

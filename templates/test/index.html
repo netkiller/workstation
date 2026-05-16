@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260516-progress-count-left">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260516-download-status">
 {% endblock %}
 
 {% block content %}
@@ -11,7 +11,7 @@
     <section class="test-head" aria-labelledby="test-title">
       <div>
         <h1 id="test-title">{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试评估{% endif %}</h1>
-        <p>使用项目 test 文件夹图片，对已训练模型批量推理并生成横向评估表。</p>
+        <p>使用项目 test/images 文件夹图片，对已训练模型批量推理并生成横向评估表。</p>
       </div>
       <div class="model-head-actions">
         <button class="secondary-button" type="button" data-open-test-dialog>新建测试任务</button>
@@ -26,7 +26,7 @@
           <div>
             <span class="test-dialog-kicker">模型测试评估</span>
             <h2>新建测试任务</h2>
-            <p>从已训练模型中选择一个或多个，系统会使用项目目录下 <code>test</code> 文件夹图片逐一评估。</p>
+            <p>从已训练模型中选择一个或多个，系统会使用项目目录下 <code>test/images</code> 文件夹图片逐一评估。</p>
           </div>
           <button class="test-dialog-close" type="button" data-close-test-dialog aria-label="关闭">×</button>
         </div>
@@ -85,7 +85,7 @@
 
         <div class="test-dialog-footer">
           {% if current_project and image_count == 0 %}
-            <div class="resource-alert"><strong>缺少测试图片</strong><span>请把图片放到测试文件夹后再运行评估。</span></div>
+            <div class="resource-alert"><strong>缺少测试图片</strong><span>请把图片放到 test/images 后再运行评估。</span></div>
           {% else %}
             <span class="test-dialog-hint">任务会按模型顺序运行，并生成可下载 CSV 报告。</span>
           {% endif %}
@@ -98,7 +98,7 @@
       <div class="test-upload-head">
         <div>
           <h2 id="test-upload-title">测试图片</h2>
-          <p>上传测试资源到测试文件夹，远程算力会同步使用这一份测试数据。</p>
+          <p>上传测试资源到 test/images，远程算力会同步使用这一份测试数据。</p>
         </div>
         <span class="count" data-test-count>{{ image_count }} 个文件</span>
       </div>
@@ -165,7 +165,7 @@
                       <span>查看</span>
                     </a>
                   {% endif %}
-                  {% if task.status in ["失败", "取消"] %}
+                  {% if task.status in ["失败", "取消", "空间不足"] %}
                     <form method="post" action="/test/tasks/{{ task.id }}/retry">
                       <button class="test-task-icon-button" type="submit" title="重试" aria-label="重试">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 4v6h-6"></path></svg>
@@ -173,7 +173,7 @@
                       </button>
                     </form>
                   {% endif %}
-                  {% if task.status in ["排队中", "进行中"] %}
+                  {% if task.status in ["排队中", "部署中", "进行中", "模型下载"] %}
                     <form method="post" action="/test/tasks/{{ task.id }}/cancel">
                       <button class="test-task-icon-button" type="submit" title="取消" aria-label="取消">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
@@ -189,9 +189,9 @@
                 {% endfor %}
               </div>
             </div>
-            {% if task.status not in ["完成", "取消", "失败"] %}
+            {% if task.status not in ["完成", "取消", "失败", "空间不足"] %}
               <div class="test-task-progress-row">
-                <b class="test-task-progress-count" data-test-progress-count>{% if task.progress_total %}({{ task.progress_done }}/{{ task.progress_total }}){% endif %}</b>
+                <b class="test-task-progress-count" data-test-progress-count>{{ task.progress_label }}</b>
                 <div class="test-task-progress" aria-label="任务进度 {{ task.progress or 0 }}%">
                   <span style="width: {{ task.progress or 0 }}%" data-test-progress-bar></span>
                 </div>
@@ -214,7 +214,7 @@
     (() => {
       const dialog = document.querySelector("[data-test-dialog]");
       const selectAllModels = document.querySelector("[data-select-all-models]");
-      const activeStatuses = new Set(["排队中", "部署中", "进行中"]);
+      const activeStatuses = new Set(["排队中", "部署中", "进行中", "模型下载"]);
       const logOffsets = new Map();
       let activeLogTimer = null;
 
@@ -278,16 +278,14 @@
           tags.forEach((tag, index) => tag.classList.toggle("passed", index < completed));
         }
         if (progressRow) {
-          progressRow.hidden = ["完成", "取消", "失败"].includes(task.status || "");
+          progressRow.hidden = ["完成", "取消", "失败", "空间不足"].includes(task.status || "");
         }
         if (progressBar) {
           const progress = Number(task.progress || 0);
           progressBar.style.width = `${Math.max(0, Math.min(progress, 100))}%`;
           progressBar.parentElement?.setAttribute("aria-label", `任务进度 ${progress}%`);
           if (progressText) {
-            const done = Number(task.progress_done || 0);
-            const total = Number(task.progress_total || 0);
-            if (progressCount) progressCount.textContent = total > 0 ? `(${done}/${total})` : "";
+            if (progressCount) progressCount.textContent = task.progress_label || "";
             progressText.textContent = `${progress}%`;
           }
         }

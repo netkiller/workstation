@@ -56,6 +56,11 @@ worker_thread = None
 running_processes = {}
 
 
+TEST_DIR = "test"
+TEST_IMAGES_DIR = "images"
+TEST_TASKS_DIR = "tasks"
+
+
 def workspace_path():
     workspace = os.environ.get("YOLOUTILS_WORKSPACE")
     return Path(workspace).expanduser().resolve() if workspace else Path.cwd().resolve()
@@ -197,7 +202,7 @@ def result_file(task_id: str):
 
 
 def test_images(project_dir: Path):
-    root = project_dir / "test"
+    root = test_images_dir(project_dir)
     if not root.is_dir():
         return []
     return sorted(
@@ -250,6 +255,22 @@ def slug(value: str):
 def selected_model_items(project_dir: Path, selected: list[str]):
     selected_set = set(selected)
     return [model for model in run_model_items(project_dir) if model["relative_path"] in selected_set]
+
+
+def test_images_dir(project_dir: Path):
+    return project_dir / TEST_DIR / TEST_IMAGES_DIR
+
+
+def test_tasks_dir(project_dir: Path):
+    return project_dir / TEST_DIR / TEST_TASKS_DIR
+
+
+def task_output_name(task: dict):
+    return str(task.get("output_name") or slug(str(task.get("name") or task.get("id") or "task")))
+
+
+def task_output_dir(project_dir: Path, task: dict):
+    return test_tasks_dir(project_dir) / task_output_name(task)
 
 
 def compute_options(workspace: Path):
@@ -318,17 +339,20 @@ def label_path_for_image(labels_dir: Path, image: Path, test_root: Path):
 
 def run_model(project_dir: Path, task_id: str, model: dict, images: list[Path], class_names: list[str]):
     model_path = Path(model["path"])
+    task = next((item for item in load_tasks() if item.get("id") == task_id), {"id": task_id, "name": task_id})
     run_name = f"{task_id}-{slug(model['run'] or model['name'])}"
-    run_root = project_dir / "test-runs"
+    run_root = task_output_dir(project_dir, task)
     run_dir = run_root / run_name
+    run_root.mkdir(parents=True, exist_ok=True)
     command = [
         "yolo",
         "detect",
         "predict",
         f"model={model_path}",
-        f"source={project_dir / 'test'}",
+        f"source={test_images_dir(project_dir)}",
         f"project={run_root}",
         f"name={run_name}",
+        "save=True",
         "save_txt=True",
         "save_conf=True",
         "exist_ok=True",
@@ -347,11 +371,14 @@ def run_model(project_dir: Path, task_id: str, model: dict, images: list[Path], 
         return_code = process.wait()
     running_processes.pop(task_id, None)
     if return_code != 0:
+        log_text = log_file(task_id).read_text(encoding="utf-8", errors="replace") if log_file(task_id).is_file() else ""
+        if is_no_space_error(log_text):
+            raise RuntimeError(f"{model['name']} 空间不足：No space left on device")
         raise RuntimeError(f"{model['name']} 退出码 {return_code}")
 
     labels_dir = labels_dir_for_run(run_dir)
     detections_by_image = {}
-    test_root = project_dir / "test"
+    test_root = test_images_dir(project_dir)
     for image in images:
         label_path = label_path_for_image(labels_dir, image, test_root)
         detections_by_image[image.relative_to(test_root).as_posix()] = parse_label_file(label_path, class_names)
@@ -480,18 +507,35 @@ def count_remote_images(sftp, remote_root: str):
         return 0
 
 
-def download_remote_tree(sftp, remote_path: str, local_path: Path):
+def remote_file_paths(sftp, remote_root: str):
+    try:
+        return [
+            (relative, remote_path)
+            for relative, remote_path in list_remote_paths(sftp, remote_root)
+            if not stat_module.S_ISDIR(sftp.stat(remote_path).st_mode)
+        ]
+    except OSError:
+        return []
+
+
+def download_remote_tree(sftp, remote_path: str, local_path: Path, on_file=None):
+    try:
+        items = sftp.listdir_attr(remote_path)
+    except OSError:
+        return
     local_path.mkdir(parents=True, exist_ok=True)
-    for item in sftp.listdir_attr(remote_path):
+    for item in items:
         if item.filename in {".", ".."}:
             continue
         remote_child = posixpath.join(remote_path, item.filename)
         local_child = local_path / item.filename
         if stat_module.S_ISDIR(item.st_mode):
-            download_remote_tree(sftp, remote_child, local_child)
+            download_remote_tree(sftp, remote_child, local_child, on_file=on_file)
         else:
             local_child.parent.mkdir(parents=True, exist_ok=True)
             sftp.get(remote_child, str(local_child))
+            if on_file:
+                on_file(remote_child)
 
 
 def remote_exec_stream(client, task_id: str, command: str):
@@ -525,6 +569,25 @@ def remote_model_filename(index: int, model: dict):
 
 def test_session_name(task_id: str, index: int):
     return f"yoloutils_test_{task_id}_{index:02d}"
+
+
+def task_attempt(task: dict):
+    return max(1, int(task.get("attempt") or 1))
+
+
+def remote_test_session_name(task: dict, index: int):
+    attempt = task_attempt(task)
+    suffix = f"_r{attempt:02d}" if attempt > 1 else ""
+    return f"{test_session_name(task['id'], index)}{suffix}"
+
+
+def is_no_space_error(error):
+    text = str(error)
+    return "[Errno 28]" in text or "No space left on device" in text or "空间不足" in text
+
+
+def classify_failure_status(error):
+    return "空间不足" if is_no_space_error(error) else "失败"
 
 
 def run_remote_session_command(client, sftp, task_id: str, backend: str, session: str, command: list[str], remote_log: str, remote_exit: str, remote_cwd: str):
@@ -561,6 +624,98 @@ def run_remote_session_command(client, sftp, task_id: str, backend: str, session
         time.sleep(1)
 
 
+def build_results_from_runs(project_dir: Path, task_id: str, models: list[dict], images: list[Path], class_names: list[str]):
+    task = next((item for item in load_tasks() if item.get("id") == task_id), {"id": task_id, "name": task_id})
+    local_runs_root = task_output_dir(project_dir, task)
+    results = []
+    for model in models:
+        run_name = f"{task_id}-{slug(model['run'] or model['name'])}"
+        run_dir = local_runs_root / run_name
+        labels_dir = labels_dir_for_run(run_dir)
+        detections_by_image = {}
+        test_root = test_images_dir(project_dir)
+        for image in images:
+            label_path = label_path_for_image(labels_dir, image, test_root)
+            detections_by_image[image.relative_to(test_root).as_posix()] = parse_label_file(label_path, class_names)
+        results.append(
+            {
+                "name": model["name"],
+                "run": model.get("run", ""),
+                "relative_path": model["relative_path"],
+                "detections": detections_by_image,
+                "average_confidence": model_average(detections_by_image),
+                "detection_count": sum(len(items) for items in detections_by_image.values()),
+                "run_dir": str(run_dir),
+            }
+        )
+    return results
+
+
+def download_remote_results(task: dict, project_dir: Path, models: list[dict], images: list[Path], class_names: list[str]):
+    task_id = task["id"]
+    resource = find_resource(workspace_path(), str(task.get("resource_id") or ""))
+    if resource is None:
+        raise RuntimeError("算力服务器不存在")
+    try:
+        import paramiko
+    except ImportError as error:
+        raise RuntimeError("远程测试需要 paramiko，请先安装 paramiko。") from error
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    sftp = None
+    try:
+        append_log(task_id, f"连接算力服务器：{resource.get('name') or resource.get('host')}\n")
+        client.connect(
+            hostname=resource["host"],
+            port=int(resource.get("port") or 22),
+            username=resource.get("username") or None,
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+            **ssh_connect_kwargs(resource),
+        )
+        sftp = client.open_sftp()
+        remote_home = remote_home_dir(client, sftp)
+        remote_project_root = posixpath.join(remote_home, ".yoloutils", task["project"])
+        remote_runs_root = posixpath.join(remote_project_root, TEST_DIR, TEST_TASKS_DIR, task_output_name(task))
+        local_runs_root = task_output_dir(project_dir, task)
+        append_log(task_id, f"重新下载远程结果：{remote_runs_root}\n")
+        run_names = [f"{task_id}-{slug(model['run'] or model['name'])}" for model in models]
+        remote_results = [
+            item
+            for run_name in run_names
+            for item in remote_file_paths(sftp, posixpath.join(remote_runs_root, run_name))
+        ]
+        download_total = max(1, len(remote_results))
+        download_done = 0
+        running_processes[task_id] = client
+
+        def mark_downloaded(_remote_path):
+            nonlocal download_done
+            download_done += 1
+            update_task(
+                task_id,
+                progress=round(download_done / download_total * 100),
+                progress_done=download_done,
+                progress_total=download_total,
+                progress_label="下载",
+            )
+
+        update_task(task_id, status="模型下载", progress=0, completed_models=len(models), progress_done=0, progress_total=download_total, progress_label="下载")
+        for run_name in run_names:
+            download_remote_tree(sftp, posixpath.join(remote_runs_root, run_name), local_runs_root / run_name, on_file=mark_downloaded)
+        append_log(task_id, f"已下载到本地：{local_runs_root}\n")
+        return build_results_from_runs(project_dir, task_id, models, images, class_names)
+    finally:
+        running_processes.pop(task_id, None)
+        if sftp is not None:
+            sftp.close()
+        client.close()
+
+
 def run_remote_models(task: dict, project_dir: Path, models: list[dict], images: list[Path], class_names: list[str]):
     task_id = task["id"]
     resource = find_resource(workspace_path(), str(task.get("resource_id") or ""))
@@ -576,7 +731,8 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
     sftp = None
     remote_runs_root = ""
     try:
-        deployment_files = [item for item in (project_dir / "test").rglob("*") if item.is_file()]
+        local_test_images = test_images_dir(project_dir)
+        deployment_files = [item for item in local_test_images.rglob("*") if item.is_file()]
         deployment_total = max(1, len(deployment_files) + len(models))
         deployment_done = 0
 
@@ -611,10 +767,10 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
             append_log(task_id, "远程服务器未安装 tmux，使用 screen 启动持久测试。\n")
         remote_home = remote_home_dir(client, sftp)
         remote_project_root = posixpath.join(remote_home, ".yoloutils", task["project"])
-        remote_test = posixpath.join(remote_project_root, "test")
-        remote_base = posixpath.join(remote_project_root, "test-tasks", task_id)
+        remote_test = posixpath.join(remote_project_root, TEST_DIR, TEST_IMAGES_DIR)
+        remote_base = posixpath.join(remote_project_root, TEST_DIR, TEST_TASKS_DIR, task_output_name(task))
         remote_models = posixpath.join(remote_base, "models")
-        remote_runs_root = posixpath.join(remote_base, "test-runs")
+        remote_runs_root = remote_base
         remote_logs = posixpath.join(remote_base, "logs")
         append_log(task_id, f"远程项目目录：{remote_project_root}\n")
         append_log(task_id, f"远程工作目录：{remote_base}\n")
@@ -624,11 +780,11 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         sftp_mkdirs(sftp, remote_logs)
 
         append_log(task_id, f"同步测试图片：{len(images)} 张（删除远程多余文件）\n")
-        sync_tree_delete(sftp, project_dir / "test", remote_test, task_id, on_file=lambda _relative: mark_deployed())
+        sync_tree_delete(sftp, local_test_images, remote_test, task_id, on_file=lambda _relative: mark_deployed())
         remote_image_count = count_remote_images(sftp, remote_test)
         append_log(task_id, f"远程测试图片：{remote_image_count} 张\n")
         if remote_image_count <= 0:
-            raise RuntimeError(f"远程 test 目录没有可测试图片：{remote_test}")
+            raise RuntimeError(f"远程 test/images 目录没有可测试图片：{remote_test}")
         remote_model_paths = {}
         append_log(task_id, f"上传模型：{len(models)} 个\n")
         for index, model in enumerate(models, start=1):
@@ -655,6 +811,7 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
                 f"source={remote_test}",
                 f"project={remote_runs_root}",
                 f"name={run_name}",
+                "save=True",
                 "save_txt=True",
                 "save_conf=True",
                 "exist_ok=True",
@@ -662,41 +819,48 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
             ]
             update_task(task_id, completed_models=index)
             append_log(task_id, f"远程运行模型 ({index}/{len(models)})：{model['name']}\n")
-            session = test_session_name(task_id, index)
-            remote_log = posixpath.join(remote_logs, f"{index:02d}-{slug(model['run'] or model['name'])}.log")
-            remote_exit = posixpath.join(remote_logs, f"{index:02d}-{slug(model['run'] or model['name'])}.exit")
+            session = remote_test_session_name(task, index)
+            attempt_suffix = f"-r{task_attempt(task):02d}" if task_attempt(task) > 1 else ""
+            remote_log = posixpath.join(remote_logs, f"{index:02d}-{slug(model['run'] or model['name'])}{attempt_suffix}.log")
+            remote_exit = posixpath.join(remote_logs, f"{index:02d}-{slug(model['run'] or model['name'])}{attempt_suffix}.exit")
             running_processes[task_id] = {"type": f"remote-{backend}", "backend": backend, "client": client, "session": session}
             code = run_remote_session_command(client, sftp, task_id, backend, session, command, remote_log, remote_exit, remote_base)
             if code != 0:
+                remote_log_text = read_remote_text(sftp, remote_log)
+                if is_no_space_error(remote_log_text):
+                    raise RuntimeError(f"{model['name']} 远程空间不足：No space left on device")
                 raise RuntimeError(f"{model['name']} 远程退出码 {code}")
             update_task(task_id, progress=round(index / len(models) * 85), progress_done=index, progress_total=len(models))
 
-        local_runs_root = project_dir / "test-runs" / task_id
+        local_runs_root = task_output_dir(project_dir, task)
         append_log(task_id, f"下载远程结果：{remote_runs_root}\n")
-        download_remote_tree(sftp, remote_runs_root, local_runs_root)
+        run_names = [f"{task_id}-{slug(model['run'] or model['name'])}" for model in models]
+        remote_results = [
+            item
+            for run_name in run_names
+            for item in remote_file_paths(sftp, posixpath.join(remote_runs_root, run_name))
+        ]
+        download_total = max(1, len(remote_results))
+        download_done = 0
+        running_processes[task_id] = client
+
+        def mark_downloaded(_remote_path):
+            nonlocal download_done
+            download_done += 1
+            update_task(
+                task_id,
+                progress=round(download_done / download_total * 100),
+                progress_done=download_done,
+                progress_total=download_total,
+                progress_label="下载",
+            )
+
+        update_task(task_id, status="模型下载", progress=0, completed_models=len(models), progress_done=0, progress_total=download_total, progress_label="下载")
+        for run_name in run_names:
+            download_remote_tree(sftp, posixpath.join(remote_runs_root, run_name), local_runs_root / run_name, on_file=mark_downloaded)
         append_log(task_id, f"已下载到本地：{local_runs_root}\n")
 
-        for model in models:
-            run_name = f"{task_id}-{slug(model['run'] or model['name'])}"
-            run_dir = local_runs_root / run_name
-            labels_dir = labels_dir_for_run(run_dir)
-            detections_by_image = {}
-            test_root = project_dir / "test"
-            for image in images:
-                label_path = label_path_for_image(labels_dir, image, test_root)
-                detections_by_image[image.relative_to(test_root).as_posix()] = parse_label_file(label_path, class_names)
-            results.append(
-                {
-                    "name": model["name"],
-                    "run": model.get("run", ""),
-                    "relative_path": model["relative_path"],
-                    "detections": detections_by_image,
-                    "average_confidence": model_average(detections_by_image),
-                    "detection_count": sum(len(items) for items in detections_by_image.values()),
-                    "run_dir": str(run_dir),
-                }
-            )
-        return results
+        return build_results_from_runs(project_dir, task_id, models, images, class_names)
     finally:
         running_processes.pop(task_id, None)
         if sftp is not None:
@@ -705,7 +869,7 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
 
 
 def build_report(task: dict, model_results: list[dict], images: list[Path], project_dir: Path):
-    image_names = [image.relative_to(project_dir / "test").as_posix() for image in images]
+    image_names = [image.relative_to(test_images_dir(project_dir)).as_posix() for image in images]
     rows = []
     for image_name in image_names:
         cells = {}
@@ -739,7 +903,7 @@ def run_task(task: dict):
         return
     images = test_images(project_dir)
     if not images:
-        append_log(task_id, "项目 test 文件夹没有可测试图片。\n")
+        append_log(task_id, "项目 test/images 文件夹没有可测试图片。\n")
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
         return
     models = selected_model_items(project_dir, task.get("models", []))
@@ -753,7 +917,9 @@ def run_task(task: dict):
     class_names = read_classes(project_dir)
     results = []
     try:
-        if task.get("target_type") == "remote":
+        if task.get("target_type") == "remote" and task.get("download_only"):
+            results = download_remote_results(task, project_dir, models, images, class_names)
+        elif task.get("target_type") == "remote":
             results = run_remote_models(task, project_dir, models, images, class_names)
         else:
             if shutil.which("yolo") is None:
@@ -765,7 +931,21 @@ def run_task(task: dict):
                 update_task(task_id, progress=round(index / len(models) * 90), progress_done=index, progress_total=len(models))
     except Exception as error:
         append_log(task_id, f"\n模型测试失败：{error}\n")
-        update_task(task_id, status="失败", progress=100, finished_at=datetime.now().isoformat(timespec="seconds"))
+        latest_task = next((item for item in load_tasks() if item.get("id") == task_id), task)
+        if latest_task.get("status") == "取消":
+            return
+        failure_stage = "download" if latest_task.get("status") == "模型下载" else ""
+        update_task(
+            task_id,
+            status=classify_failure_status(error),
+            progress=100,
+            progress_done=0,
+            progress_total=0,
+            progress_label="",
+            failure_stage=failure_stage,
+            download_only=False,
+            finished_at=datetime.now().isoformat(timespec="seconds"),
+        )
         return
 
     report = build_report(task, results, images, project_dir)
@@ -775,6 +955,11 @@ def run_task(task: dict):
         task_id,
         status="完成",
         progress=100,
+        progress_done=0,
+        progress_total=0,
+        progress_label="",
+        failure_stage="",
+        download_only=False,
         result_path=str(result_file(task_id)),
         finished_at=datetime.now().isoformat(timespec="seconds"),
     )
@@ -788,7 +973,7 @@ def worker_loop():
                     item
                     for item in load_tasks()
                     if item.get("status") == "排队中"
-                    or (item.get("target_type") == "remote" and item.get("status") in {"部署中", "进行中"})
+                    or (item.get("target_type") == "remote" and item.get("status") in {"部署中", "进行中", "模型下载"})
                 ),
                 None,
             )
@@ -806,10 +991,10 @@ def ensure_worker():
 
 
 def task_progress(task: dict):
-    if task.get("status") in {"完成", "失败", "取消"}:
+    if task.get("status") in {"完成", "失败", "取消", "空间不足"}:
         return 100
-    if task.get("status") in {"进行中", "部署中"}:
-        return int(task.get("progress") or 10)
+    if task.get("status") in {"进行中", "部署中", "模型下载"}:
+        return int(task.get("progress") if task.get("progress") is not None else 0)
     return 0
 
 
@@ -825,12 +1010,18 @@ def task_view(task: dict):
         completed_models = min(model_count, int((view["progress"] or 0) / 100 * model_count)) if model_count else 0
     view["completed_models"] = completed_models
     view["model_count"] = model_count
-    if view.get("status") == "部署中":
+    if view.get("status") in {"部署中", "模型下载"}:
         view["progress_done"] = max(0, int(view.get("progress_done") or 0))
         view["progress_total"] = max(0, int(view.get("progress_total") or 0))
     else:
         view["progress_done"] = completed_models
         view["progress_total"] = model_count
+    if view.get("status") == "模型下载":
+        view["progress_label"] = "下载"
+    elif view.get("progress_total"):
+        view["progress_label"] = f"({view['progress_done']}/{view['progress_total']})"
+    else:
+        view["progress_label"] = ""
     return view
 
 
@@ -950,9 +1141,16 @@ async def create_test_task(request: Request):
         "model_names": [model["name"] for model in models],
         "status": "排队中",
         "progress": 0,
+        "progress_done": 0,
+        "progress_total": 0,
+        "progress_label": "",
         "completed_models": 0,
+        "attempt": 1,
+        "failure_stage": "",
+        "download_only": False,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
+    task["output_name"] = slug(task["name"])
     with queue_lock:
         tasks = load_tasks()
         tasks.append(task)
@@ -1032,11 +1230,18 @@ def retry_task(task_id: str):
         task = next((item for item in tasks if item.get("id") == task_id), None)
         if task is None:
             return RedirectResponse(url="/test", status_code=status.HTTP_303_SEE_OTHER)
-        if task.get("status") not in {"失败", "取消"}:
+        if task.get("status") not in {"失败", "取消", "空间不足"}:
             return RedirectResponse(url=f"/test/{task.get('project', '')}", status_code=status.HTTP_303_SEE_OTHER)
+        download_only = task.get("status") == "空间不足" and task.get("failure_stage") == "download" and task.get("target_type") == "remote"
         task["status"] = "排队中"
         task["progress"] = 0
+        task["progress_done"] = 0
+        task["progress_total"] = 0
+        task["progress_label"] = ""
         task["completed_models"] = 0
+        task["attempt"] = task_attempt(task) + 1
+        task["download_only"] = download_only
+        task["failure_stage"] = ""
         task["started_at"] = ""
         task["finished_at"] = ""
         task["updated_at"] = datetime.now().isoformat(timespec="seconds")

@@ -601,6 +601,12 @@
   --task-line: #a5f3fc;
 }
 
+.test-task-card-模型下载 {
+  --task-accent: #7c3aed;
+  --task-soft: #faf8ff;
+  --task-line: #ddd6fe;
+}
+
 .test-task-card-排队中 {
   --task-accent: #c47a00;
   --task-soft: #fffbf3;
@@ -608,6 +614,7 @@
 }
 
 .test-task-card-失败,
+.test-task-card-空间不足,
 .test-task-card-取消 {
   --task-accent: #dc2626;
   --task-soft: #fff8f8;
@@ -784,10 +791,23 @@
   animation: test-status-breathe 1.2s ease-in-out infinite;
 }
 
+.test-status-模型下载 {
+  border-color: #ddd6fe;
+  background: #faf8ff;
+  color: #7c3aed;
+  animation: test-status-breathe 1.2s ease-in-out infinite;
+}
+
 .test-status-排队中 {
   border-color: #fde68a;
   background: #fffbeb;
   color: #92400e;
+}
+
+.test-status-空间不足 {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 @keyframes test-status-breathe {
