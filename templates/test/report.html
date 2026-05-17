@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试报告{% else %}测试报告{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260517-report-lightbox-pan">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260517-report-model-card-aligned">
 {% endblock %}
 
 {% block content %}
@@ -62,8 +62,8 @@
             <p>平均置信度</p>
           </div>
         </div>
-        <div class="test-report-model-list">
-          {% for model in report.models %}
+        <div class="test-report-model-list" style="--model-name-width: {{ report.model_name_column_width }};">
+          {% for model in report.performance_models %}
             <article class="test-report-model-card">
               <h3>{{ model.name }}</h3>
               <div class="test-report-score-line">
@@ -84,7 +84,7 @@
           </div>
         </div>
         <div class="test-report-coverage-list">
-          {% for model in report.models %}
+          {% for model in report.coverage_models %}
             <article>
               <span class="test-report-coverage-pie" style="background: {{ model.coverage_style }}">
                 <b>{{ model.coverage }}%</b>

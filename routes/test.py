@@ -1693,6 +1693,14 @@ def report_view(project: str, project_dir: Path, report: dict):
         rows.append(row_view)
     view["rows"] = rows
     view["models"] = models
+    view["performance_models"] = sorted(
+        models,
+        key=lambda item: item.get("average_confidence") if item.get("average_confidence") is not None else -1,
+        reverse=True,
+    )
+    longest_model_name = max((len(str(item.get("name") or "")) for item in view["performance_models"]), default=0)
+    view["model_name_column_width"] = f"{max(120, min(260, longest_model_name * 9 + 18))}px"
+    view["coverage_models"] = sorted(models, key=lambda item: item.get("coverage") or 0, reverse=True)
     view["image_count"] = image_count
     view["model_count"] = int(report.get("model_count") or len(models))
     view["total_detections"] = total_detections

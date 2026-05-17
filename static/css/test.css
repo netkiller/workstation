@@ -1483,8 +1483,8 @@
 
 .test-report-model-card {
   display: grid;
-  grid-template-columns: fit-content(260px) minmax(180px, 1fr);
-  gap: 12px;
+  grid-template-columns: var(--model-name-width, 160px) minmax(180px, 1fr);
+  gap: 10px;
   align-items: center;
   padding: 12px;
   border: 1px solid #dbe5f2;
@@ -1501,11 +1501,12 @@
 
 .test-report-model-card h3 {
   min-width: 0;
-  max-width: 260px;
+  max-width: var(--model-name-width, 160px);
   margin: 0;
   overflow: hidden;
   color: var(--text);
   font-size: 14px;
+  font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
