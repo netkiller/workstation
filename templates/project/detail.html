@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260518-dataset-model-tags">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260518-project-upload-like-test">
 {% endblock %}
 
 {% block content %}
@@ -128,8 +128,16 @@
             <div class="drop-zone" data-upload-zone data-upload-kind="images" role="button" tabindex="0">
               <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
               <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
-              <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-              <span>点击上传图片，或拖拽到这里</span>
+              <span class="upload-icon" aria-hidden="true">
+                <span class="upload-symbol">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 16V5"></path>
+                    <path d="M7 10l5-5 5 5"></path>
+                    <path d="M5 19h14"></path>
+                  </svg>
+                </span>
+              </span>
+              <span data-upload-prompt>点击上传图片，或拖拽到这里</span>
               <span class="upload-options">
                 <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
@@ -197,6 +205,25 @@
               {% endfor %}
             {% else %}
               <span class="project-resource-empty">runs 下暂无模型</span>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="project-test-set-tags-card" aria-labelledby="project-test-set-tags-title">
+          <div class="panel-head">
+            <h2 id="project-test-set-tags-title">测试集</h2>
+            <span class="count">{{ project.test_set_tags | length }} 个</span>
+          </div>
+          <div class="project-resource-tags" aria-label="测试集列表">
+            {% if project.test_set_tags %}
+              {% for test_set in project.test_set_tags %}
+                <span class="project-resource-tag project-resource-tag-static" style="--resource-tag-color: {{ test_set.color }}" title="{{ test_set.name }}{% if test_set.updated_at %} · {{ test_set.updated_at }}{% endif %}">
+                  <b>{{ test_set.name }}</b>
+                  <small>{{ test_set.count }} 张</small>
+                </span>
+              {% endfor %}
+            {% else %}
+              <span class="project-resource-empty">暂无测试集</span>
             {% endif %}
           </div>
         </section>

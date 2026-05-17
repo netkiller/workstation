@@ -51,6 +51,7 @@ MODEL_EXTS = {".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel"}
 RUN_WEIGHT_FILES = {"best.pt", "last.pt"}
 MODEL_TAG_COLORS = ("#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
 DATASET_TAG_COLORS = ("#16a34a", "#1667c7", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
+TEST_SET_TAG_COLORS = ("#0891b2", "#1667c7", "#7c3aed", "#f59e0b", "#16a34a", "#dc2626", "#0f766e", "#c2410c")
 USER_HEARTBEAT_TIMEOUT = 45
 PROJECT_UPLOAD_LOG = ".project.log"
 WORKSPACE_LOG = ".workstation/workspace.log"
@@ -748,6 +749,28 @@ def project_dataset_tags(path: Path):
     return datasets
 
 
+def project_test_set_tags(path: Path):
+    test_dir = path / TEST_IMAGES_DIR
+    if not test_dir.is_dir():
+        return []
+    test_sets = []
+    for test_set_dir in sorted((item for item in test_dir.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
+        try:
+            updated_at = datetime.fromtimestamp(test_set_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            updated_at = ""
+        image_count = count_files(test_set_dir, IMAGE_EXTS)
+        test_sets.append(
+            {
+                "name": test_set_dir.name,
+                "color": TEST_SET_TAG_COLORS[len(test_sets) % len(TEST_SET_TAG_COLORS)],
+                "updated_at": updated_at,
+                "count": image_count,
+            }
+        )
+    return test_sets
+
+
 def read_classes(path: Path):
     if not path.is_file():
         return []
@@ -765,6 +788,7 @@ def project_dashboard(projects: list[dict]):
     total_images = 0
     total_labels = 0
     total_datasets = 0
+    total_test_sets = 0
     total_models = 0
     total_classes_files = 0
     class_counts: dict[str, int] = {}
@@ -780,6 +804,7 @@ def project_dashboard(projects: list[dict]):
         total_images += int(annotate.get("images") or 0)
         total_labels += int(annotate.get("labels") or 0)
         total_datasets += int(index.get("datasets", {}).get("count") or 0)
+        total_test_sets += len(project_test_set_tags(path))
         total_models += model_page_count(path.name)
         total_classes_files += 1 if (path / ANNOTATE_DIR / "classes.txt").is_file() or (path / "classes.txt").is_file() else 0
         for ext, count in (annotate.get("extensions") or {}).items():
@@ -791,6 +816,7 @@ def project_dashboard(projects: list[dict]):
         {"label": "标注资源", "count": total_images + total_labels, "detail": f"{total_images} 图像 / {total_labels} txt", "color": colors[0]},
         {"label": "数据集", "count": total_datasets, "detail": f"{total_datasets} 数据集", "color": colors[1]},
         {"label": "模型资源", "count": total_models, "detail": f"{total_models} 模型", "color": colors[2]},
+        {"label": "测试集", "count": total_test_sets, "detail": f"{total_test_sets} 测试集", "color": colors[3]},
     ]
     resource_total = sum(item["count"] for item in resource_items)
     resource_start = 0.0
@@ -1500,6 +1526,7 @@ def project_detail(directory: str, request: Request):
                     "classes_text": (path / ANNOTATE_DIR / "classes.txt").read_text(encoding="utf-8") if has_classes else "",
                     "dataset_tags": project_dataset_tags(path),
                     "run_models": project_run_models(path),
+                    "test_set_tags": project_test_set_tags(path),
                 },
                 "remote_user": getpass.getuser(),
                 "dashboard": dashboard,

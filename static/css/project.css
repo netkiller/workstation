@@ -1769,6 +1769,18 @@ button.close-project-link {
     #f5fcf7;
 }
 
+.project-test-set-tags-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #a5f3fc;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .94), rgba(255, 255, 255, .78)),
+    radial-gradient(circle at 94% 10%, rgba(8, 145, 178, .14), transparent 42%),
+    #f4fdff;
+}
+
 .project-resource-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1797,12 +1809,27 @@ button.close-project-link {
   color: var(--resource-tag-color, #c47a00);
 }
 
+.project-resource-tag-static {
+  cursor: default;
+}
+
+.project-resource-tag-static:hover {
+  border-color: color-mix(in srgb, var(--resource-tag-color, #f59e0b) 34%, #ffffff);
+  background: color-mix(in srgb, var(--resource-tag-color, #f59e0b) 12%, #ffffff);
+}
+
 .project-resource-tag b {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   font-weight: 600;
   text-overflow: ellipsis;
+}
+
+.project-resource-tag small {
+  color: color-mix(in srgb, var(--resource-tag-color, #f59e0b) 72%, #64748b);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .project-resource-empty {
