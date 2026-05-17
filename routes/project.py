@@ -7,6 +7,7 @@ import subprocess
 import time
 import traceback
 import getpass
+import base64
 from datetime import datetime
 from email.parser import BytesParser
 from email.policy import default
@@ -47,6 +48,8 @@ IMAGE_EXTS = {
     ".jpeg2000",
 }
 MODEL_EXTS = {".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel"}
+RUN_WEIGHT_FILES = {"best.pt", "last.pt"}
+MODEL_TAG_COLORS = ("#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
 USER_HEARTBEAT_TIMEOUT = 45
 PROJECT_UPLOAD_LOG = ".project.log"
 WORKSPACE_LOG = ".workstation/workspace.log"
@@ -682,6 +685,44 @@ def model_page_count(project_name: str):
         return len(model_items(load_tasks(), project_name))
     except Exception:
         return 0
+
+
+def project_run_models(path: Path):
+    runs_dir = path / "runs"
+    if not runs_dir.is_dir():
+        return []
+    project_name = path.name
+    models = []
+    for run_dir in sorted((item for item in runs_dir.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
+        weights_dir = run_dir / "weights"
+        weights = []
+        if weights_dir.is_dir():
+            weights = sorted(
+                item.name
+                for item in weights_dir.iterdir()
+                if item.is_file() and (item.name in RUN_WEIGHT_FILES or item.suffix.lower() in MODEL_EXTS)
+            )
+        if not weights:
+            continue
+        try:
+            updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            updated_at = ""
+        models.append(
+            {
+                "name": run_dir.name,
+                "label": run_dir.name,
+                "color": MODEL_TAG_COLORS[len(models) % len(MODEL_TAG_COLORS)],
+                "url": f"/model/{quote(project_name, safe='')}/metrics/{quote(run_model_id(project_name, run_dir.name), safe='')}",
+                "updated_at": updated_at,
+            }
+        )
+    return models
+
+
+def run_model_id(project: str, run_name: str):
+    raw = f"{project}/{run_name}".encode("utf-8")
+    return "run-" + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
 def read_classes(path: Path):
@@ -1434,6 +1475,7 @@ def project_detail(directory: str, request: Request):
                     "has_classes": has_classes,
                     "project_ready": project_ready,
                     "classes_text": (path / ANNOTATE_DIR / "classes.txt").read_text(encoding="utf-8") if has_classes else "",
+                    "run_models": project_run_models(path),
                 },
                 "remote_user": getpass.getuser(),
                 "dashboard": dashboard,

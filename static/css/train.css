@@ -435,15 +435,16 @@
   overflow: visible;
 }
 
-.model-entry-tools {
-  gap: 12px;
+.validate-tools.model-entry-tools {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .model-entry-panel {
   --entry-accent: #1667c7;
   --entry-soft: #f6faff;
   --entry-line: #c7ddf6;
-  min-height: 320px;
+  min-height: 360px;
   position: relative;
   align-content: space-between;
   overflow: hidden;
@@ -453,6 +454,10 @@
     radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--entry-accent) 18%, transparent), transparent 38%),
     var(--entry-soft);
   box-shadow: 0 12px 30px rgba(15, 23, 42, .07);
+}
+
+.model-entry-train {
+  grid-column: 1 / -1;
 }
 
 .model-entry-panel::before {
@@ -468,7 +473,6 @@
   --entry-accent: #1667c7;
   --entry-soft: #f6faff;
   --entry-line: #bfd7f4;
-  min-height: 320px;
 }
 
 .model-entry-val {
@@ -485,7 +489,9 @@
 
 .model-entry-copy {
   display: grid;
-  gap: 14px;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -506,27 +512,49 @@
 }
 
 .model-radar-visual {
-  height: 218px;
-  grid-template-columns: minmax(190px, 1.35fr) minmax(0, .65fr);
+  height: 340px;
+  grid-template-columns: minmax(430px, 1.05fr) minmax(280px, .75fr);
   gap: 12px;
   place-items: center stretch;
+}
+
+.model-entry-half .model-entry-copy {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.model-entry-half .model-radar-visual {
+  height: 258px;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 220px);
+  gap: 12px;
+}
+
+.model-entry-half .model-radar-legend {
+  max-height: 238px;
+}
+
+.model-entry-half .model-radar-legend button,
+.model-entry-half .model-radar-legend span {
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 8px;
+  justify-content: stretch;
+  font-size: 12px;
 }
 
 .model-entry-visual .chart-grid,
 .model-entry-visual .chart-radar-grid {
   fill: none;
   stroke: color-mix(in srgb, var(--entry-accent) 18%, #cbd5e1);
-  stroke-width: 1;
+  stroke-width: .55;
 }
 
 .model-entry-visual .chart-radar-axis {
   stroke: color-mix(in srgb, var(--entry-accent) 22%, #cbd5e1);
-  stroke-width: 1;
+  stroke-width: .55;
 }
 
 .model-entry-visual .chart-radar-label {
   fill: var(--muted);
-  font-size: 7px;
+  font-size: 4.8px;
   font-weight: 700;
   text-anchor: middle;
   dominant-baseline: central;
@@ -534,7 +562,7 @@
 
 .model-entry-visual .chart-area,
 .model-entry-visual .chart-radar {
-  fill: color-mix(in srgb, var(--series-color, var(--entry-accent)) 13%, transparent);
+  fill: color-mix(in srgb, var(--series-color, var(--entry-accent)) 8%, transparent);
 }
 
 .model-entry-visual .chart-line,
@@ -543,7 +571,7 @@
 .model-entry-visual .chart-mini-line {
   fill: none;
   stroke: var(--series-color, var(--entry-accent));
-  stroke-width: 2;
+  stroke-width: .85;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -557,6 +585,7 @@
 }
 
 .model-radar-series {
+  opacity: .86;
   transition: opacity .16s ease;
 }
 
@@ -568,20 +597,47 @@
   min-width: 0;
   display: grid;
   align-content: center;
-  gap: 5px;
-  max-height: 132px;
+  gap: 7px;
+  max-height: 274px;
   overflow: auto;
+}
+
+.model-radar-wide {
+  min-width: 0;
+}
+
+.model-radar-wide .model-radar-legend {
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  align-content: center;
+  column-gap: 12px;
+}
+
+.model-radar-wide .chart-radar-label {
+  font-size: 4.2px;
+}
+
+.model-radar-wide .chart-radar {
+  fill: color-mix(in srgb, var(--series-color, var(--entry-accent)) 5%, transparent);
+}
+
+.model-radar-wide .chart-radar-line {
+  stroke-width: .75;
+}
+
+.model-radar-wide .model-radar-series {
+  opacity: .8;
 }
 
 .model-radar-legend button,
 .model-radar-legend span {
   min-width: 0;
   display: grid;
-  grid-template-columns: 9px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  justify-content: stretch;
+  gap: 8px;
   color: #24364b;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.2;
   font-weight: 700;
   white-space: nowrap;
@@ -589,9 +645,11 @@
 
 .model-radar-legend button {
   width: 100%;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--series-color, #1667c7) 18%, #d7e2ef);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .62);
   cursor: pointer;
   text-align: left;
 }
@@ -601,17 +659,23 @@
 }
 
 .model-radar-legend i {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
+  min-height: 9px;
+  display: block;
+  justify-self: center;
   border-radius: 999px;
   background: var(--series-color);
 }
 
 .model-radar-legend b {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   font: inherit;
-  text-overflow: ellipsis;
+  overflow-wrap: normal;
+  text-overflow: clip;
+  text-align: left;
 }
 
 .model-entry-visual .chart-ring-muted {
@@ -647,6 +711,27 @@
 
 .model-entry-panel p {
   color: var(--muted);
+}
+
+.model-radar-explain {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.model-radar-explain p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.model-radar-explain b {
+  display: block;
+  color: var(--entry-accent);
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 750;
 }
 
 .model-entry-button {
@@ -803,6 +888,27 @@
 }
 
 @media (max-width: 720px) {
+  .validate-tools.model-entry-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-entry-copy {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-radar-visual {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-radar-visual svg {
+    min-height: 260px;
+  }
+
+  .model-radar-legend {
+    max-height: 150px;
+  }
+
   .model-card.has-downloads .model-card-main {
     padding-right: 0;
   }

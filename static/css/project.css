@@ -1745,6 +1745,60 @@ button.close-project-link {
   background: var(--panel);
 }
 
+.project-run-models-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #f1d7ae;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .94), rgba(255, 255, 255, .78)),
+    radial-gradient(circle at 94% 10%, rgba(249, 115, 22, .16), transparent 42%),
+    #fffbf3;
+}
+
+.project-run-model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-run-model-tag {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--model-tag-color, #f59e0b) 34%, #ffffff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--model-tag-color, #f59e0b) 12%, #ffffff);
+  color: var(--model-tag-color, #c47a00);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.project-run-model-tag:hover {
+  border-color: var(--model-tag-color, #f59e0b);
+  background: color-mix(in srgb, var(--model-tag-color, #f59e0b) 18%, #ffffff);
+  color: var(--model-tag-color, #c47a00);
+}
+
+.project-run-model-tag b {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.project-run-model-empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .sftp-url-card {
   min-height: 44px;
   display: flex;

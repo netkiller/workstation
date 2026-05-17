@@ -30,7 +30,7 @@ def _format_radar_value(value, digits=3):
     return f"{value:.{digits}f}"
 
 
-def _radar_context(metric_labels, raw_series, normalize_by_axis=True):
+def _radar_context(metric_labels, raw_series, normalize_by_axis=True, radius=60, label_scale=1.14):
     colors = ("#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
     max_values = {
         label: max((series["values"].get(label, 0) for series in raw_series), default=0)
@@ -38,8 +38,7 @@ def _radar_context(metric_labels, raw_series, normalize_by_axis=True):
     }
 
     center_x = 75
-    center_y = 66
-    radius = 44
+    center_y = 70
 
     def point(index, scale=1):
         angle = math.radians(-90 + index * 360 / len(metric_labels))
@@ -54,7 +53,7 @@ def _radar_context(metric_labels, raw_series, normalize_by_axis=True):
     axes = []
     for index, label in enumerate(metric_labels):
         end = point(index)
-        label_point = point(index, 1.28)
+        label_point = point(index, label_scale)
         axes.append({"label": label, **end, "label_x": label_point["x"], "label_y": label_point["y"]})
 
     series_items = []
@@ -110,7 +109,7 @@ def model_radar_context(models):
                 "values": {label: lookup.get(label) or 0 for label in metric_labels},
             }
         )
-    return _radar_context(metric_labels, raw_series)
+    return _radar_context(metric_labels, raw_series, radius=64, label_scale=1.06)
 
 
 def csv_radar_context(models, metric_labels):

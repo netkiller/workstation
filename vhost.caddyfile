@@ -1,0 +1,16 @@
+www.netkiller.cn, netkiller.cn {
+        root * /opt/caddy/netkiller
+        file_server
+}
+
+saas.netkiller.cn {
+	handle_path /static/* {
+		root * /srv/saas/static
+		file_server
+	}
+        reverse_proxy 127.0.0.1:8088
+}
+
+yolo.netkiller.cn {
+	reverse_proxy 127.0.0.1:8087
+}

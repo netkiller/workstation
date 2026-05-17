@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260517-upload-file-progress">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260518-run-model-tags-normal-weight">
 {% endblock %}
 
 {% block content %}
@@ -163,6 +163,24 @@
             </button>
           </article>
 
+        </section>
+
+        <section class="project-run-models-card" aria-labelledby="project-run-models-title">
+          <div class="panel-head">
+            <h2 id="project-run-models-title">模型</h2>
+            <span class="count">{{ project.run_models | length }} 个</span>
+          </div>
+          <div class="project-run-model-tags" aria-label="runs 模型列表">
+            {% if project.run_models %}
+              {% for model in project.run_models %}
+                <a class="project-run-model-tag" href="{{ model.url }}" style="--model-tag-color: {{ model.color }}" title="{{ model.label }}{% if model.updated_at %} · {{ model.updated_at }}{% endif %}">
+                  <b>{{ model.label }}</b>
+                </a>
+              {% endfor %}
+            {% else %}
+              <span class="project-run-model-empty">runs 下暂无模型</span>
+            {% endif %}
+          </div>
         </section>
 
         <section class="sftp-panel" data-sftp-path="{{ project.path }}/annotate" data-remote-user="{{ remote_user }}">

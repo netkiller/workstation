@@ -4,7 +4,7 @@
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
-  <link rel="stylesheet" href="/static/css/train.css?v=20260516-model-metric-radars">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260518-model-radar-model-line-075">
 {% endblock %}
 
 {% block content %}
@@ -15,7 +15,7 @@
           <polygon class="chart-radar-grid" points="{{ polygon }}"></polygon>
         {% endfor %}
         {% for axis in radar.axes %}
-          <line class="chart-radar-axis" x1="75" y1="66" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
+          <line class="chart-radar-axis" x1="75" y1="70" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
           <text class="chart-radar-label" x="{{ '%.1f'|format(axis.label_x) }}" y="{{ '%.1f'|format(axis.label_y) }}">{{ axis.label }}</text>
         {% endfor %}
         {% for series in radar.series %}
@@ -23,7 +23,7 @@
             <polygon class="chart-radar model-radar-polygon" points="{{ series.polygon }}"></polygon>
             <polyline class="chart-radar-line" points="{{ series.closed_polygon }}"></polyline>
             {% for point in series.points %}
-              <circle class="chart-radar-point" cx="{{ '%.1f'|format(point.x) }}" cy="{{ '%.1f'|format(point.y) }}" r="2.2"></circle>
+              <circle class="chart-radar-point" cx="{{ '%.1f'|format(point.x) }}" cy="{{ '%.1f'|format(point.y) }}" r="1"></circle>
             {% endfor %}
           </g>
         {% endfor %}
@@ -56,12 +56,20 @@
         <div class="model-entry-copy">
           <div>
             <h2>综合评估</h2>
-            <p>对比每个模型最后结果的 Epochs、mAP、Precision 和 Recall，快速判断整体训练质量。</p>
+            <div class="model-radar-explain" aria-label="综合评估指标说明">
+              <div><b>Epochs</b><p>训练轮数，反映模型训练持续程度。</p></div>
+              <div><b>mAP50</b><p>IoU 0.50 下的平均精度，衡量基础检测效果。</p></div>
+              <div><b>mAP50-95</b><p>IoU 0.50 到 0.95 的平均精度，衡量更严格的定位质量。</p></div>
+              <div><b>Precision</b><p>预测为目标时有多少是真的，反映误检控制能力。</p></div>
+              <div><b>Recall</b><p>真实目标中有多少被找出来，反映漏检控制能力。</p></div>
+            </div>
           </div>
-          {{ radar_panel(model_radar, "综合评估雷达图") }}
+          <div class="model-radar-wide">
+            {{ radar_panel(model_radar, "综合评估雷达图") }}
+          </div>
         </div>
       </article>
-      <article class="tool-panel model-entry-panel model-entry-val">
+      <article class="tool-panel model-entry-panel model-entry-val model-entry-half">
         <div class="model-entry-copy">
           <div>
             <h2>丢失率</h2>
@@ -70,7 +78,7 @@
           {{ radar_panel(loss_radar, "丢失率雷达图") }}
         </div>
       </article>
-      <article class="tool-panel model-entry-panel model-entry-predict">
+      <article class="tool-panel model-entry-panel model-entry-predict model-entry-half">
         <div class="model-entry-copy">
           <div>
             <h2>学习率</h2>
