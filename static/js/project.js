@@ -785,7 +785,7 @@ async function uploadFiles(zone, files) {
   try {
     const uploadUrl = dynamicUploadUrl || `/project/${project}/upload/${kind}`;
     let data;
-    if (kind === "test" || kind?.startsWith("test/")) {
+    if (kind === "images" || kind === "test" || kind?.startsWith("test/")) {
       data = await uploadTestFilesByCount(zone, uploadUrl, uploads, batchGroups);
     } else {
       const result = await uploadWithProgress(uploadUrl, formData, (percent) => {
@@ -902,11 +902,15 @@ function setUploadProgress(zone, percent) {
   zone.querySelector(".upload-icon")?.style.setProperty("--upload-progress", `${value}%`);
   const symbol = zone.querySelector(".upload-symbol");
   if (!symbol) return;
-  if (symbol.dataset.uploadDefault == null) {
-    symbol.dataset.uploadDefault = symbol.textContent || "";
+  if (symbol.dataset.uploadDefaultHtml == null) {
+    symbol.dataset.uploadDefaultHtml = symbol.innerHTML || "";
   }
   const showPercent = zone.classList.contains("uploading") && !zone.classList.contains("upload-complete");
-  symbol.textContent = showPercent ? `${value}%` : symbol.dataset.uploadDefault;
+  if (showPercent) {
+    symbol.textContent = `${value}%`;
+  } else {
+    symbol.innerHTML = symbol.dataset.uploadDefaultHtml;
+  }
   symbol.classList.toggle("upload-symbol-percent", showPercent);
 }
 

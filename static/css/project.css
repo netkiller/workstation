@@ -1354,6 +1354,7 @@ main.team-main > .team-chat-layout {
 
 .classes-upload-card {
   min-height: 180px;
+  height: 100%;
   display: grid;
   gap: 12px;
   place-items: center;
@@ -1463,8 +1464,9 @@ button.close-project-link {
 
 .upload-panel {
   display: grid;
+  grid-template-rows: auto 1fr auto;
   gap: 14px;
-  align-content: start;
+  align-content: stretch;
   min-height: 0;
   padding: 18px;
   border: 1px solid var(--line);
@@ -1565,17 +1567,16 @@ button.close-project-link {
 .upload-icon {
   --upload-progress: 0%;
   position: relative;
-  width: 56px;
-  height: 56px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   border: 1px solid #bfd0e4;
   border-radius: 999px;
   background: #ffffff;
   color: var(--accent);
-  font-size: 32px;
+  font-size: 36px;
   line-height: 1;
   font-weight: 400;
 }
@@ -1586,7 +1587,7 @@ button.close-project-link {
   inset: 0;
   opacity: 0;
   background:
-    conic-gradient(from -90deg, rgb(22 103 199 / 58%) var(--upload-progress, 0%), rgb(226 232 240 / 82%) 0);
+    conic-gradient(from 0deg, rgb(22 103 199 / 58%) var(--upload-progress, 0%), rgb(226 232 240 / 82%) 0);
   transition: opacity 120ms ease, background 160ms ease;
 }
 
@@ -1601,12 +1602,30 @@ button.close-project-link {
 .upload-symbol {
   position: relative;
   z-index: 1;
-  width: 100%;
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transform: translateY(-1px);
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  transform: translateY(2px);
+}
+
+.upload-symbol svg {
+  width: 42px;
+  height: 42px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.upload-symbol.upload-symbol-percent {
+  width: auto;
+  height: auto;
+  font-size: 17px;
+  font-weight: 800;
 }
 
 .upload-processing .upload-icon {
@@ -1636,8 +1655,11 @@ button.close-project-link {
   color: var(--accent);
 }
 
-.upload-processing > span:nth-of-type(2)::after {
-  content: "，正在处理";
+.drop-zone [data-upload-prompt] {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes upload-breathe {
@@ -1666,15 +1688,16 @@ button.close-project-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--accent);
-  color: #ffffff;
+  background: #ffffff;
+  color: var(--text);
   font-weight: 650;
   text-decoration: none;
 }
 
 .action-link:hover {
-  background: var(--accent-dark);
+  background: #f8fafc;
 }
 
 .action-link.disabled {

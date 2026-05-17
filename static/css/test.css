@@ -425,20 +425,21 @@
 .test-drop-zone .upload-symbol {
   position: relative;
   z-index: 1;
-  width: 30px;
-  height: 30px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   line-height: 1;
+  transform: translateY(2px);
 }
 
 .test-drop-zone .upload-symbol svg {
-  width: 28px;
-  height: 28px;
+  width: 42px;
+  height: 42px;
   display: block;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 1.45;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
