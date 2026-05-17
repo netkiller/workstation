@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from routes.edition import is_community_edition
 from routes.project import header_context
 from routes.train import load_tasks as load_train_tasks, model_items as run_model_items, read_metric_rows
 from routes.val import dataset_items, project_path, read_project_name, workspace_path
@@ -142,6 +143,7 @@ def model_context(request: Request, current_project: str):
         "current_project": current_project,
         "project_name": read_project_name(path) if path else "",
         "models": models,
+        "community_edition": is_community_edition(),
         "model_radar": model_radar_context(models),
         "loss_radar": csv_radar_context(
             models,

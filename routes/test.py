@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from routes.dataset import normalize_console_log
 from routes.dataset import prepare_remote_auth, remote_target, rsync_file_output_args, rsync_ssh_args
+from routes.edition import is_community_edition
 from routes.project import (
     append_upload_log,
     build_project_index,
@@ -138,6 +139,43 @@ def read_metrics(run_dir: Path):
         "map50": metric_value(row, ["map50"]),
         "map5095": metric_value(row, ["map50-95"]),
     }
+
+
+def parse_args_yaml_text(text: str):
+    try:
+        import yaml  # type: ignore
+
+        data = yaml.safe_load(text)
+        if isinstance(data, dict):
+            return {str(key): value for key, value in data.items() if not isinstance(value, (dict, list))}
+    except Exception:
+        pass
+    args = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and value and not value.startswith(("{", "[", "-")):
+            args[key] = value
+    return args
+
+
+def read_training_args(run_dir: Path):
+    for name in ("args.yaml", "args.yml", "args.json", "args.txt"):
+        path = run_dir / name
+        if not path.is_file():
+            continue
+        try:
+            if path.suffix == ".json":
+                data = json.loads(path.read_text(encoding="utf-8"))
+                return {str(key): value for key, value in data.items()} if isinstance(data, dict) else {}
+            return parse_args_yaml_text(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+    return {}
 
 
 def run_model_items(project_dir: Path):
@@ -1602,6 +1640,39 @@ def report_model_run_dir(project_dir: Path, report: dict, model: dict):
     return path if path.is_dir() else None
 
 
+def training_run_dir_for_model(project_dir: Path, model: dict):
+    run_name = str(model.get("run") or "").strip()
+    if run_name:
+        run_dir = project_dir / "runs" / run_name
+        if run_dir.is_dir():
+            return run_dir
+    relative = str(model.get("relative_path") or "").strip()
+    if relative:
+        path = (project_dir / relative).resolve()
+        root = project_dir.resolve()
+        if is_inside(path, root):
+            run_dir = path.parent.parent if path.parent.name == "weights" else path.parent
+            if run_dir.is_dir():
+                return run_dir
+    return None
+
+
+def training_args_diff(project_dir: Path, models: list[dict]):
+    model_args = []
+    keys = set()
+    for model in models:
+        run_dir = training_run_dir_for_model(project_dir, model)
+        args = read_training_args(run_dir) if run_dir else {}
+        model_args.append({"name": model.get("name", ""), "args": args})
+        keys.update(args.keys())
+    rows = []
+    for key in sorted(keys, key=lambda value: value.lower()):
+        values = [str(item["args"].get(key, "-")) for item in model_args]
+        if len(set(values)) > 1:
+            rows.append({"key": key, "values": values})
+    return {"models": [item["name"] for item in model_args], "rows": rows}
+
+
 def report_view(project: str, project_dir: Path, report: dict):
     view = dict(report)
     rows = []
@@ -1701,6 +1772,7 @@ def report_view(project: str, project_dir: Path, report: dict):
     longest_model_name = max((len(str(item.get("name") or "")) for item in view["performance_models"]), default=0)
     view["model_name_column_width"] = f"{max(120, min(260, longest_model_name * 9 + 18))}px"
     view["coverage_models"] = sorted(models, key=lambda item: item.get("coverage") or 0, reverse=True)
+    view["training_args"] = training_args_diff(project_dir, models)
     view["image_count"] = image_count
     view["model_count"] = int(report.get("model_count") or len(models))
     view["total_detections"] = total_detections
@@ -2080,6 +2152,7 @@ def test_report_page(request: Request, project: str, task_id: str):
             "project_name": read_project_name(project_dir),
             "task": task,
             "report": view_report,
+            "community_edition": is_community_edition(),
             **header_context(request, workspace),
         },
     )
@@ -2165,6 +2238,8 @@ def test_task_logs(task_id: str, offset: int = 0):
 
 @router.get("/test/tasks/{task_id}/csv")
 def test_task_csv(task_id: str):
+    if is_community_edition():
+        return JSONResponse({"ok": False, "error": "社区版不支持下载 CSV"}, status_code=403)
     report = read_report(task_id)
     if report is None:
         return JSONResponse({"ok": False, "error": "报告不存在"}, status_code=404)

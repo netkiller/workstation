@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试报告{% else %}测试报告{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260517-report-model-card-aligned">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260517-report-training-args">
 {% endblock %}
 
 {% block content %}
@@ -114,13 +114,50 @@
       <article class="test-report-preview-card" data-report-preview></article>
     </section>
 
+    <section class="test-report-panel" aria-label="训练参数">
+      <div class="test-report-section-head">
+        <div>
+          <h2>训练参数</h2>
+          <p>对比各模型的训练参数。</p>
+        </div>
+      </div>
+      {% if report.training_args.rows %}
+        <div class="test-report-args-wrap">
+          <table class="test-report-args-table">
+            <thead>
+              <tr>
+                <th>参数</th>
+                {% for model_name in report.training_args.models %}
+                  <th>{{ model_name }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in report.training_args.rows %}
+                <tr>
+                  <th>{{ row.key }}</th>
+                  {% for value in row["values"] %}
+                    <td>{{ value }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="test-report-args-empty">未发现 args.yaml 差异，或训练参数文件不存在。</div>
+      {% endif %}
+    </section>
+
     <section class="test-report-panel" aria-label="测试报告表格">
       <div class="test-report-section-head">
         <div>
           <h2>评估数据</h2>
           <p>按图片横向汇总每个模型的识别标签和置信度，便于定位单张图片上的最好与最差模型。</p>
         </div>
-        <a class="secondary-button" href="/test/tasks/{{ report.task_id }}/csv">下载 CSV</a>
+        {% if not community_edition %}
+          <a class="secondary-button" href="/test/tasks/{{ report.task_id }}/csv">下载 CSV</a>
+        {% endif %}
       </div>
       <div class="test-report-table-wrap">
         <table class="test-report-table">

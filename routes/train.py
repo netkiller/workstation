@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
 from routes.dataset import count_dataset_split, normalize_console_log, read_deploy_tasks
+from routes.edition import is_community_edition
 from routes.project import header_context
 from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 
@@ -1647,6 +1648,7 @@ def train_model(request: Request, task_id: str):
             "active_page": "model",
             "model_active": "train",
             "current_project": current_project,
+            "community_edition": is_community_edition(),
             **header_context(request, workspace),
         },
     )
@@ -1671,6 +1673,7 @@ def train_model_metrics(request: Request, project: str, task_id: str):
             "active_page": "model",
             "model_active": "overview",
             "current_project": project,
+            "community_edition": is_community_edition(),
             **header_context(request, workspace),
         },
     )
@@ -1710,6 +1713,8 @@ def export_model(project: str, task_id: str, request: Request):
 
 @router.get("/model/{project}/metrics/{task_id}/export")
 def export_model_download(project: str, task_id: str, format: str = "onnx"):
+    if is_community_edition():
+        return JSONResponse({"ok": False, "error": "社区版不支持模型导出"}, status_code=403)
     export_format = (format or "onnx").strip().lower()
     if export_format not in MODEL_EXPORT_FORMATS:
         return JSONResponse({"ok": False, "error": "不支持的导出格式"}, status_code=400)
@@ -1752,6 +1757,8 @@ def export_model_download(project: str, task_id: str, format: str = "onnx"):
 @router.get("/model/train/models/{task_id}/weights/{weight_name}")
 @router.get("/train/models/{task_id}/weights/{weight_name}")
 def download_model_weight(task_id: str, weight_name: str, project: str = ""):
+    if is_community_edition():
+        return JSONResponse({"ok": False, "error": "社区版不支持下载模型权重"}, status_code=403)
     task = resolve_model_task(task_id)
     if task is None or weight_name not in WEIGHT_FILES or (project and task.get("project") != project):
         return JSONResponse({"ok": False, "error": "模型不存在"}, status_code=404)

@@ -105,14 +105,16 @@
                 <div class="model-card-preview model-card-empty">暂无 results.png</div>
               {% endif %}
             </a>
-            <div class="model-card-actions">
-              {% if model.has_best %}
-                <a href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}/weights/best.pt">下载 best.pt</a>
-              {% endif %}
-              {% if model.has_last %}
-                <a href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}/weights/last.pt">下载 last.pt</a>
-              {% endif %}
-            </div>
+            {% if not community_edition %}
+              <div class="model-card-actions">
+                {% if model.has_best %}
+                  <a href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}/weights/best.pt">下载 best.pt</a>
+                {% endif %}
+                {% if model.has_last %}
+                  <a href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}/weights/last.pt">下载 last.pt</a>
+                {% endif %}
+              </div>
+            {% endif %}
           </article>
         {% endfor %}
       </section>

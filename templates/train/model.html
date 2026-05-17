@@ -24,29 +24,31 @@
       </div>
     </section>
 
-    <section class="model-export-card" aria-label="导出模型">
-      <div>
-        <h2>导出模型</h2>
-        <p>选择导出格式，使用 best.pt 生成可部署模型。</p>
-      </div>
-      <form method="get" action="/model/{{ current_project }}/metrics/{{ task.id }}/export">
-        <label>
-          <span>模型格式</span>
-          <select name="format">
-            {% for value, label in export_formats.items() %}
-              <option value="{{ value }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <button type="submit" {% if not assets.has_best %}disabled{% endif %}>导出</button>
-        {% if assets.has_best %}
-          <a href="/model/{{ current_project }}/metrics/{{ task.id }}/weights/best.pt">下载 best.pt</a>
-        {% endif %}
-        {% if assets.has_last %}
-          <a href="/model/{{ current_project }}/metrics/{{ task.id }}/weights/last.pt">下载 last.pt</a>
-        {% endif %}
-      </form>
-    </section>
+    {% if not community_edition %}
+      <section class="model-export-card" aria-label="导出模型">
+        <div>
+          <h2>导出模型</h2>
+          <p>选择导出格式，使用 best.pt 生成可部署模型。</p>
+        </div>
+        <form method="get" action="/model/{{ current_project }}/metrics/{{ task.id }}/export">
+          <label>
+            <span>模型格式</span>
+            <select name="format">
+              {% for value, label in export_formats.items() %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="submit" {% if not assets.has_best %}disabled{% endif %}>导出</button>
+          {% if assets.has_best %}
+            <a href="/model/{{ current_project }}/metrics/{{ task.id }}/weights/best.pt">下载 best.pt</a>
+          {% endif %}
+          {% if assets.has_last %}
+            <a href="/model/{{ current_project }}/metrics/{{ task.id }}/weights/last.pt">下载 last.pt</a>
+          {% endif %}
+        </form>
+      </section>
+    {% endif %}
 
     <section class="model-layout">
       <section class="model-results">

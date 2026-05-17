@@ -1692,6 +1692,62 @@
   overflow: hidden;
 }
 
+.test-report-args-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.test-report-args-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.test-report-args-table th,
+.test-report-args-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.test-report-args-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #52606d;
+  font-weight: 800;
+}
+
+.test-report-args-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 140px;
+  background: #f8fafc;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.test-report-args-table thead th:first-child {
+  z-index: 3;
+}
+
+.test-report-args-empty {
+  padding: 14px;
+  border: 1px dashed #dbe5f2;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .test-report-thumb {
   width: 100%;
   max-width: 100%;
