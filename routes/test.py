@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import posixpath
+import re
 import shutil
 import shlex
 import subprocess
@@ -11,7 +12,8 @@ import stat as stat_module
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
-from urllib.parse import quote
+from pathlib import PurePosixPath
+from urllib.parse import parse_qs, quote, unquote
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -20,7 +22,18 @@ from fastapi.templating import Jinja2Templates
 
 from routes.dataset import normalize_console_log
 from routes.dataset import prepare_remote_auth, remote_target, rsync_file_output_args, rsync_ssh_args
-from routes.project import header_context
+from routes.project import (
+    append_upload_log,
+    build_project_index,
+    header_context,
+    project_dir,
+    relative_log_entry,
+    remove_empty_dirs,
+    save_upload,
+    upload_progress_line,
+    upload_relative_path,
+    uploaded_files,
+)
 from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 from routes.train import (
     remote_command_output,
@@ -60,6 +73,7 @@ running_processes = {}
 TEST_DIR = "test"
 TEST_IMAGES_DIR = "images"
 TEST_TASKS_DIR = "tasks"
+TEST_SETS_META = Path(TEST_DIR) / "sets.json"
 
 
 def workspace_path():
@@ -202,14 +216,148 @@ def result_file(task_id: str):
     return queue_dir() / "results" / f"{task_id}.json"
 
 
-def test_images(project_dir: Path):
+def safe_test_set_name(value: str):
+    name = str(value or "").strip()
+    if not name or len(name) > 80 or name in {".", ".."}:
+        return ""
+    if any(char in {"/", "\\"} or ord(char) < 32 for char in name):
+        return ""
+    return name
+
+
+def test_sets_meta_path(path: Path):
+    return path / TEST_SETS_META
+
+
+def read_test_sets_meta(path: Path):
+    meta_path = test_sets_meta_path(path)
+    if not meta_path.is_file():
+        return {}
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_test_sets_meta(path: Path, data: dict):
+    meta_path = test_sets_meta_path(path)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def update_test_set_meta(path: Path, name: str, description: str = ""):
+    meta = read_test_sets_meta(path)
+    item = dict(meta.get(name) or {})
+    item["name"] = name
+    item["description"] = str(description or item.get("description") or "").strip()
+    item["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    meta[name] = item
+    write_test_sets_meta(path, meta)
+
+
+def rename_test_set(path: Path, old_name: str, new_name: str, description: str = ""):
+    old_safe = safe_test_set_name(old_name)
+    new_safe = safe_test_set_name(new_name)
+    if not old_safe or not new_safe:
+        return ""
+    root = test_images_dir(path).resolve()
+    old_dir = (root / old_safe).resolve()
+    new_dir = (root / new_safe).resolve()
+    if not is_inside(old_dir, root) or not is_inside(new_dir, root) or not old_dir.is_dir():
+        return ""
+    if old_safe != new_safe:
+        if new_dir.exists():
+            return ""
+        old_dir.rename(new_dir)
+        meta = read_test_sets_meta(path)
+        old_item = dict(meta.pop(old_safe, {}) or {})
+        write_test_sets_meta(path, meta)
+        update_test_set_meta(path, new_safe, description or str(old_item.get("description") or ""))
+        with queue_lock:
+            tasks = load_tasks()
+            changed = False
+            for task in tasks:
+                if task.get("project") != path.name:
+                    continue
+                if task.get("test_set") == old_safe:
+                    task["test_set"] = new_safe
+                    changed = True
+                if old_safe in (task.get("test_sets") or []):
+                    task["test_sets"] = [new_safe if item == old_safe else item for item in (task.get("test_sets") or [])]
+                    changed = True
+            if changed:
+                save_tasks(tasks)
+        return new_safe
+    update_test_set_meta(path, new_safe, description)
+    return new_safe
+
+
+def test_images(project_dir: Path, set_names: list[str] | None = None):
     root = test_images_dir(project_dir)
     if not root.is_dir():
         return []
+    selected = {str(name) for name in (set_names or []) if str(name)}
+    search_roots = [root / name for name in selected if (root / name).is_dir()] if selected else [root]
     return sorted(
-        (path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTS),
+        (
+            path
+            for search_root in search_roots
+            for path in search_root.rglob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+        ),
         key=lambda item: item.relative_to(root).as_posix().lower(),
     )
+
+
+def test_sets(project_dir: Path | None):
+    if project_dir is None:
+        return []
+    root = test_images_dir(project_dir)
+    if not root.is_dir():
+        return []
+    meta = read_test_sets_meta(project_dir)
+    colors = ["#2563eb", "#16a34a", "#c47a00", "#0891b2", "#7c3aed", "#0f766e", "#dc2626", "#64748b"]
+    sets = []
+    for item in sorted((child for child in root.iterdir() if child.is_dir()), key=lambda child: child.name.lower()):
+        images = sorted(
+            (path for path in item.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTS),
+            key=lambda path: path.relative_to(item).as_posix().lower(),
+        )
+        counts = {}
+        for image in images:
+            ext = image.suffix.lower().lstrip(".") or "unknown"
+            counts[ext] = counts.get(ext, 0) + 1
+        extension_items = []
+        total = len(images)
+        for index, (ext, count) in enumerate(sorted(counts.items(), key=lambda value: (-value[1], value[0]))):
+            extension_items.append(
+                {
+                    "ext": ext,
+                    "count": count,
+                    "percent": round(count / total * 100) if total else 0,
+                    "color": colors[index % len(colors)],
+                }
+            )
+        sets.append(
+            {
+                "name": item.name,
+                "description": str((meta.get(item.name) or {}).get("description") or ""),
+                "count": total,
+                "extensions": extension_items,
+            }
+        )
+    return sets
+
+
+def test_set_detail(project_dir: Path | None, name: str):
+    safe_name = safe_test_set_name(name)
+    if project_dir is None or not safe_name:
+        return None
+    for item in test_sets(project_dir):
+        if item["name"] == safe_name:
+            return item
+    return None
 
 
 def test_extension_chart(project_dir: Path | None):
@@ -341,6 +489,8 @@ def label_path_for_image(labels_dir: Path, image: Path, test_root: Path):
 def run_model(project_dir: Path, task_id: str, model: dict, images: list[Path], class_names: list[str]):
     model_path = Path(model["path"])
     task = next((item for item in load_tasks() if item.get("id") == task_id), {"id": task_id, "name": task_id})
+    selected_set = safe_test_set_name(str(task.get("test_set") or ""))
+    source_dir = test_images_dir(project_dir) / selected_set if selected_set else test_images_dir(project_dir)
     run_name = f"{task_id}-{slug(model['run'] or model['name'])}"
     run_root = task_output_dir(project_dir, task)
     run_dir = run_root / run_name
@@ -350,7 +500,7 @@ def run_model(project_dir: Path, task_id: str, model: dict, images: list[Path], 
         "detect",
         "predict",
         f"model={model_path}",
-        f"source={test_images_dir(project_dir)}",
+        f"source={source_dir}",
         f"project={run_root}",
         f"name={run_name}",
         "save=True",
@@ -925,8 +1075,12 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
     sftp = None
     remote_runs_root = ""
     try:
-        local_test_images = test_images_dir(project_dir)
-        deployment_files = [item for item in local_test_images.rglob("*") if item.is_file()]
+        selected_set = safe_test_set_name(str(task.get("test_set") or ""))
+        local_test_images_root = test_images_dir(project_dir)
+        local_test_source = local_test_images_root / selected_set if selected_set else local_test_images_root
+        if not local_test_source.is_dir():
+            raise RuntimeError(f"测试集目录不存在：{local_test_source}")
+        deployment_files = [item for item in local_test_source.rglob("*") if item.is_file()]
         deployment_total = max(1, len(deployment_files) + len(models))
         deployment_done = 0
 
@@ -962,6 +1116,7 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         remote_home = remote_home_dir(client, sftp)
         remote_project_root = posixpath.join(remote_home, ".yoloutils", task["project"])
         remote_test = posixpath.join(remote_project_root, TEST_DIR, TEST_IMAGES_DIR)
+        remote_test_source = posixpath.join(remote_test, selected_set) if selected_set else remote_test
         remote_base = posixpath.join(remote_project_root, TEST_DIR, TEST_TASKS_DIR, task_output_name(task))
         remote_models = posixpath.join(remote_base, "models")
         remote_runs_root = remote_base
@@ -969,19 +1124,21 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
         append_log(task_id, f"远程项目目录：{remote_project_root}\n")
         append_log(task_id, f"远程工作目录：{remote_base}\n")
         sftp_mkdirs(sftp, remote_test)
+        sftp_mkdirs(sftp, remote_test_source)
         sftp_mkdirs(sftp, remote_models)
         sftp_mkdirs(sftp, remote_runs_root)
         sftp_mkdirs(sftp, remote_logs)
 
-        append_log(task_id, f"同步测试图片：{len(images)} 张（删除远程多余文件）\n")
-        if transfer_directory_to_remote(client, resource, task_id, local_test_images, remote_test, delete=True):
+        source_label = f"test/images/{selected_set}" if selected_set else "test/images"
+        append_log(task_id, f"同步测试图片：{source_label}，{len(images)} 张（删除远程多余文件）\n")
+        if transfer_directory_to_remote(client, resource, task_id, local_test_source, remote_test_source, delete=True):
             mark_deployed(len(deployment_files))
         else:
-            sync_tree_delete(sftp, local_test_images, remote_test, task_id, on_file=lambda _relative: mark_deployed())
-        remote_image_count = count_remote_images(sftp, remote_test)
+            sync_tree_delete(sftp, local_test_source, remote_test_source, task_id, on_file=lambda _relative: mark_deployed())
+        remote_image_count = count_remote_images(sftp, remote_test_source)
         append_log(task_id, f"远程测试图片：{remote_image_count} 张\n")
         if remote_image_count <= 0:
-            raise RuntimeError(f"远程 test/images 目录没有可测试图片：{remote_test}")
+            raise RuntimeError(f"远程 test/images 目录没有可测试图片：{remote_test_source}")
         remote_model_paths = {}
         append_log(task_id, f"上传模型：{len(models)} 个\n")
         for index, model in enumerate(models, start=1):
@@ -1006,7 +1163,7 @@ def run_remote_models(task: dict, project_dir: Path, models: list[dict], images:
                 "detect",
                 "predict",
                 f"model={remote_model_paths[model['relative_path']]}",
-                f"source={remote_test}",
+                f"source={remote_test_source}",
                 f"project={remote_runs_root}",
                 f"name={run_name}",
                 "save=True",
@@ -1129,7 +1286,9 @@ def run_task(task: dict):
         append_log(task_id, "项目不存在。\n")
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
         return
-    images = test_images(project_dir)
+    selected_set = str(task.get("test_set") or "").strip()
+    selected_sets = [selected_set] if selected_set else [str(item) for item in task.get("test_sets") or [] if str(item)]
+    images = test_images(project_dir, selected_sets)
     if not images:
         append_log(task_id, "项目 test/images 文件夹没有可测试图片。\n")
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
@@ -1140,6 +1299,8 @@ def run_task(task: dict):
         update_task(task_id, status="失败", finished_at=datetime.now().isoformat(timespec="seconds"))
         return
 
+    if selected_sets:
+        append_log(task_id, f"测试集：{', '.join(selected_sets)}\n")
     append_log(task_id, f"测试图片：{len(images)} 张\n")
     append_log(task_id, f"评估模型：{len(models)} 个\n\n")
     class_names = read_classes(project_dir)
@@ -1248,6 +1409,22 @@ def task_view(task: dict):
         view["progress_label"] = f"({view['progress_done']}/{view['progress_total']})"
     else:
         view["progress_label"] = ""
+    selected_set = str(view.get("test_set") or "").strip()
+    if not selected_set:
+        selected_set = next((str(item) for item in view.get("test_sets") or [] if str(item)), "")
+    if selected_set:
+        info = {
+            "name": selected_set,
+            "description": str(view.get("test_set_description") or ""),
+            "count": int(view.get("test_set_image_count") or 0),
+        }
+        project_dir = project_path(workspace_path(), str(view.get("project") or ""))
+        live_info = test_set_detail(project_dir, selected_set) if project_dir else None
+        if live_info:
+            info["description"] = str(live_info.get("description") or info["description"])
+            info["count"] = int(live_info.get("count") or info["count"])
+        view["test_set"] = selected_set
+        view["test_set_info"] = info
     return view
 
 
@@ -1566,6 +1743,7 @@ def test_context(request: Request, current_project: str):
         "models": run_model_items(path) if path else [],
         "compute_options": compute_options(workspace),
         "image_count": len(test_images(path)) if path else 0,
+        "test_sets": test_sets(path),
         "has_test_classes": (path / TEST_DIR / "classes.txt").is_file() if path else False,
         "extension_chart": test_extension_chart(path),
         "tasks": tasks,
@@ -1593,6 +1771,286 @@ def test_with_project(request: Request, project: str):
     )
     response.set_cookie("current_project", project, httponly=True, samesite="lax")
     return response
+
+
+def test_folder_response(request: Request, project: str, set_name: str = ""):
+    workspace = workspace_path()
+    path = project_path(workspace, project)
+    if path is None:
+        return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
+    safe_name = safe_test_set_name(unquote(set_name)) if set_name else ""
+    selected_set = test_set_detail(path, safe_name) if safe_name else None
+    if safe_name and selected_set is None:
+        return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
+    selected_images = test_images(path, [safe_name]) if safe_name else test_images(path)
+    response = templates.TemplateResponse(
+        request=request,
+        name="test/folder.html",
+        context={
+            "request": request,
+            "workspace": workspace,
+            "active_page": "test",
+            "current_project": project,
+            "project_name": read_project_name(path),
+            "folder_mode": "edit" if safe_name else "new",
+            "test_set": selected_set or {"name": "", "description": "", "count": 0},
+            "image_count": len(selected_images),
+            "extension_chart": test_extension_chart(path),
+            "has_test_classes": (path / TEST_DIR / "classes.txt").is_file(),
+            **header_context(request, workspace),
+        },
+    )
+    response.set_cookie("current_project", project, httponly=True, samesite="lax")
+    return response
+
+
+@router.get("/test/{project}/folder")
+def new_test_folder_page(request: Request, project: str):
+    return test_folder_response(request, project)
+
+
+@router.get("/test/{project}/folder/new")
+def legacy_new_test_folder_page(project: str):
+    return RedirectResponse(url=f"/test/{project}/folder", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/test/{project}/folder/{set_name}")
+def edit_test_folder_page(request: Request, project: str, set_name: str):
+    return test_folder_response(request, project, set_name)
+
+
+@router.post("/project/{directory}/upload/test")
+async def upload_test_images(directory: str, request: Request):
+    return await upload_test_set_images(directory, "default", request)
+
+
+@router.post("/project/{directory}/upload/test/{set_name}")
+async def upload_test_set_images(directory: str, set_name: str, request: Request):
+    if unquote(set_name) == "batch":
+        return await upload_test_sets_batch(directory, request)
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    original_set_name = safe_test_set_name(str(request.query_params.get("original") or ""))
+    requested_set_name = safe_test_set_name(unquote(set_name))
+    safe_set_name = rename_test_set(path, original_set_name, requested_set_name, str(request.query_params.get("description") or "").strip()) if original_set_name else requested_set_name
+    if not safe_set_name:
+        return JSONResponse({"ok": False, "error": "测试集名称无效"}, status_code=400)
+    description = str(request.query_params.get("description") or "").strip()
+    flat_only = str(request.query_params.get("flat") or "") == "1"
+    update_test_set_meta(path, safe_set_name, description)
+    files = await uploaded_files(request)
+    target_dir = test_images_dir(path) / safe_set_name
+
+    def stream():
+        total = len(files)
+        skipped = 0
+        saved = []
+        error = ""
+        yield upload_progress_line(ok=True, stage="saving", saved=0, skipped=0, total=total, progress=0)
+        for index, (filename, content) in enumerate(files, start=1):
+            relative = upload_relative_path(filename)
+            if relative is None or relative.suffix.lower() not in IMAGE_EXTS:
+                skipped += 1
+            elif flat_only and len(relative.parts) > 1:
+                error = "只能上传图片文件，不能携带子目录。"
+            else:
+                item = save_upload(relative.name, content, target_dir)
+                if item is not None:
+                    saved.append(item)
+            yield upload_progress_line(
+                ok=not error,
+                stage="saving",
+                saved=len(saved),
+                skipped=skipped,
+                total=total,
+                progress=round(index / total * 100) if total else 100,
+                file=filename,
+                error=error,
+            )
+            if error:
+                return
+        append_upload_log(
+            path,
+            f"上传测试集 {safe_set_name} 图片：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
+            [relative_log_entry(path, item) for item in saved],
+        )
+        index = build_project_index(path)
+        yield upload_progress_line(
+            ok=True,
+            stage="done",
+            saved=len(saved),
+            skipped=skipped,
+            count=int(index.get("test", {}).get("images") or 0),
+        )
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+@router.post("/project/{directory}/upload/test/batch")
+async def upload_test_sets_batch(directory: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    files = await uploaded_files(request)
+    root = test_images_dir(path)
+
+    def stream():
+        total = len(files)
+        skipped = 0
+        saved = []
+        error = ""
+        yield upload_progress_line(ok=True, stage="saving", saved=0, skipped=0, total=total, progress=0)
+        for index, (filename, content) in enumerate(files, start=1):
+            relative = upload_relative_path(filename)
+            if relative is None:
+                skipped += 1
+            else:
+                parts = relative.parts
+                if len(parts) < 3:
+                    error = "批量上传目录必须包含一级子目录，图片放在一级子目录内。"
+                    break
+                if len(parts) > 3:
+                    error = "一级子目录中不能再包含目录。"
+                    break
+                set_name = safe_test_set_name(parts[1])
+                if not set_name or relative.suffix.lower() not in IMAGE_EXTS:
+                    skipped += 1
+                else:
+                    update_test_set_meta(path, set_name)
+                    target = root / set_name / parts[-1]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(content)
+                    saved.append(target)
+            yield upload_progress_line(
+                ok=not error,
+                stage="saving",
+                saved=len(saved),
+                skipped=skipped,
+                total=total,
+                progress=round(index / total * 100) if total else 100,
+                file=filename,
+                error=error,
+            )
+            if error:
+                return
+        append_upload_log(
+            path,
+            f"批量上传测试集：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
+            [relative_log_entry(path, item) for item in saved],
+        )
+        index = build_project_index(path)
+        yield upload_progress_line(
+            ok=True,
+            stage="done",
+            saved=len(saved),
+            skipped=skipped,
+            count=int(index.get("test", {}).get("images") or 0),
+        )
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+@router.post("/project/{directory}/test-sets")
+async def create_test_set(directory: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
+    body = (await request.body()).decode("utf-8", errors="replace")
+    form = parse_qs(body)
+    safe_name = safe_test_set_name(str((form.get("name") or [""])[0] or ""))
+    description = str((form.get("description") or [""])[0] or "").strip()
+    if safe_name:
+        target = test_images_dir(path) / safe_name
+        target.mkdir(parents=True, exist_ok=True)
+        update_test_set_meta(path, safe_name, description)
+        append_upload_log(path, f"新建测试集：{safe_name}", [relative_log_entry(path, target)])
+        build_project_index(path)
+    return RedirectResponse(url=f"/test/{directory}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/project/{directory}/test-sets/{set_name}")
+async def update_test_set(directory: str, set_name: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
+    body = (await request.body()).decode("utf-8", errors="replace")
+    form = parse_qs(body)
+    new_name = str((form.get("name") or [""])[0] or "")
+    description = str((form.get("description") or [""])[0] or "").strip()
+    updated_name = rename_test_set(path, unquote(set_name), new_name, description)
+    if updated_name:
+        append_upload_log(path, f"编辑测试集：{unquote(set_name)} -> {updated_name}", [relative_log_entry(path, test_images_dir(path) / updated_name)])
+        build_project_index(path)
+    return RedirectResponse(url=f"/test/{directory}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/project/{directory}/test-sets/{set_name}/delete")
+async def delete_test_set(directory: str, set_name: str):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
+    safe_name = safe_test_set_name(unquote(set_name))
+    target = (test_images_dir(path) / safe_name).resolve()
+    root = test_images_dir(path).resolve()
+    if safe_name and target.is_dir() and is_inside(target, root):
+        shutil.rmtree(target)
+        meta = read_test_sets_meta(path)
+        if safe_name in meta:
+            meta.pop(safe_name, None)
+            write_test_sets_meta(path, meta)
+        append_upload_log(path, f"删除测试集：{safe_name}", [relative_log_entry(path, target)])
+        build_project_index(path)
+    return RedirectResponse(url=f"/test/{directory}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/project/{directory}/upload/test/delete")
+async def delete_uploaded_test_images(directory: str):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    test_dir = test_images_dir(path)
+    removed = []
+    if test_dir.exists():
+        for item in test_dir.rglob("*"):
+            if not item.is_file():
+                continue
+            item.unlink()
+            removed.append(item)
+        remove_empty_dirs(test_dir)
+    append_upload_log(
+        path,
+        f"删除测试图片/文件：{len(removed)} 个",
+        [relative_log_entry(path, item) for item in removed],
+    )
+    index = build_project_index(path)
+    return {"ok": True, "deleted": len(removed), "count": int(index.get("test", {}).get("images") or 0)}
+
+
+@router.post("/project/{directory}/upload/test-classes")
+async def upload_test_classes(directory: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+
+    files = await uploaded_files(request)
+    for filename, content in files:
+        if PurePosixPath((filename or "").replace("\\", "/")).name.lower() != "classes.txt":
+            continue
+        target = path / TEST_DIR / "classes.txt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        append_upload_log(path, "上传测试 classes.txt", [relative_log_entry(path, target)])
+        build_project_index(path)
+        return {"ok": True, "saved": 1}
+    return JSONResponse({"ok": False, "error": "请选择 classes.txt"}, status_code=400)
 
 
 @router.get("/test/{project}/reports/{task_id}")
@@ -1629,10 +2087,13 @@ async def create_test_task(request: Request):
     if project_dir is None:
         return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
     selected = [str(value) for key, value in form.multi_items() if key == "models"]
+    available_sets = {item["name"]: item for item in test_sets(project_dir)}
+    selected_set = safe_test_set_name(str(form.get("test_set") or ""))
+    selected_set_info = available_sets.get(selected_set)
     models = selected_model_items(project_dir, selected)
     if not models:
         return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
-    if not test_images(project_dir):
+    if not selected_set_info or not test_images(project_dir, [selected_set]):
         return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
     resource_id = str(form.get("resource_id") or "local")
     target_type = "local"
@@ -1652,6 +2113,10 @@ async def create_test_task(request: Request):
         "resource_name": resource_name,
         "models": [model["relative_path"] for model in models],
         "model_names": [model["name"] for model in models],
+        "test_set": selected_set,
+        "test_sets": [selected_set],
+        "test_set_description": str(selected_set_info.get("description") or ""),
+        "test_set_image_count": int(selected_set_info.get("count") or 0),
         "status": "排队中",
         "progress": 0,
         "progress_done": 0,
@@ -1766,3 +2231,23 @@ def retry_task(task_id: str):
     log_file(task_id).write_text(f"任务重新运行: {datetime.now().isoformat(timespec='seconds')}\n", encoding="utf-8")
     ensure_worker()
     return RedirectResponse(url=f"/test/{task.get('project', '')}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/test/tasks/{task_id}/delete")
+def delete_task(task_id: str):
+    with queue_lock:
+        tasks = load_tasks()
+        task = next((item for item in tasks if item.get("id") == task_id), None)
+        if task is None:
+            return RedirectResponse(url="/test", status_code=status.HTTP_303_SEE_OTHER)
+        project = str(task.get("project") or "")
+        if task.get("status") not in {"失败", "取消", "空间不足"}:
+            return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
+        save_tasks([item for item in tasks if item.get("id") != task_id])
+
+    log_file(task_id).unlink(missing_ok=True)
+    result_file(task_id).unlink(missing_ok=True)
+    project_dir = project_path(workspace_path(), project)
+    if project_dir is not None:
+        shutil.rmtree(task_output_dir(project_dir, task), ignore_errors=True)
+    return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)

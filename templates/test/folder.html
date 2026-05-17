@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}{% if folder_mode == "edit" %}编辑测试集{% else %}新建测试集{% endif %}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/static/css/test.css?v=20260517-edit-test-set-name">
+{% endblock %}
+
+{% block content %}
+  <main class="test-main" data-test-page data-project="{{ current_project }}">
+    <section class="test-head" aria-labelledby="test-set-title">
+      <div>
+        <h1 id="test-set-title">{% if folder_mode == "edit" %}编辑测试集{% else %}新建测试集{% endif %}</h1>
+        <p>{% if folder_mode == "edit" %}追加测试图片并维护测试集描述。{% else %}创建一组测试图片资源，用于后续模型测试评估任务。{% endif %}</p>
+      </div>
+      <div class="model-head-actions">
+        <a class="secondary-button" href="/test/{{ current_project }}">返回测试</a>
+      </div>
+    </section>
+
+    <section class="test-upload-card" aria-labelledby="test-upload-title">
+      <div class="test-upload-head">
+        <div>
+          <h2 id="test-upload-title">测试图片</h2>
+          <p>上传测试资源，远程算力会同步使用这一份测试数据。</p>
+        </div>
+      </div>
+      <form class="test-set-fields" method="post" action="{% if folder_mode == 'edit' %}/project/{{ current_project }}/test-sets/{{ test_set.name|urlencode }}{% else %}/project/{{ current_project }}/test-sets{% endif %}">
+        <label>
+          <span>测试集名称</span>
+          <input type="text" data-test-set-name name="name" value="{{ test_set.name }}" placeholder="例如 冬虫夏草-01" title="不能包含路径分隔符" required>
+        </label>
+        <label>
+          <span>描述</span>
+          <textarea data-test-set-description name="description" rows="3" placeholder="描述这组测试图片的来源、场景或用途">{{ test_set.description }}</textarea>
+        </label>
+        <div class="test-set-field-footer">
+          <p class="test-set-batch-hint">{% if folder_mode == "edit" %}修改名称会同步重命名测试集目录。{% else %}批量上传会按一级子目录自动创建测试集，无需填写名称和描述。{% endif %}</p>
+          <button type="submit">{% if folder_mode == "edit" %}保存测试集{% else %}创建测试集{% endif %}</button>
+        </div>
+      </form>
+      <div class="test-upload-body">
+        <div class="test-upload-stack">
+          <div class="test-drop-zone" data-upload-zone data-upload-kind="test" {% if folder_mode == "edit" %}data-upload-url-template="/project/{{ current_project }}/upload/test/__SET_NAME__?flat=1&original={{ test_set.name|urlencode }}" data-flat-image-upload="true" data-redirect-after-upload="/test/{{ current_project }}"{% else %}data-upload-url-template="/project/{{ current_project }}/upload/test/__SET_NAME__"{% endif %} data-test-set-name-input="[data-test-set-name]" data-test-set-description-input="[data-test-set-description]" role="button" tabindex="0">
+            <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
+            {% if folder_mode != "edit" %}
+              <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-batch-directory-input>
+            {% endif %}
+            <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
+            <span>{% if folder_mode == "edit" %}点击追加测试图片，或拖拽到这里{% else %}点击上传测试图片，或拖拽到这里{% endif %}</span>
+            {% if folder_mode != "edit" %}
+            <span class="upload-options">
+              <button type="button" class="upload-option-icon-button test-batch-upload-button" data-batch-directory-button title="批量上传" aria-label="批量上传">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
+                <span>批量上传</span>
+              </button>
+            </span>
+            {% endif %}
+          </div>
+          <div class="test-classes-upload" data-upload-zone data-upload-kind="test-classes" role="button" tabindex="0">
+            <input type="file" name="files" accept=".txt,text/plain" hidden data-file-input>
+            <span>
+              <strong>classes.txt</strong>
+              <small>上传 classes.txt 用于测试报告标签展示。</small>
+            </span>
+            <b data-test-classes-status>{% if has_test_classes %}已上传{% else %}未上传{% endif %}</b>
+            <span class="test-classes-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path></svg>
+            </span>
+            <span data-upload-label hidden>上传 classes.txt</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {% set footer_id = "stats" %}
+  {% set footer_left = workspace %}
+  {% include "partials/footer.html" %}
+  <script src="/static/js/project.js?v=20260517-upload-file-progress"></script>
+{% endblock %}

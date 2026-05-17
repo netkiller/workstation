@@ -418,6 +418,29 @@ function filesFromFileList(files) {
   }));
 }
 
+function filesFromFileListKeepRoot(files) {
+  return Array.from(files || []).map((file) => ({
+    file,
+    path: file.webkitRelativePath || file.name,
+  }));
+}
+
+function validateBatchTestSetFiles(items) {
+  const files = Array.from(items || []);
+  if (!files.length) return {ok: false, error: "未发现可上传的图片文件。"};
+  for (const item of files) {
+    const path = String(item.path || item.file?.webkitRelativePath || item.file?.name || "");
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 3) {
+      return {ok: false, error: "批量上传目录必须包含一级子目录，图片放在一级子目录内。"};
+    }
+    if (parts.length > 3) {
+      return {ok: false, error: "一级子目录中不能再包含目录。"};
+    }
+  }
+  return {ok: true};
+}
+
 const TEST_IMAGE_EXTENSIONS = new Set([
   ".jpg",
   ".jpeg",
@@ -463,11 +486,22 @@ async function filesFromDataTransfer(dataTransfer) {
 async function uploadFiles(zone, files) {
   const kind = zone.dataset.uploadKind;
   let uploads = Array.from(files);
-  if (kind === "test") {
+  if (kind === "test" || kind?.startsWith("test/")) {
     const before = uploads.length;
     uploads = uploads.filter(isTestImageUpload);
     if (!uploads.length) {
       if (before > 0) alert("未发现可上传的图片文件。");
+      return;
+    }
+  }
+  if (zone.dataset.flatImageUpload === "true") {
+    const hasDirectory = uploads.some((item) => {
+      const file = item.file || item;
+      const path = String(item.path || file.webkitRelativePath || file.name || "");
+      return path.split("/").filter(Boolean).length > 1;
+    });
+    if (hasDirectory) {
+      alert("只能上传图片文件，不能携带子目录。");
       return;
     }
   }
@@ -478,6 +512,43 @@ async function uploadFiles(zone, files) {
   const project = document.querySelector("[data-project]")?.dataset.project;
   if (!project || !kind) {
     return;
+  }
+  let dynamicUploadUrl = zone.dataset.uploadUrl || "";
+  if (zone.dataset.batchUpload === "true") {
+    const validation = validateBatchTestSetFiles(uploads);
+    if (!validation.ok) {
+      alert(validation.error);
+      return;
+    }
+    dynamicUploadUrl = `/project/${project}/upload/test/batch`;
+  }
+  const uploadUrlTemplate = zone.dataset.uploadUrlTemplate || "";
+  if (!dynamicUploadUrl && uploadUrlTemplate) {
+    const nameInput = document.querySelector(zone.dataset.testSetNameInput || "");
+    const descriptionInput = document.querySelector(zone.dataset.testSetDescriptionInput || "");
+    const setName = (nameInput?.value || "").trim();
+    if (!setName) {
+      alert("请先填写测试集名称。");
+      nameInput?.focus();
+      return;
+    }
+    if (setName.length > 80 || setName === "." || setName === ".." || /[\\/]|[\x00-\x1f]/.test(setName)) {
+      alert("测试集名称不能包含路径分隔符。");
+      nameInput?.focus();
+      return;
+    }
+    dynamicUploadUrl = uploadUrlTemplate.replace("__SET_NAME__", encodeURIComponent(setName));
+    const description = (descriptionInput?.value || "").trim();
+    if (description) {
+      dynamicUploadUrl += `${dynamicUploadUrl.includes("?") ? "&" : "?"}description=${encodeURIComponent(description)}`;
+    }
+  }
+  if (dynamicUploadUrl && !uploadUrlTemplate) {
+    const descriptionInput = document.querySelector(zone.dataset.testSetDescriptionInput || "");
+    const description = (descriptionInput?.value || "").trim();
+    if (description && !dynamicUploadUrl.includes("description=")) {
+      dynamicUploadUrl += `${dynamicUploadUrl.includes("?") ? "&" : "?"}description=${encodeURIComponent(description)}`;
+    }
   }
 
   const formData = new FormData();
@@ -492,7 +563,8 @@ async function uploadFiles(zone, files) {
   zone.classList.remove("upload-complete", "upload-processing");
 
   try {
-    const {status, data} = await uploadWithProgress(`/project/${project}/upload/${kind}`, formData, (percent) => {
+    const uploadUrl = dynamicUploadUrl || `/project/${project}/upload/${kind}`;
+    const {status, data} = await uploadWithProgress(uploadUrl, formData, (percent) => {
       setUploadProgress(zone, percent);
       zone.classList.toggle("upload-processing", percent > 0 && percent < 100);
     });
@@ -506,13 +578,18 @@ async function uploadFiles(zone, files) {
       document.querySelector("[data-image-count]").textContent = `${data.count} 个文件`;
       setAnnotateReady({imagesReady: data.count > 0});
       updateProjectDashboard(data.dashboard);
-    } else if (kind === "test") {
-      document.querySelector("[data-test-count]").textContent = `${data.count} 个文件`;
+    } else if (kind === "test" || kind?.startsWith("test/")) {
+      const testCounter = document.querySelector("[data-test-count]");
+      if (testCounter) testCounter.textContent = `${data.count} 个文件`;
       if (data.saved === 0 && data.skipped > 0) {
         alert("未保存新图片，已跳过非图片文件。");
       }
       if (document.querySelector("[data-test-page]")) {
-        window.setTimeout(() => window.location.reload(), 500);
+        const redirectUrl = zone.dataset.redirectAfterUpload;
+        window.setTimeout(() => {
+          if (redirectUrl) window.location.href = redirectUrl;
+          else window.location.reload();
+        }, 500);
       }
     } else if (kind === "model") {
       document.querySelector("[data-model-count]").textContent = `${data.count} 个文件`;
@@ -600,12 +677,15 @@ function uploadWithProgress(url, formData, onProgress) {
     let parsedLength = 0;
     let responseBuffer = "";
     let latestData = {};
-    const useTransportProgress = !url.includes("/upload/images") && !url.includes("/upload/test");
+    const usesServerProgress = url.includes("/upload/images") || url.includes("/upload/test");
     request.open("POST", url);
     request.upload.addEventListener("progress", (event) => {
       if (!event.lengthComputable) return;
-      if (useTransportProgress) onProgress(Math.round((event.loaded / event.total) * 100));
-      else if (event.loaded >= event.total) onProgress(0);
+      if (usesServerProgress) {
+        if (event.loaded > 0 && event.loaded < event.total) onProgress(4);
+        return;
+      }
+      onProgress(Math.round((event.loaded / event.total) * 100));
     });
     request.addEventListener("progress", () => {
       const contentType = request.getResponseHeader("content-type") || "";
@@ -651,7 +731,9 @@ function uploadWithProgress(url, formData, onProgress) {
 document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   const input = zone.querySelector("[data-file-input]") || zone.querySelector("input");
   const directoryInput = zone.querySelector("[data-directory-input]");
+  const batchDirectoryInput = zone.querySelector("[data-batch-directory-input]");
   const directoryButton = zone.querySelector("[data-directory-button]");
+  const batchDirectoryButton = zone.querySelector("[data-batch-directory-button]");
   const clearButton = zone.querySelector("[data-clear-upload]");
 
   zone.addEventListener("click", (event) => {
@@ -659,6 +741,9 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
       return;
     }
     if (event.target.closest("[data-directory-button]")) {
+      return;
+    }
+    if (event.target.closest("[data-batch-directory-button]")) {
       return;
     }
     if (event.target.closest("[data-clear-upload]")) {
@@ -681,10 +766,35 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   directoryInput?.addEventListener("click", () => {
     directoryInput.value = "";
   });
+  batchDirectoryInput?.addEventListener("change", () => {
+    zone.dataset.batchUpload = "true";
+    zone.dataset.redirectAfterUpload = `/test/${encodeURIComponent(document.querySelector("[data-project]")?.dataset.project || "")}`;
+    const uploadUrlTemplate = zone.dataset.uploadUrlTemplate;
+    const testSetNameInput = zone.dataset.testSetNameInput;
+    const testSetDescriptionInput = zone.dataset.testSetDescriptionInput;
+    delete zone.dataset.uploadUrlTemplate;
+    delete zone.dataset.testSetNameInput;
+    delete zone.dataset.testSetDescriptionInput;
+    uploadFiles(zone, filesFromFileListKeepRoot(batchDirectoryInput.files)).finally(() => {
+      delete zone.dataset.batchUpload;
+      delete zone.dataset.redirectAfterUpload;
+      if (uploadUrlTemplate !== undefined) zone.dataset.uploadUrlTemplate = uploadUrlTemplate;
+      if (testSetNameInput !== undefined) zone.dataset.testSetNameInput = testSetNameInput;
+      if (testSetDescriptionInput !== undefined) zone.dataset.testSetDescriptionInput = testSetDescriptionInput;
+    });
+  });
+  batchDirectoryInput?.addEventListener("click", () => {
+    batchDirectoryInput.value = "";
+  });
   directoryButton?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     directoryInput?.click();
+  });
+  batchDirectoryButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    batchDirectoryInput?.click();
   });
   clearButton?.addEventListener("click", (event) => {
     event.preventDefault();

@@ -1542,77 +1542,6 @@ async def delete_uploaded_images(directory: str):
     }
 
 
-@router.post("/project/{directory}/upload/test")
-async def upload_test_images(directory: str, request: Request):
-    workspace = workspace_path()
-    path = project_dir(workspace, directory)
-    if path is None or not path.is_dir():
-        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
-    files = await uploaded_files(request)
-
-    def stream():
-        total = len(files)
-        skipped = 0
-        saved = []
-        yield upload_progress_line(ok=True, stage="saving", saved=0, skipped=0, total=total, progress=0)
-        for index, (filename, content) in enumerate(files, start=1):
-            relative = upload_relative_path(filename)
-            if relative is None or relative.suffix.lower() not in IMAGE_EXTS:
-                skipped += 1
-            else:
-                item = save_upload(filename, content, path / TEST_IMAGES_DIR)
-                if item is not None:
-                    saved.append(item)
-            yield upload_progress_line(
-                ok=True,
-                stage="saving",
-                saved=len(saved),
-                skipped=skipped,
-                total=total,
-                progress=round(index / total * 100) if total else 100,
-                file=filename,
-            )
-        append_upload_log(
-            path,
-            f"上传测试图片：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
-            [relative_log_entry(path, item) for item in saved],
-        )
-        index = build_project_index(path)
-        yield upload_progress_line(
-            ok=True,
-            stage="done",
-            saved=len(saved),
-            skipped=skipped,
-            count=int(index.get("test", {}).get("images") or 0),
-        )
-
-    return StreamingResponse(stream(), media_type="application/x-ndjson")
-
-
-@router.post("/project/{directory}/upload/test/delete")
-async def delete_uploaded_test_images(directory: str):
-    workspace = workspace_path()
-    path = project_dir(workspace, directory)
-    if path is None or not path.is_dir():
-        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
-    test_dir = path / TEST_IMAGES_DIR
-    removed = []
-    if test_dir.exists():
-        for item in test_dir.rglob("*"):
-            if not item.is_file():
-                continue
-            item.unlink()
-            removed.append(item)
-        remove_empty_dirs(test_dir)
-    append_upload_log(
-        path,
-        f"删除测试图片/文件：{len(removed)} 个",
-        [relative_log_entry(path, item) for item in removed],
-    )
-    index = build_project_index(path)
-    return {"ok": True, "deleted": len(removed), "count": int(index.get("test", {}).get("images") or 0)}
-
-
 @router.post("/project/{directory}/upload/classes")
 async def upload_classes(directory: str, request: Request):
     workspace = workspace_path()
@@ -1628,26 +1557,6 @@ async def upload_classes(directory: str, request: Request):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
         append_upload_log(path, "上传 classes.txt", [relative_log_entry(path, target)])
-        build_project_index(path)
-        return {"ok": True, "saved": 1}
-    return JSONResponse({"ok": False, "error": "请选择 classes.txt"}, status_code=400)
-
-
-@router.post("/project/{directory}/upload/test-classes")
-async def upload_test_classes(directory: str, request: Request):
-    workspace = workspace_path()
-    path = project_dir(workspace, directory)
-    if path is None or not path.is_dir():
-        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
-
-    files = await uploaded_files(request)
-    for filename, content in files:
-        if PurePosixPath((filename or "").replace("\\", "/")).name.lower() != "classes.txt":
-            continue
-        target = path / TEST_DIR / "classes.txt"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
-        append_upload_log(path, "上传测试 classes.txt", [relative_log_entry(path, target)])
         build_project_index(path)
         return {"ok": True, "saved": 1}
     return JSONResponse({"ok": False, "error": "请选择 classes.txt"}, status_code=400)

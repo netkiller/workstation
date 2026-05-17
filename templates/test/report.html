@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试报告{% else %}测试报告{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260516-report-lightbox-scroll">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260517-report-lightbox-pan">
 {% endblock %}
 
 {% block content %}
@@ -192,6 +192,9 @@
       const lightboxStrip = document.querySelector("[data-report-lightbox-strip]");
       let index = 0;
       let scale = 1;
+      let panX = 0;
+      let panY = 0;
+      let dragStart = null;
       let lightboxItems = [];
       let lightboxItemIndex = 0;
       const models = {{ report.models|map(attribute="name")|list|tojson }};
@@ -240,12 +243,25 @@
         lightboxStrip.scrollTo({left: Math.max(0, left), behavior});
       }
 
+      function applyLightboxTransform() {
+        if (!lightboxImage) return;
+        lightboxImage.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        lightboxImage.classList.toggle("is-zoomed", scale > 1.01);
+      }
+
+      function resetLightboxTransform() {
+        scale = 1;
+        panX = 0;
+        panY = 0;
+        dragStart = null;
+        applyLightboxTransform();
+      }
+
       function setLightboxImage(nextIndex) {
         if (!lightboxImage || !lightboxItems.length) return;
         lightboxItemIndex = Math.max(0, Math.min(lightboxItems.length - 1, nextIndex));
         const item = lightboxItems[lightboxItemIndex];
-        scale = 1;
-        lightboxImage.style.transform = "scale(1)";
+        resetLightboxTransform();
         lightboxImage.src = item.original || item.thumb || "";
         lightboxImage.alt = item.label || "";
         if (lightboxTitle) lightboxTitle.textContent = item.label || "";
@@ -330,8 +346,34 @@
       lightboxImage?.addEventListener("wheel", event => {
         event.preventDefault();
         scale = Math.max(1, Math.min(4, scale + (event.deltaY < 0 ? .18 : -.18)));
-        lightboxImage.style.transform = `scale(${scale})`;
+        if (scale <= 1.01) {
+          panX = 0;
+          panY = 0;
+        }
+        applyLightboxTransform();
       }, {passive: false});
+      lightboxImage?.addEventListener("pointerdown", event => {
+        if (scale <= 1.01) return;
+        event.preventDefault();
+        lightboxImage.setPointerCapture?.(event.pointerId);
+        dragStart = {x: event.clientX, y: event.clientY, panX, panY};
+        lightboxImage.classList.add("is-dragging");
+      });
+      lightboxImage?.addEventListener("pointermove", event => {
+        if (!dragStart) return;
+        event.preventDefault();
+        panX = dragStart.panX + event.clientX - dragStart.x;
+        panY = dragStart.panY + event.clientY - dragStart.y;
+        applyLightboxTransform();
+      });
+      function stopLightboxDrag(event) {
+        if (!dragStart) return;
+        dragStart = null;
+        lightboxImage?.releasePointerCapture?.(event.pointerId);
+        lightboxImage?.classList.remove("is-dragging");
+      }
+      lightboxImage?.addEventListener("pointerup", stopLightboxDrag);
+      lightboxImage?.addEventListener("pointercancel", stopLightboxDrag);
       render();
     })();
   </script>

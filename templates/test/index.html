@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260516-download-status">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260517-task-set-name-small">
 {% endblock %}
 
 {% block content %}
@@ -24,9 +24,8 @@
         <input type="hidden" name="project" value="{{ current_project }}">
         <div class="test-panel-head">
           <div>
-            <span class="test-dialog-kicker">模型测试评估</span>
             <h2>新建测试任务</h2>
-            <p>从已训练模型中选择一个或多个，系统会使用项目目录下 <code>test/images</code> 文件夹图片逐一评估。</p>
+            <p>批量运行已训练模型，生成按图片和模型横向对比的测试评估报告。</p>
           </div>
           <button class="test-dialog-close" type="button" data-close-test-dialog aria-label="关闭">×</button>
         </div>
@@ -35,17 +34,12 @@
           <section class="test-dialog-section test-dialog-config" aria-label="测试任务配置">
             <div class="test-dialog-section-head">
               <h3>任务配置</h3>
-              <span>{{ image_count }} 张测试图片</span>
             </div>
             <div class="test-form-row">
               <label class="test-name-field">
                 <span>任务名称</span>
                 <input name="name" type="text" placeholder="留空自动生成">
               </label>
-              <div class="test-image-field">
-                <span>测试图片</span>
-                <strong>{{ image_count }} 张</strong>
-              </div>
             </div>
             <label class="test-compute-field">
               <span>算力</span>
@@ -55,6 +49,18 @@
                 {% endfor %}
               </select>
             </label>
+            <div class="test-set-chooser">
+              <span>测试集</span>
+              {% if test_sets %}
+                <select name="test_set" required>
+                  {% for item in test_sets %}
+                    <option value="{{ item.name }}">{{ item.name }} · {{ item.count }} 张{% if item.description %} · {{ item.description }}{% endif %}</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <p>还没有测试集。</p>
+              {% endif %}
+            </div>
           </section>
 
           <section class="test-dialog-section test-dialog-models" aria-label="选择测试模型">
@@ -84,12 +90,12 @@
         </div>
 
         <div class="test-dialog-footer">
-          {% if current_project and image_count == 0 %}
-            <div class="resource-alert"><strong>缺少测试图片</strong><span>请把图片放到 test/images 后再运行评估。</span></div>
+          {% if current_project and (image_count == 0 or not test_sets) %}
+            <div class="resource-alert"><strong>缺少测试集</strong><span>请先新建测试集并上传测试图片后再运行评估。</span></div>
           {% else %}
             <span class="test-dialog-hint">任务会按模型顺序运行，并生成可下载 CSV 报告。</span>
           {% endif %}
-          <button type="submit" {% if not current_project or not models or image_count == 0 %}disabled{% endif %}>开始测试评估</button>
+          <button type="submit" {% if not current_project or not models or image_count == 0 or not test_sets %}disabled{% endif %}>开始测试评估</button>
         </div>
       </form>
     </dialog>
@@ -97,57 +103,62 @@
     <section class="test-upload-card" aria-labelledby="test-upload-title">
       <div class="test-upload-head">
         <div>
-          <h2 id="test-upload-title">测试图片</h2>
-          <p>上传测试资源，远程算力会同步使用这一份测试数据。</p>
+          <h2 id="test-upload-title">测试集</h2>
+          <p>管理用于模型测试评估的测试集。</p>
         </div>
-        <span class="count" data-test-count>{{ image_count }} 个文件</span>
+        <div class="model-head-actions test-set-head-actions">
+          <div class="test-batch-create-zone" data-upload-zone data-upload-kind="test">
+            <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
+            <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-batch-directory-input>
+            <button class="secondary-button" type="button" data-batch-directory-button>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
+              <span>批量新建测试集</span>
+            </button>
+          </div>
+          <a class="secondary-button" href="/test/{{ current_project }}/folder">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+            <span>新建测试集</span>
+          </a>
+        </div>
       </div>
       <div class="test-upload-body">
-        <div class="test-upload-stack">
-          <div class="test-drop-zone" data-upload-zone data-upload-kind="test" role="button" tabindex="0">
-            <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
-            <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-directory-input>
-            <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-            <span>点击上传测试图片，或拖拽到这里</span>
-            <span class="upload-options">
-              <button type="button" class="upload-delete-button" data-clear-upload="test" title="删除已上传测试图片" aria-label="删除已上传测试图片">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
-              </button>
-              <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
-              </button>
-            </span>
+        {% if test_sets %}
+          <div class="test-set-list">
+            {% for item in test_sets %}
+              <article class="test-set-card">
+                <div class="test-set-card-head">
+                  <div>
+                    <h3>{{ item.name }}</h3>
+                    <p>{{ item.description or "暂无描述" }}</p>
+                  </div>
+                  <div class="test-set-card-actions">
+                    <a class="test-set-edit-button" href="/test/{{ current_project }}/folder/{{ item.name|urlencode }}" title="编辑测试集" aria-label="编辑测试集">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.4 2.6a2 2 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
+                    </a>
+                    <form method="post" action="/project/{{ current_project }}/test-sets/{{ item.name }}/delete" onsubmit="return confirm('确认删除测试集 {{ item.name }}？');">
+                      <button type="submit" class="test-set-delete-button" title="删除测试集" aria-label="删除测试集">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+                <div class="test-set-extension-summary" aria-label="图像类型分布">
+                  {% if item.extensions %}
+                    <div class="test-set-extension-items">
+                      {% for ext in item.extensions %}
+                        <span style="--tag-color: {{ ext.color }};"><i></i>.{{ ext.ext }} {{ ext.count }} 张 · {{ ext.percent }}%</span>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <p>暂无图片</p>
+                  {% endif %}
+                </div>
+              </article>
+            {% endfor %}
           </div>
-          <div class="test-classes-upload" data-upload-zone data-upload-kind="test-classes" role="button" tabindex="0">
-            <input type="file" name="files" accept=".txt,text/plain" hidden data-file-input>
-            <span>
-              <strong>classes.txt</strong>
-              <small>上传 classes.txt 用于测试报告标签展示。</small>
-            </span>
-            <b data-test-classes-status>{% if has_test_classes %}已上传{% else %}未上传{% endif %}</b>
-            <span class="test-classes-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path></svg>
-            </span>
-            <span data-upload-label hidden>上传 classes.txt</span>
-          </div>
-        </div>
-        <div class="test-image-type-panel" aria-labelledby="test-image-type-title">
-          <div class="test-image-type-head">
-            <h3 id="test-image-type-title">图像类型</h3>
-          </div>
-          <div class="test-extension-chart">
-            <span class="test-extension-pie" style="background: {{ extension_chart.style }}"><b>{{ extension_chart.total }}</b></span>
-            <div class="test-extension-legend">
-              {% if extension_chart["items"] %}
-                {% for item in extension_chart["items"] %}
-                  <span><i style="background: {{ item.color }}"></i><strong>.{{ item.ext }}</strong>{{ item.count }} 张 · {{ item.percent }}%</span>
-                {% endfor %}
-              {% else %}
-                <span><i></i><strong>暂无</strong>0 张</span>
-              {% endif %}
-            </div>
-          </div>
-        </div>
+        {% else %}
+          <div class="empty compact">还没有测试集，请先新建测试集。</div>
+        {% endif %}
       </div>
     </section>
 
@@ -163,7 +174,7 @@
                   <span class="test-status test-status-{{ task.status }}">{{ task.status }}</span>
                 </div>
                 <div class="test-task-actions">
-                  {% if task.target_type == "remote" and task.resource_id and task.status != "完成" %}
+                  {% if task.target_type == "remote" and task.resource_id and task.status in ["排队中", "部署中", "进行中", "模型下载"] %}
                     <a class="secondary-button test-task-icon-button" href="/resources/{{ task.project }}/server/{{ task.resource_id }}" title="监控" aria-label="监控">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 1 1 16 0"></path><path d="M12 14l4-4"></path><path d="M5 18h14"></path><path d="M8 18v2"></path><path d="M16 18v2"></path></svg>
                       <span>监控</span>
@@ -186,6 +197,12 @@
                         <span>重试</span>
                       </button>
                     </form>
+                    <form method="post" action="/test/tasks/{{ task.id }}/delete" onsubmit="return confirm('确认删除测试任务 {{ task.name }}？');">
+                      <button class="test-task-icon-button test-task-delete-button" type="submit" title="删除" aria-label="删除">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+                        <span>删除</span>
+                      </button>
+                    </form>
                   {% endif %}
                   {% if task.status in ["排队中", "部署中", "进行中", "模型下载"] %}
                     <form method="post" action="/test/tasks/{{ task.id }}/cancel">
@@ -197,6 +214,14 @@
                   {% endif %}
                 </div>
               </div>
+              {% if task.test_set_info %}
+                <div class="test-task-set-info">
+                  <span>测试集</span>
+                  <strong>{{ task.test_set_info.name }}</strong>
+                  <p>{{ task.test_set_info.description or "暂无描述" }}</p>
+                  <b>{{ task.test_set_info.count }} 张图片</b>
+                </div>
+              {% endif %}
               <div class="test-task-tags test-task-tags-{{ task.status }}" aria-label="测试模型">
                 {% for model_name in task.model_names %}
                   <span class="tag-color-{{ loop.index0 % 6 }}{% if loop.index <= task.completed_models %} passed{% endif %}">{{ model_name }}</span>
@@ -223,7 +248,7 @@
   {% set footer_left = workspace %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260516-save-progress"></script>
+  <script src="/static/js/project.js?v=20260517-no-auto-console"></script>
   <script>
     (() => {
       const dialog = document.querySelector("[data-test-dialog]");
@@ -339,8 +364,6 @@
 
       document.querySelectorAll("[data-view-test-log]").forEach(button => {
         button.addEventListener("click", () => watchTaskLog(button));
-        const status = button.closest(".test-task-card")?.querySelector(".test-status")?.textContent || "";
-        if (activeStatuses.has(status)) watchTaskLog(button);
       });
     })();
   </script>
