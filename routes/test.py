@@ -382,6 +382,7 @@ def test_sets(project_dir: Path | None):
                 "name": item.name,
                 "description": str((meta.get(item.name) or {}).get("description") or ""),
                 "count": total,
+                "color": colors[len(sets) % len(colors)],
                 "extensions": extension_items,
             }
         )
@@ -1989,18 +1990,16 @@ async def upload_test_sets_batch(directory: str, request: Request):
                 skipped += 1
             else:
                 parts = relative.parts
-                if len(parts) < 3:
-                    error = "批量上传目录必须包含一级子目录，图片放在一级子目录内。"
+                if len(parts) < 2:
+                    error = "请选择文件夹批量上传。"
                     break
-                if len(parts) > 3:
-                    error = "一级子目录中不能再包含目录。"
-                    break
-                set_name = safe_test_set_name(parts[1])
+                set_name = safe_test_set_name(parts[1] if len(parts) >= 3 else parts[0])
                 if not set_name or relative.suffix.lower() not in IMAGE_EXTS:
                     skipped += 1
                 else:
                     update_test_set_meta(path, set_name)
-                    target = root / set_name / parts[-1]
+                    target_parts = parts[2:] if len(parts) >= 3 else parts[1:]
+                    target = root / set_name / Path(*target_parts)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(content)
                     saved.append(target)

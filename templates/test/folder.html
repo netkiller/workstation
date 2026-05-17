@@ -21,7 +21,7 @@
     <section class="test-upload-card" aria-labelledby="test-upload-title">
       <div class="test-upload-head">
         <div>
-          <h2 id="test-upload-title">测试图片</h2>
+          <h2 id="test-upload-title">图像上传</h2>
           <p>上传测试资源，远程算力会同步使用这一份测试数据。</p>
         </div>
       </div>
@@ -36,7 +36,9 @@
         </label>
         <div class="test-set-field-footer">
           <p class="test-set-batch-hint">{% if folder_mode == "edit" %}修改名称会同步重命名测试集目录。{% else %}批量上传会按一级子目录自动创建测试集，无需填写名称和描述。{% endif %}</p>
-          <button type="submit">{% if folder_mode == "edit" %}保存测试集{% else %}创建测试集{% endif %}</button>
+          {% if folder_mode == "edit" %}
+            <button type="submit">保存测试集</button>
+          {% endif %}
         </div>
       </form>
       <div class="test-upload-body">
@@ -46,8 +48,16 @@
             {% if folder_mode != "edit" %}
               <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-batch-directory-input>
             {% endif %}
-            <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-            <span>{% if folder_mode == "edit" %}点击追加测试图片，或拖拽到这里{% else %}点击上传测试图片，或拖拽到这里{% endif %}</span>
+            <span class="upload-icon" aria-hidden="true">
+              <span class="upload-symbol">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 16V5"></path>
+                  <path d="M7 10l5-5 5 5"></path>
+                  <path d="M5 19h14"></path>
+                </svg>
+              </span>
+            </span>
+            <span data-upload-prompt>{% if folder_mode == "edit" %}点击追加测试图片，或拖拽到这里{% else %}点击上传测试图片，或拖拽到这里{% endif %}</span>
             {% if folder_mode != "edit" %}
             <span class="upload-options">
               <button type="button" class="upload-option-icon-button test-batch-upload-button" data-batch-directory-button title="批量上传" aria-label="批量上传">
@@ -72,10 +82,22 @@
         </div>
       </div>
     </section>
+    <section class="test-batch-progress-card" data-test-batch-progress-card hidden aria-labelledby="test-batch-progress-title">
+      <div class="test-upload-head">
+        <div>
+          <h2 id="test-batch-progress-title">批量上传</h2>
+          <p>按文件夹中的一级子目录创建测试集，并实时展示每个测试集的上传进度。</p>
+        </div>
+      </div>
+      <div class="test-batch-progress-list" data-test-batch-progress-list></div>
+      <div class="test-batch-progress-actions" data-test-batch-progress-actions hidden>
+        <a class="secondary-button" href="/test/{{ current_project }}">新建任务</a>
+      </div>
+    </section>
   </main>
 
   {% set footer_id = "stats" %}
   {% set footer_left = workspace %}
   {% include "partials/footer.html" %}
-  <script src="/static/js/project.js?v=20260517-upload-file-progress"></script>
+  <script src="/static/js/project.js?v=20260518-test-batch-folder-progress"></script>
 {% endblock %}

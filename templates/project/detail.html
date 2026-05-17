@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260518-run-model-tags-normal-weight">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260518-dataset-model-tags">
 {% endblock %}
 
 {% block content %}
@@ -165,20 +165,38 @@
 
         </section>
 
+        <section class="project-dataset-tags-card" aria-labelledby="project-dataset-tags-title">
+          <div class="panel-head">
+            <h2 id="project-dataset-tags-title">数据集</h2>
+            <span class="count">{{ project.dataset_tags | length }} 个</span>
+          </div>
+          <div class="project-resource-tags" aria-label="datasets 数据集列表">
+            {% if project.dataset_tags %}
+              {% for dataset in project.dataset_tags %}
+                <a class="project-resource-tag" href="{{ dataset.url }}" style="--resource-tag-color: {{ dataset.color }}" title="{{ dataset.name }}{% if dataset.updated_at %} · {{ dataset.updated_at }}{% endif %}">
+                  <b>{{ dataset.name }}</b>
+                </a>
+              {% endfor %}
+            {% else %}
+              <span class="project-resource-empty">暂无数据集</span>
+            {% endif %}
+          </div>
+        </section>
+
         <section class="project-run-models-card" aria-labelledby="project-run-models-title">
           <div class="panel-head">
             <h2 id="project-run-models-title">模型</h2>
             <span class="count">{{ project.run_models | length }} 个</span>
           </div>
-          <div class="project-run-model-tags" aria-label="runs 模型列表">
+          <div class="project-resource-tags" aria-label="runs 模型列表">
             {% if project.run_models %}
               {% for model in project.run_models %}
-                <a class="project-run-model-tag" href="{{ model.url }}" style="--model-tag-color: {{ model.color }}" title="{{ model.label }}{% if model.updated_at %} · {{ model.updated_at }}{% endif %}">
+                <a class="project-resource-tag" href="{{ model.url }}" style="--resource-tag-color: {{ model.color }}" title="{{ model.label }}{% if model.updated_at %} · {{ model.updated_at }}{% endif %}">
                   <b>{{ model.label }}</b>
                 </a>
               {% endfor %}
             {% else %}
-              <span class="project-run-model-empty">runs 下暂无模型</span>
+              <span class="project-resource-empty">runs 下暂无模型</span>
             {% endif %}
           </div>
         </section>

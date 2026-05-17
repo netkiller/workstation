@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260517-task-set-name-small">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260518-test-set-card-colors">
 {% endblock %}
 
 {% block content %}
@@ -45,7 +45,7 @@
               <span>算力</span>
               <select name="resource_id">
                 {% for item in compute_options %}
-                  <option value="{{ item.id }}">{{ item.name }}{% if item.address and item.id != "local" %} · {{ item.address }}{% endif %}</option>
+                  <option value="{{ item.id }}">{{ item.name }}</option>
                 {% endfor %}
               </select>
             </label>
@@ -107,14 +107,6 @@
           <p>管理用于模型测试评估的测试集。</p>
         </div>
         <div class="model-head-actions test-set-head-actions">
-          <div class="test-batch-create-zone" data-upload-zone data-upload-kind="test">
-            <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
-            <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-batch-directory-input>
-            <button class="secondary-button" type="button" data-batch-directory-button>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
-              <span>批量新建测试集</span>
-            </button>
-          </div>
           <a class="secondary-button" href="/test/{{ current_project }}/folder">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
             <span>新建测试集</span>
@@ -125,7 +117,7 @@
         {% if test_sets %}
           <div class="test-set-list">
             {% for item in test_sets %}
-              <article class="test-set-card">
+              <article class="test-set-card" style="--test-set-color: {{ item.color }};">
                 <div class="test-set-card-head">
                   <div>
                     <h3>{{ item.name }}</h3>

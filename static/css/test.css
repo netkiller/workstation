@@ -32,6 +32,23 @@
   background: #ffffff;
 }
 
+.test-upload-card[hidden] {
+  display: none;
+}
+
+.test-batch-progress-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.test-batch-progress-card[hidden] {
+  display: none;
+}
+
 .test-upload-head {
   display: flex;
   align-items: flex-start;
@@ -171,9 +188,12 @@
   display: grid;
   gap: 12px;
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid color-mix(in srgb, var(--test-set-color, #2563eb) 30%, #d7e1ee);
   border-radius: 8px;
-  background: #ffffff;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .82)),
+    radial-gradient(circle at 94% 8%, color-mix(in srgb, var(--test-set-color, #2563eb) 14%, transparent), transparent 42%),
+    color-mix(in srgb, var(--test-set-color, #2563eb) 5%, #ffffff);
 }
 
 .test-set-card-head {
@@ -227,6 +247,7 @@
 
 .test-set-card-head h3 {
   margin: 0;
+  color: var(--test-set-color, #243b53);
   font-size: 16px;
 }
 
@@ -368,8 +389,8 @@
 
 .test-drop-zone .upload-icon {
   --upload-progress: 0%;
-  width: 56px;
-  height: 56px;
+  width: 68px;
+  height: 68px;
   position: relative;
   display: grid;
   place-items: center;
@@ -378,7 +399,7 @@
   border-radius: 50%;
   background: #ffffff;
   color: #1d4ed8;
-  font-size: 30px;
+  font-size: 36px;
   font-weight: 800;
 }
 
@@ -388,7 +409,7 @@
   inset: 0;
   border-radius: inherit;
   opacity: 0;
-  background: conic-gradient(from -90deg, rgb(37 99 235 / 58%) var(--upload-progress, 0%), rgb(226 232 240 / 82%) 0);
+  background: conic-gradient(from 0deg, rgb(37 99 235 / 58%) var(--upload-progress, 0%), rgb(226 232 240 / 82%) 0);
   pointer-events: none;
   transition: opacity 120ms ease, background 160ms ease;
 }
@@ -404,6 +425,29 @@
 .test-drop-zone .upload-symbol {
   position: relative;
   z-index: 1;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.test-drop-zone .upload-symbol svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.test-drop-zone .upload-symbol.upload-symbol-percent {
+  width: auto;
+  height: auto;
+  font-size: 17px;
+  font-weight: 800;
 }
 
 .test-drop-zone.upload-processing .upload-icon {
@@ -434,12 +478,15 @@
   font-size: 12px;
 }
 
-.test-drop-zone.upload-processing > span:nth-of-type(2) {
-  color: #1d4ed8;
+.test-drop-zone [data-upload-prompt] {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.test-drop-zone.upload-processing > span:nth-of-type(2)::after {
-  content: "，正在处理";
+.test-drop-zone.upload-processing > span:nth-of-type(2) {
+  color: #1d4ed8;
 }
 
 @keyframes upload-breathe {
@@ -517,6 +564,87 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
   gap: 10px;
+}
+
+.test-batch-progress-list {
+  display: grid;
+  gap: 10px;
+}
+
+.test-batch-progress-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--batch-color, #2563eb) 28%, #d7e1ee);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(255, 255, 255, .84)),
+    color-mix(in srgb, var(--batch-color, #2563eb) 6%, #ffffff);
+}
+
+.test-batch-progress-item strong {
+  display: block;
+  color: var(--batch-color, #2563eb);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.test-batch-progress-item span {
+  display: block;
+  min-height: 18px;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-batch-progress-item em {
+  height: 8px;
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--batch-color, #2563eb) 12%, #e2e8f0);
+}
+
+.test-batch-progress-item em i {
+  width: 0%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--batch-color, #2563eb);
+  transition: width 160ms ease;
+}
+
+.test-batch-progress-item b {
+  min-width: 56px;
+  color: var(--batch-color, #2563eb);
+  font-size: 16px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.test-batch-progress-item.complete b {
+  color: #16a34a;
+  font-size: 20px;
+}
+
+.test-batch-progress-item.complete span {
+  display: none;
+}
+
+.test-batch-progress-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.test-batch-progress-actions[hidden] {
+  display: none;
 }
 
 .test-classes-upload {

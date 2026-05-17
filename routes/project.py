@@ -50,6 +50,7 @@ IMAGE_EXTS = {
 MODEL_EXTS = {".pt", ".onnx", ".engine", ".torchscript", ".tflite", ".mlmodel"}
 RUN_WEIGHT_FILES = {"best.pt", "last.pt"}
 MODEL_TAG_COLORS = ("#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
+DATASET_TAG_COLORS = ("#16a34a", "#1667c7", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
 USER_HEARTBEAT_TIMEOUT = 45
 PROJECT_UPLOAD_LOG = ".project.log"
 WORKSPACE_LOG = ".workstation/workspace.log"
@@ -723,6 +724,28 @@ def project_run_models(path: Path):
 def run_model_id(project: str, run_name: str):
     raw = f"{project}/{run_name}".encode("utf-8")
     return "run-" + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def project_dataset_tags(path: Path):
+    datasets_dir = path / "datasets"
+    if not datasets_dir.is_dir():
+        return []
+    project_name = path.name
+    datasets = []
+    for dataset_dir in sorted((item for item in datasets_dir.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
+        try:
+            updated_at = datetime.fromtimestamp(dataset_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            updated_at = ""
+        datasets.append(
+            {
+                "name": dataset_dir.name,
+                "color": DATASET_TAG_COLORS[len(datasets) % len(DATASET_TAG_COLORS)],
+                "url": f"/dataset/{quote(project_name, safe='')}/{quote(dataset_dir.name, safe='')}",
+                "updated_at": updated_at,
+            }
+        )
+    return datasets
 
 
 def read_classes(path: Path):
@@ -1475,6 +1498,7 @@ def project_detail(directory: str, request: Request):
                     "has_classes": has_classes,
                     "project_ready": project_ready,
                     "classes_text": (path / ANNOTATE_DIR / "classes.txt").read_text(encoding="utf-8") if has_classes else "",
+                    "dataset_tags": project_dataset_tags(path),
                     "run_models": project_run_models(path),
                 },
                 "remote_user": getpass.getuser(),
