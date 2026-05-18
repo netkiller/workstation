@@ -1683,25 +1683,26 @@
 
 .train-dialog-close {
   width: 32px;
-  height: 32px;
-  display: inline-flex;
+  min-width: 32px;
+  height: 32px !important;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 24px;
+  padding: 0 !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #334e68 !important;
+  font: inherit !important;
+  font-size: 20px !important;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
 
 .train-dialog-close:hover {
-  border-color: var(--line);
-  background: #f8fafc;
-  color: var(--text);
+  background: #e6f0ff !important;
+  color: #243b53 !important;
 }
 
 .train-dialog label {

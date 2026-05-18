@@ -1365,16 +1365,16 @@ main > :where(
 .resource-server a,
 .resource-server button,
 .resource-back-link {
-  width: 86px;
+  width: 108px;
   height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
   padding: 0 9px;
-  border: 1px solid transparent;
+  border: 1px solid color-mix(in srgb, var(--resource-line, var(--line)) 78%, #ffffff);
   border-radius: 6px;
-  background: transparent;
+  background: #ffffff;
   color: var(--resource-accent, #334e68);
   font-size: 12px;
   font-weight: 750;
@@ -1390,24 +1390,36 @@ main > :where(
   gap: 8px;
 }
 
+.resource-server-actions > * {
+  align-self: center;
+}
+
 .resource-server-actions form {
-  flex: 0 0 86px;
-  width: 86px;
+  flex: 0 0 108px;
+  width: 108px;
   height: 32px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin: 0;
 }
 
 .resource-server-actions > a,
 .resource-server-actions > button,
 .resource-server-actions form > button {
-  flex: 0 0 86px;
-  width: 86px;
-  min-width: 86px;
-  max-width: 86px;
-  height: 32px;
+  flex: 0 0 108px;
+  width: 108px;
+  min-width: 108px;
+  max-width: 108px;
+  height: 32px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   appearance: none;
+  border-color: color-mix(in srgb, var(--resource-line, var(--line)) 78%, #ffffff) !important;
+  background: #ffffff !important;
+  color: var(--resource-accent, #334e68) !important;
 }
 
 .resource-server-actions form > button {
@@ -1420,6 +1432,8 @@ main > :where(
 
 .resource-server-actions span {
   margin: 0;
+  min-width: 0;
+  overflow: visible;
   color: currentColor;
   font-size: 12px;
   line-height: 1;
@@ -1427,11 +1441,11 @@ main > :where(
 }
 
 .resource-server button.resource-danger-action {
-  width: 86px;
-  height: 32px;
-  color: #b42318;
-  border-color: transparent;
-  background: transparent;
+  width: 108px;
+  height: 32px !important;
+  color: var(--resource-accent, #334e68) !important;
+  border-color: color-mix(in srgb, var(--resource-line, var(--line)) 78%, #ffffff) !important;
+  background: #ffffff !important;
 }
 
 .resource-server-actions svg {
@@ -1448,15 +1462,15 @@ main > :where(
 .resource-server a:hover,
 .resource-server button:hover,
 .resource-back-link:hover {
-  border-color: var(--resource-accent, #93c5fd);
-  background: color-mix(in srgb, var(--resource-accent, #2563eb) 10%, #ffffff);
-  color: var(--resource-accent, #243b53);
+  border-color: var(--resource-accent, #93c5fd) !important;
+  background: color-mix(in srgb, var(--resource-accent, #2563eb) 10%, #ffffff) !important;
+  color: var(--resource-accent, #243b53) !important;
 }
 
 .resource-server button.resource-danger-action:hover {
-  color: #8a1f14;
-  border-color: #f5b5b5;
-  background: #fffafa;
+  color: var(--resource-accent, #243b53) !important;
+  border-color: var(--resource-accent, #93c5fd) !important;
+  background: color-mix(in srgb, var(--resource-accent, #2563eb) 10%, #ffffff) !important;
 }
 
 .resource-alert {
