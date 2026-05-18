@@ -496,7 +496,7 @@
 }
 
 .model-entry-radar-layout {
-  grid-template-columns: minmax(260px, .75fr) minmax(340px, .9fr) minmax(360px, 1.2fr);
+  grid-template-columns: minmax(260px, .7fr) minmax(420px, 1.15fr) minmax(340px, 1.05fr);
   align-items: stretch;
 }
 
@@ -528,7 +528,7 @@
 }
 
 .model-entry-half .model-radar-visual {
-  height: 258px;
+  height: 286px;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }

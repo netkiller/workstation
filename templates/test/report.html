@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试报告{% else %}测试报告{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260517-report-training-args">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260518-report-no-original-preview">
 {% endblock %}
 
 {% block content %}
@@ -99,21 +99,6 @@
       </div>
     </section>
 
-    <section class="test-report-panel" aria-label="图片结果预览">
-      <div class="test-report-section-head">
-        <div>
-          <h2>图片结果</h2>
-          <p>查看原图与各模型输出的带框结果，用于快速对比同一张图片的识别差异。</p>
-        </div>
-        <div class="test-report-pager">
-          <button type="button" data-report-prev>上一张</button>
-          <span><b data-report-current>1</b>/<b>{{ report.image_count }}</b></span>
-          <button type="button" data-report-next>下一张</button>
-        </div>
-      </div>
-      <article class="test-report-preview-card" data-report-preview></article>
-    </section>
-
     <section class="test-report-panel" aria-label="训练参数">
       <div class="test-report-section-head">
         <div>
@@ -147,6 +132,21 @@
       {% else %}
         <div class="test-report-args-empty">未发现 args.yaml 差异，或训练参数文件不存在。</div>
       {% endif %}
+    </section>
+
+    <section class="test-report-panel" aria-label="图片结果预览">
+      <div class="test-report-section-head">
+        <div>
+          <h2>图片结果</h2>
+          <p>查看各模型输出的带框结果，用于快速对比同一张图片的识别差异。</p>
+        </div>
+        <div class="test-report-pager">
+          <button type="button" data-report-prev>上一张</button>
+          <span><b data-report-current>1</b>/<b>{{ report.image_count }}</b></span>
+          <button type="button" data-report-next>下一张</button>
+        </div>
+      </div>
+      <article class="test-report-preview-card" data-report-preview></article>
     </section>
 
     <section class="test-report-panel" aria-label="测试报告表格">
@@ -257,9 +257,6 @@
         const previews = row.previews || {};
         const originals = row.original_previews || {};
         const items = [];
-        if (row.image_url) {
-          items.push({label: row.image, thumb: row.image_url, original: row.original_url || row.image_url});
-        }
         models.forEach(name => {
           if (previews[name]) {
             items.push({
@@ -336,10 +333,6 @@
         const previews = row.previews || {};
         const originals = row.original_previews || {};
         preview.innerHTML = `
-          <div class="test-report-preview-original">
-            <span>${escapeHtml(row.image)}</span>
-            ${imageButton(row.image_url, row.original_url, row.image, row.image)}
-          </div>
           <div class="test-report-preview-models">
             ${models.map(name => `<div><strong>${escapeHtml(name)}</strong>${imageButton(previews[name], originals[name], `${row.image} ${name}`, `${row.image} · ${name}`)}</div>`).join("")}
           </div>

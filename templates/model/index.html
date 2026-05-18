@@ -4,18 +4,18 @@
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
-  <link rel="stylesheet" href="/static/css/train.css?v=20260518-model-radar-label-gap">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260518-model-radar-side-room">
 {% endblock %}
 
 {% block content %}
   {% macro radar_panel(radar, label, show_legend=false) %}
     <div class="model-entry-visual model-radar-visual" aria-label="{{ label }}">
-      <svg viewBox="0 0 150 132" role="img" aria-label="{{ label }}">
+      <svg viewBox="{{ radar.view_box }}" role="img" aria-label="{{ label }}">
         {% for polygon in radar.grid %}
           <polygon class="chart-radar-grid" points="{{ polygon }}"></polygon>
         {% endfor %}
         {% for axis in radar.axes %}
-          <line class="chart-radar-axis" x1="75" y1="{{ radar.center_y }}" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
+          <line class="chart-radar-axis" x1="{{ radar.center_x }}" y1="{{ radar.center_y }}" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
         {% endfor %}
         {% for series in radar.series %}
           <g class="model-radar-series" data-radar-series="{{ loop.index0 }}" style="--series-color: {{ series.color }}">

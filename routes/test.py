@@ -1456,12 +1456,14 @@ def task_view(task: dict):
             "name": selected_set,
             "description": str(view.get("test_set_description") or ""),
             "count": int(view.get("test_set_image_count") or 0),
+            "color": "#2563eb",
         }
         project_dir = project_path(workspace_path(), str(view.get("project") or ""))
         live_info = test_set_detail(project_dir, selected_set) if project_dir else None
         if live_info:
             info["description"] = str(live_info.get("description") or info["description"])
             info["count"] = int(live_info.get("count") or info["count"])
+            info["color"] = str(live_info.get("color") or info["color"])
         view["test_set"] = selected_set
         view["test_set_info"] = info
     return view

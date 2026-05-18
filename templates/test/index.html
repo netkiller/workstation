@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260518-test-set-card-colors">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260518-task-set-color">
 {% endblock %}
 
 {% block content %}
@@ -207,7 +207,7 @@
                 </div>
               </div>
               {% if task.test_set_info %}
-                <div class="test-task-set-info">
+                <div class="test-task-set-info" style="--test-set-color: {{ task.test_set_info.color }};">
                   <span>测试集</span>
                   <strong>{{ task.test_set_info.name }}</strong>
                   <p>{{ task.test_set_info.description or "暂无描述" }}</p>

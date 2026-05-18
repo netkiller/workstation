@@ -30,7 +30,16 @@ def _format_radar_value(value, digits=3):
     return f"{value:.{digits}f}"
 
 
-def _radar_context(metric_labels, raw_series, normalize_by_axis=True, radius=60, label_scale=1.14, center_y=70):
+def _radar_context(
+    metric_labels,
+    raw_series,
+    normalize_by_axis=True,
+    radius=60,
+    label_scale=1.14,
+    center_y=70,
+    side_label_offset=0,
+    view_box="0 0 150 132",
+):
     colors = ("#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
     max_values = {
         label: max((series["values"].get(label, 0) for series in raw_series), default=0)
@@ -53,6 +62,10 @@ def _radar_context(metric_labels, raw_series, normalize_by_axis=True, radius=60,
     for index, label in enumerate(metric_labels):
         end = point(index)
         label_point = point(index, label_scale)
+        if side_label_offset and label == "mAP50":
+            label_point["x"] += side_label_offset
+        elif side_label_offset and label == "Recall":
+            label_point["x"] -= side_label_offset
         axes.append({"label": label, **end, "label_x": label_point["x"], "label_y": label_point["y"]})
 
     series_items = []
@@ -88,7 +101,9 @@ def _radar_context(metric_labels, raw_series, normalize_by_axis=True, radius=60,
         "axes": axes,
         "grid": [points_string([point(index, scale) for index in range(len(metric_labels))]) for scale in (0.2, 0.4, 0.6, 0.8, 1)],
         "series": series_items,
+        "center_x": center_x,
         "center_y": center_y,
+        "view_box": view_box,
     }
 
 
@@ -109,7 +124,15 @@ def model_radar_context(models):
                 "values": {label: lookup.get(label) or 0 for label in metric_labels},
             }
         )
-    return _radar_context(metric_labels, raw_series, radius=64, label_scale=1.06, center_y=74)
+    return _radar_context(
+        metric_labels,
+        raw_series,
+        radius=64,
+        label_scale=1.06,
+        center_y=70,
+        side_label_offset=8,
+        view_box="-10 0 170 132",
+    )
 
 
 def csv_radar_context(models, metric_labels):
@@ -127,7 +150,7 @@ def csv_radar_context(models, metric_labels):
         values = {label: _metric_number(row.get(label)) or 0 for label in metric_labels}
         task = model.get("task") or {}
         raw_series.append({"name": task.get("name") or "未命名模型", "values": values})
-    return _radar_context(metric_labels, raw_series)
+    return _radar_context(metric_labels, raw_series, radius=52, label_scale=1.12, center_y=70)
 
 
 def model_context(request: Request, current_project: str):

@@ -259,7 +259,31 @@ def _report_media_path(task_id: str, image_index: int, model: int | None = None)
         raise HTTPException(status_code=404, detail="project not found")
     image_name = report_row_image_name(report, image_index)
     if model is None:
-        image_path = test_images_dir(project_workspace) / image_name
+        images_root = test_images_dir(project_workspace)
+        selected_sets = []
+        if task.get("test_set"):
+            selected_sets.append(str(task.get("test_set")))
+        selected_sets.extend(str(item) for item in (task.get("test_sets") or []) if str(item))
+        candidates = [images_root / image_name]
+        for set_name in dict.fromkeys(selected_sets):
+            candidates.append(images_root / set_name / image_name)
+            candidates.append(images_root / set_name / Path(image_name).name)
+        candidates.append(images_root / Path(image_name).name)
+        image_path = next(
+            (candidate for candidate in candidates if candidate.is_file() and candidate.suffix.lower() in IMAGE_EXTS),
+            None,
+        )
+        if image_path is None:
+            image_path = next(
+                (
+                    candidate
+                    for candidate in sorted(images_root.rglob(Path(image_name).name), key=lambda item: item.as_posix().lower())
+                    if candidate.is_file() and candidate.suffix.lower() in IMAGE_EXTS
+                ),
+                None,
+            )
+        if image_path is None:
+            raise HTTPException(status_code=404, detail="image not found")
     else:
         models = report.get("models") or []
         if model < 0 or model >= len(models):
