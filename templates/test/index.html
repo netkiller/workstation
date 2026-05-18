@@ -238,6 +238,9 @@
 
   {% set footer_id = "stats" %}
   {% set footer_left = workspace %}
+  {% if tasks %}
+    {% set footer_console_url = "/test/tasks/" ~ tasks[0].id ~ "/logs" %}
+  {% endif %}
   {% include "partials/footer.html" %}
 
   <script src="/static/js/project.js?v=20260517-no-auto-console"></script>

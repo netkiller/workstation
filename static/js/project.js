@@ -980,6 +980,10 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   const clearButton = zone.querySelector("[data-clear-upload]");
 
   zone.addEventListener("click", (event) => {
+    if (zone.classList.contains("uploading")) {
+      event.preventDefault();
+      return;
+    }
     if (event.target.closest("input")) {
       return;
     }
@@ -995,6 +999,10 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
     input.click();
   });
   zone.addEventListener("keydown", (event) => {
+    if (zone.classList.contains("uploading")) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") {
       return;
     }
@@ -1018,11 +1026,13 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   directoryButton?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (zone.classList.contains("uploading")) return;
     directoryInput?.click();
   });
   batchDirectoryButton?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (zone.classList.contains("uploading")) return;
     batchDirectoryInput?.click();
   });
   clearButton?.addEventListener("click", (event) => {
@@ -1032,11 +1042,13 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   });
   zone.addEventListener("dragover", (event) => {
     event.preventDefault();
+    if (zone.classList.contains("uploading")) return;
     zone.classList.add("dragging");
   });
   zone.addEventListener("dragleave", () => zone.classList.remove("dragging"));
   zone.addEventListener("drop", async (event) => {
     event.preventDefault();
+    if (zone.classList.contains("uploading")) return;
     zone.classList.remove("dragging");
     uploadFiles(zone, await filesFromDataTransfer(event.dataTransfer));
   });

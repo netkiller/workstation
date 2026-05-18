@@ -495,6 +495,11 @@
   min-width: 0;
 }
 
+.model-entry-radar-layout {
+  grid-template-columns: minmax(260px, .75fr) minmax(340px, .9fr) minmax(360px, 1.2fr);
+  align-items: stretch;
+}
+
 .model-entry-visual {
   height: 148px;
   display: grid;
@@ -513,7 +518,7 @@
 
 .model-radar-visual {
   height: 340px;
-  grid-template-columns: minmax(430px, 1.05fr) minmax(280px, .75fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   place-items: center stretch;
 }
@@ -524,7 +529,7 @@
 
 .model-entry-half .model-radar-visual {
   height: 258px;
-  grid-template-columns: minmax(240px, 1fr) minmax(180px, 220px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -558,6 +563,9 @@
   font-weight: 700;
   text-anchor: middle;
   dominant-baseline: central;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, .92);
+  stroke-width: 2px;
 }
 
 .model-entry-visual .chart-area,
@@ -606,10 +614,28 @@
   min-width: 0;
 }
 
+.model-radar-wide .model-radar-visual {
+  height: 330px;
+}
+
 .model-radar-wide .model-radar-legend {
   grid-template-columns: repeat(2, minmax(150px, 1fr));
   align-content: center;
   column-gap: 12px;
+}
+
+.model-radar-global-legend {
+  max-height: none;
+  align-content: start;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--entry-line) 72%, #ffffff);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .62);
+}
+
+.model-radar-global-legend.model-radar-legend {
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  overflow: visible;
 }
 
 .model-radar-wide .chart-radar-label {

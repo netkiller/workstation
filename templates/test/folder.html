@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if folder_mode == "edit" %}编辑测试集{% else %}新建测试集{% endif %}{% endblock %}
+{% block title %}{% if folder_mode == "edit" %}调整测试集{% else %}新建测试集{% endif %}{% endblock %}
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/test.css?v=20260517-edit-test-set-name">
@@ -10,7 +10,7 @@
   <main class="test-main" data-test-page data-project="{{ current_project }}">
     <section class="test-head" aria-labelledby="test-set-title">
       <div>
-        <h1 id="test-set-title">{% if folder_mode == "edit" %}编辑测试集{% else %}新建测试集{% endif %}</h1>
+        <h1 id="test-set-title">{% if folder_mode == "edit" %}调整测试集{% else %}新建测试集{% endif %}</h1>
         <p>{% if folder_mode == "edit" %}追加测试图片并维护测试集描述。{% else %}创建一组测试图片资源，用于后续模型测试评估任务。{% endif %}</p>
       </div>
       <div class="model-head-actions">
@@ -24,6 +24,9 @@
           <h2 id="test-upload-title">图像上传</h2>
           <p>上传测试资源，远程算力会同步使用这一份测试数据。</p>
         </div>
+        {% if folder_mode == "edit" %}
+          <span class="count">{{ image_count }} 张图片</span>
+        {% endif %}
       </div>
       <form class="test-set-fields" method="post" action="{% if folder_mode == 'edit' %}/project/{{ current_project }}/test-sets/{{ test_set.name|urlencode }}{% else %}/project/{{ current_project }}/test-sets{% endif %}">
         <label>

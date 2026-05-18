@@ -4,19 +4,18 @@
 
 {% block styles %}
   <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
-  <link rel="stylesheet" href="/static/css/train.css?v=20260518-model-radar-model-line-075">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260518-model-radar-label-gap">
 {% endblock %}
 
 {% block content %}
-  {% macro radar_panel(radar, label) %}
+  {% macro radar_panel(radar, label, show_legend=false) %}
     <div class="model-entry-visual model-radar-visual" aria-label="{{ label }}">
       <svg viewBox="0 0 150 132" role="img" aria-label="{{ label }}">
         {% for polygon in radar.grid %}
           <polygon class="chart-radar-grid" points="{{ polygon }}"></polygon>
         {% endfor %}
         {% for axis in radar.axes %}
-          <line class="chart-radar-axis" x1="75" y1="70" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
-          <text class="chart-radar-label" x="{{ '%.1f'|format(axis.label_x) }}" y="{{ '%.1f'|format(axis.label_y) }}">{{ axis.label }}</text>
+          <line class="chart-radar-axis" x1="75" y1="{{ radar.center_y }}" x2="{{ '%.1f'|format(axis.x) }}" y2="{{ '%.1f'|format(axis.y) }}"></line>
         {% endfor %}
         {% for series in radar.series %}
           <g class="model-radar-series" data-radar-series="{{ loop.index0 }}" style="--series-color: {{ series.color }}">
@@ -27,16 +26,21 @@
             {% endfor %}
           </g>
         {% endfor %}
-      </svg>
-      <div class="model-radar-legend" aria-label="模型图例">
-        {% for series in radar.series %}
-          <button type="button" title="{{ series.name }}" data-radar-toggle="{{ loop.index0 }}" aria-pressed="true">
-            <i style="--series-color: {{ series.color }}"></i><b>{{ series.name }}</b>
-          </button>
-        {% else %}
-          <span class="muted">暂无模型指标</span>
+        {% for axis in radar.axes %}
+          <text class="chart-radar-label" x="{{ '%.1f'|format(axis.label_x) }}" y="{{ '%.1f'|format(axis.label_y) }}">{{ axis.label }}</text>
         {% endfor %}
-      </div>
+      </svg>
+      {% if show_legend %}
+        <div class="model-radar-legend" aria-label="模型图例">
+          {% for series in radar.series %}
+            <button type="button" title="{{ series.name }}" data-radar-toggle="{{ loop.index0 }}" aria-pressed="true">
+              <i style="--series-color: {{ series.color }}"></i><b>{{ series.name }}</b>
+            </button>
+          {% else %}
+            <span class="muted">暂无模型指标</span>
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
   {% endmacro %}
 
@@ -53,8 +57,8 @@
 
     <section class="validate-tools model-entry-tools" aria-label="模型功能">
       <article class="tool-panel model-entry-panel model-entry-train">
-        <div class="model-entry-copy">
-          <div>
+        <div class="model-entry-copy model-entry-radar-layout">
+          <div class="model-radar-explain-panel">
             <h2>综合评估</h2>
             <div class="model-radar-explain" aria-label="综合评估指标说明">
               <div><b>Epochs</b><p>训练轮数，反映模型训练持续程度。</p></div>
@@ -66,6 +70,15 @@
           </div>
           <div class="model-radar-wide">
             {{ radar_panel(model_radar, "综合评估雷达图") }}
+          </div>
+          <div class="model-radar-legend model-radar-global-legend" aria-label="模型图例">
+            {% for series in model_radar.series %}
+              <button type="button" title="{{ series.name }}" data-radar-toggle="{{ loop.index0 }}" aria-pressed="true">
+                <i style="--series-color: {{ series.color }}"></i><b>{{ series.name }}</b>
+              </button>
+            {% else %}
+              <span class="muted">暂无模型指标</span>
+            {% endfor %}
           </div>
         </div>
       </article>
@@ -139,11 +152,10 @@
       document.querySelectorAll("[data-radar-toggle]").forEach((button) => {
         button.addEventListener("click", () => {
           const id = button.dataset.radarToggle;
-          const root = button.closest(".model-radar-visual");
           const active = button.getAttribute("aria-pressed") !== "false";
           button.setAttribute("aria-pressed", active ? "false" : "true");
           button.classList.toggle("is-muted", active);
-          root?.querySelectorAll(`[data-radar-series="${id}"]`).forEach((series) => {
+          document.querySelectorAll(`[data-radar-series="${id}"]`).forEach((series) => {
             series.classList.toggle("is-hidden", active);
           });
         });
