@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Yolo Workstation</title>
-  <link rel="stylesheet" href="/static/css/framework.css?v=20260516-project-header">
+  <link rel="stylesheet" href="/static/css/framework.css?v=20260518-header-icon-active">
 </head>
 <body class="__BODY_CLASS__" data-team-mode="__TEAM_MODE__">
   <header>
@@ -24,10 +24,11 @@
       <button id="modelButton" class="header-button" title="模型"><span class="header-icon">◎</span><span>模型</span></button>
     </div>
     <div class="header-actions">
-      <button id="autoAnnotate" class="header-button" title="自动标注激活"><span class="header-icon">◎</span><span>自动</span></button>
-      <button id="editModeToggle" class="header-button" title="切换标注状态"><span class="header-icon">●</span><span>标注</span></button>
+      <button id="autoAnnotate" class="header-button" title="自动标注激活"><span class="header-icon">◎</span><span>自动</span><span class="shortcut-hint">⌘R</span></button>
+      <button id="maskAnnotation" class="header-button" title="切换 box 遮罩"><span class="header-icon">◧</span><span>遮罩</span><span class="shortcut-hint">⌘M</span></button>
+      <button id="editModeToggle" class="header-button" title="切换标注状态"><span class="header-icon">●</span><span>标注</span><span class="shortcut-hint">⌘A</span></button>
       <button id="shareButton" class="header-button" title="分享当前页面或当前位置"><span class="header-icon">⇪</span><span>分享</span></button>
-      <button id="downloadImage" class="header-button" title="下载当前图片"><span class="header-icon">⇩</span><span>下载</span></button>
+      <button id="downloadImage" class="header-button" title="下载当前图片"><span class="header-icon">⇩</span><span>下载</span><span class="shortcut-hint">⌘D</span></button>
       <button id="queryButton" class="header-button" title="查询目录或当前文件列表"><span class="header-icon">⌕</span><span>查询</span></button>
     </div>
   </header>

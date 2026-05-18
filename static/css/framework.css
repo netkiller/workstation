@@ -21,6 +21,14 @@ header { height: 44px; display: grid; grid-template-columns: minmax(160px, 1fr) 
 .header-icon { font-size: 15px; line-height: 1; }
 #editModeToggle .header-icon { color: #94a3b8; }
 #editModeToggle.annotation-mode-on .header-icon { color: #dc2626; }
+#autoAnnotate .header-icon,
+#maskAnnotation .header-icon { color: #94a3b8; }
+#autoAnnotate.active,
+#maskAnnotation.active { border-color: #d9e2ec !important; background: #fff !important; color: #334e68 !important; }
+#autoAnnotate.active:hover,
+#maskAnnotation.active:hover { background: #e6f0ff !important; color: #243b53 !important; }
+#autoAnnotate.active .header-icon,
+#maskAnnotation.active .header-icon { color: #dc2626 !important; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 button:disabled:hover { background: transparent; color: inherit; }
 main { height: calc(100vh - 84px); display: grid; grid-template-columns: minmax(360px, 520px) 1px minmax(420px, 1fr) 220px; overflow: hidden; }

@@ -3,11 +3,12 @@
     <div class="shortcut-list">
       <span class="shortcut-key">↑ / ↓</span><span class="shortcut-desc">在目录树中切换目录</span>
       <span class="shortcut-key">← / →</span><span class="shortcut-desc">切换上一张 / 下一张图片</span>
+      <span class="shortcut-key">⌘A</span><span class="shortcut-desc">切换标注状态</span>
       <span class="shortcut-key">⌘M</span><span class="shortcut-desc">切换 box 半透明遮罩</span>
+      <span class="shortcut-key">⌘R</span><span class="shortcut-desc">切换自动标注</span>
       <span class="shortcut-key">⌘S</span><span class="shortcut-desc">保存当前标注</span>
-      <span class="shortcut-key">⌘D</span><span class="shortcut-desc">删除当前标注</span>
+      <span class="shortcut-key">⌘D</span><span class="shortcut-desc">下载当前图片</span>
       <span class="shortcut-key">DEL</span><span class="shortcut-desc">删除选中的 box</span>
-      <span class="shortcut-key">⌘R</span><span class="shortcut-desc">重置当前操作</span>
       <span class="shortcut-key">⌘～ / ⌘` / ⌘0-9</span><span class="shortcut-desc">选择对应索引的标签</span>
       <span class="shortcut-key">ESC</span><span class="shortcut-desc">还原图片缩放 / 关闭快捷键窗口</span>
       <span class="shortcut-key">滚轮</span><span class="shortcut-desc">快速放大或缩小图片</span>
@@ -154,9 +155,8 @@
         <div id="zoomIndicator" class="viewer-zoom">100%</div>
         <div id="lockBanner" class="viewer-lock" hidden></div>
         <div class="viewer-tools">
-          <button id="maskAnnotation" class="tool-button" title="切换 box 遮罩"><span class="header-icon">◧</span><span>遮罩</span><span class="shortcut-hint">⌘M</span></button>
-          <button id="deleteAnnotation" class="tool-button" title="删除当前标注"><span class="header-icon">×</span><span>删除</span><span class="shortcut-hint">⌘D</span></button>
-          <button id="resetAnnotation" class="tool-button" title="重新读取标注"><span class="header-icon">↺</span><span>重置</span><span class="shortcut-hint">⌘R</span></button>
+          <button id="deleteAnnotation" class="tool-button" title="删除当前标注"><span class="header-icon">×</span><span>删除</span></button>
+          <button id="resetAnnotation" class="tool-button" title="重新读取标注"><span class="header-icon">↺</span><span>重置</span></button>
           <button id="saveAnnotation" class="tool-button" title="保存当前标注"><span class="header-icon">✓</span><span>保存</span><span class="shortcut-hint">⌘S</span></button>
           <button id="showFiles" class="icon-button" title="显示文件栏">▯</button>
           <button id="showRight" class="icon-button" title="显示标签/信息栏">☰</button>
@@ -379,6 +379,7 @@
     let savedBoxes = [];
     let draftBox = null;
     let dragStart = null;
+    let lastCanvasPoint = null;
     let selectedBoxIndex = -1;
     let boxHitAreas = [];
     let canvasInteraction = null;
@@ -391,6 +392,7 @@
     let maskEnabled = false;
     let boxesDirty = false;
     let annotationSaving = false;
+    let lastSaveShortcutAt = 0;
     let classLabels = [];
     let classesText = "";
     let selectedClassId = 0;
@@ -1044,7 +1046,7 @@
       autoAnnotate.disabled = !hasModel || autoAnnotateRunning;
       autoAnnotate.classList.toggle("active", hasModel && autoAnnotateEnabled);
       autoAnnotate.querySelector(".header-icon").textContent = autoAnnotateRunning ? "…" : (autoAnnotateEnabled ? "●" : "◎");
-      autoAnnotate.querySelector("span:last-child").textContent = autoAnnotateRunning ? "识别" : "自动";
+      autoAnnotate.querySelector(".header-icon + span").textContent = autoAnnotateRunning ? "识别" : "自动";
       autoAnnotate.title = hasModel
         ? (autoAnnotateEnabled ? `自动识别已启用：${selectedAutoModel}` : `自动识别已禁用：${selectedAutoModel}`)
         : "请选择模型后启用自动识别";
@@ -1214,7 +1216,7 @@
     function updateAnnotationButtons() {
       editModeToggle.classList.toggle("annotation-mode-on", annotateMode);
       editModeToggle.querySelector(".header-icon").textContent = "●";
-      editModeToggle.querySelector("span:last-child").textContent = "标注";
+      editModeToggle.querySelector(".header-icon + span").textContent = "标注";
       editModeToggle.title = annotateMode ? "当前为标注状态" : "当前未开启标注";
       canvas.classList.toggle("annotating", annotateMode);
       const locked = Boolean(lockedByOther);
@@ -2022,8 +2024,10 @@
       window.addEventListener("resize", applyImageZoom);
     }
 
-    async function saveCurrentAnnotation() {
-      if (annotationSaving || !currentPath || lockedByOther || (!boxesDirty && currentLabelFile)) return false;
+    async function saveCurrentAnnotation(options = {}) {
+      const force = Boolean(options.force);
+      commitPendingCanvasInteraction();
+      if (annotationSaving || !currentPath || lockedByOther || (!force && !boxesDirty && currentLabelFile)) return false;
       annotationSaving = true;
       updateAnnotationButtons();
       const savedPath = currentPath;
@@ -2060,14 +2064,33 @@
       return true;
     }
 
+    function isSaveShortcut(event) {
+      if (!(event.metaKey || event.ctrlKey)) return false;
+      const key = String(event.key || "").toLowerCase();
+      const code = String(event.code || "");
+      const keyCode = event.keyCode || event.which || 0;
+      return key === "s" || code === "KeyS" || keyCode === 83;
+    }
+
+    function handleSaveShortcut(event) {
+      if (!isSaveShortcut(event)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      const now = Date.now();
+      if (now - lastSaveShortcutAt < 350) return true;
+      lastSaveShortcutAt = now;
+      saveCurrentAnnotation({force: true});
+      return true;
+    }
+
     function initKeyboardShortcuts() {
+      const saveShortcutOptions = {capture: true};
+      window.addEventListener("keydown", handleSaveShortcut, saveShortcutOptions);
+      document.addEventListener("keydown", handleSaveShortcut, saveShortcutOptions);
+      window.addEventListener("keyup", handleSaveShortcut, saveShortcutOptions);
+      document.addEventListener("keyup", handleSaveShortcut, saveShortcutOptions);
       window.addEventListener("keydown", event => {
         const shortcutKey = String(event.key || "").toLowerCase();
-        if ((event.metaKey || event.ctrlKey) && shortcutKey === "s") {
-          event.preventDefault();
-          saveCurrentAnnotation();
-          return;
-        }
         if (event.target instanceof Element && event.target.closest("input, textarea, select")) return;
         if (event.key === "Escape") {
           if (!shortcutPopover.hidden) {
@@ -2114,15 +2137,18 @@
           selectClassByShortcut(labelShortcut);
         } else if (key === "d") {
           event.preventDefault();
-          if (!deleteAnnotation.disabled) deleteAnnotation.click();
+          downloadCurrentImage();
+        } else if (key === "a") {
+          event.preventDefault();
+          if (!editModeToggle.disabled) editModeToggle.click();
         } else if (key === "m") {
           event.preventDefault();
           maskAnnotation.click();
         } else if (key === "r") {
           event.preventDefault();
-          if (!resetAnnotation.disabled) resetAnnotation.click();
+          if (!autoAnnotate.disabled) autoAnnotate.click();
         }
-      });
+      }, true);
     }
 
     function canvasPoint(event) {
@@ -2214,6 +2240,31 @@
       };
     }
 
+    function commitPendingCanvasInteraction(point = null) {
+      if (!canvasInteraction) return false;
+      let changed = false;
+      const commitPoint = point || lastCanvasPoint;
+      if (canvasInteraction.type === "create" && dragStart) {
+        const box = draftBox || (commitPoint ? boxFromPoints(dragStart, commitPoint) : null);
+        if (box && box.width >= 0.003 && box.height >= 0.003) {
+          currentBoxes.push(box);
+          selectedBoxIndex = currentBoxes.length - 1;
+          changed = true;
+        }
+      } else if (canvasInteraction.type === "move" || canvasInteraction.type === "resize") {
+        changed = true;
+      }
+      canvasInteraction = null;
+      dragStart = null;
+      draftBox = null;
+      lastCanvasPoint = null;
+      canvas.classList.remove("panning");
+      canvas.style.cursor = "";
+      if (changed) setBoxesDirty(true);
+      redrawImage();
+      return changed;
+    }
+
     function initCanvasAnnotation() {
       canvas.addEventListener("mousemove", updateCanvasHoverCursor);
       canvas.addEventListener("mouseleave", () => {
@@ -2242,6 +2293,7 @@
         hideContextMenu();
         if (!currentImage || event.button !== 0 || lockedByOther) return;
         const point = canvasPoint(event);
+        lastCanvasPoint = point;
         const hit = hitTestBox(point);
         if (hit) {
           selectedBoxIndex = hit.index;
@@ -2298,6 +2350,7 @@
           return;
         }
         const point = canvasPoint(event);
+        lastCanvasPoint = point;
         if (canvasInteraction.type === "create" && dragStart) {
           draftBox = boxFromPoints(dragStart, point);
         } else if (canvasInteraction.type === "move") {
@@ -2315,23 +2368,7 @@
       });
       window.addEventListener("mouseup", event => {
         if (!canvasInteraction) return;
-        if (canvasInteraction.type === "create" && dragStart) {
-          const point = canvasPoint(event);
-          const box = boxFromPoints(dragStart, point);
-          if (box.width >= 0.003 && box.height >= 0.003) {
-            currentBoxes.push(box);
-            selectedBoxIndex = currentBoxes.length - 1;
-            setBoxesDirty(true);
-          }
-        } else if (canvasInteraction.type === "move" || canvasInteraction.type === "resize") {
-          setBoxesDirty(true);
-        }
-        canvasInteraction = null;
-        dragStart = null;
-        draftBox = null;
-        canvas.classList.remove("panning");
-        canvas.style.cursor = "";
-        redrawImage();
+        commitPendingCanvasInteraction(canvasPoint(event));
       });
     }
 
