@@ -287,7 +287,8 @@ class Workstation:
                 [float(value) for value in parts[1:]]
             except ValueError:
                 return "invalid"
-            if class_id < 0 or class_id >= self._max_class_count():
+            max_classes = self._max_class_count()
+            if class_id < 0 or (max_classes and class_id >= max_classes):
                 return "invalid"
         return "valid"
 
@@ -692,9 +693,12 @@ class Workstation:
         old_stats = self._label_statistics(label_file)
         if lines:
             label_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            new_stats = self._label_statistics(label_file)
         else:
-            label_file.write_text("", encoding="utf-8")
-        self._apply_index_label_change(old_stats, self._label_statistics(label_file))
+            if label_file.exists():
+                label_file.unlink()
+            new_stats = {"status": "missing", "classes": {}}
+        self._apply_index_label_change(old_stats, new_stats)
         if self.team_mode:
             self._append_operation_log(username or "未命名", relative_path, lines)
         if self.team_mode and client_id:

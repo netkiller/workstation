@@ -390,6 +390,7 @@
     let annotateMode = false;
     let maskEnabled = false;
     let boxesDirty = false;
+    let annotationSaving = false;
     let classLabels = [];
     let classesText = "";
     let selectedClassId = 0;
@@ -1217,7 +1218,7 @@
       editModeToggle.title = annotateMode ? "当前为标注状态" : "当前未开启标注";
       canvas.classList.toggle("annotating", annotateMode);
       const locked = Boolean(lockedByOther);
-      saveAnnotation.disabled = locked || !currentPath || (!boxesDirty && Boolean(currentLabelFile));
+      saveAnnotation.disabled = annotationSaving || locked || !currentPath || (!boxesDirty && Boolean(currentLabelFile));
       resetAnnotation.disabled = locked || !boxesDirty;
       deleteAnnotation.disabled = locked || !currentBoxes.length;
       editModeToggle.disabled = locked;
@@ -2021,8 +2022,52 @@
       window.addEventListener("resize", applyImageZoom);
     }
 
+    async function saveCurrentAnnotation() {
+      if (annotationSaving || !currentPath || lockedByOther || (!boxesDirty && currentLabelFile)) return false;
+      annotationSaving = true;
+      updateAnnotationButtons();
+      const savedPath = currentPath;
+      let annotation;
+      try {
+        annotation = await postJson("/api/annotation", {
+          path: currentPath,
+          client_id: clientId(),
+          username: username || "独立用户",
+          boxes: currentBoxes,
+        });
+      } catch (error) {
+        alert(error.message);
+        await acquireCurrentLock();
+        annotationSaving = false;
+        updateAnnotationButtons();
+        return false;
+      }
+      lockedByOther = null;
+      currentLabelFile = annotation.label_file || "";
+      currentBoxes = cloneBoxes(annotation.boxes);
+      savedBoxes = cloneBoxes(annotation.boxes);
+      setBoxesDirty(false);
+      redrawImage();
+      await loadStatistics();
+      await loadTree();
+      await refreshCurrentFiles();
+      const nextPath = nextAnnotationFilePath(savedPath);
+      if (nextPath) {
+        await selectImage(nextPath, fileRow(nextPath));
+      }
+      annotationSaving = false;
+      updateAnnotationButtons();
+      return true;
+    }
+
     function initKeyboardShortcuts() {
       window.addEventListener("keydown", event => {
+        const shortcutKey = String(event.key || "").toLowerCase();
+        if ((event.metaKey || event.ctrlKey) && shortcutKey === "s") {
+          event.preventDefault();
+          saveCurrentAnnotation();
+          return;
+        }
         if (event.target instanceof Element && event.target.closest("input, textarea, select")) return;
         if (event.key === "Escape") {
           if (!shortcutPopover.hidden) {
@@ -2057,7 +2102,7 @@
           return;
         }
         if (!(event.metaKey || event.ctrlKey)) return;
-        const key = event.key.toLowerCase();
+        const key = shortcutKey;
         if (key === "h") {
           event.preventDefault();
           openHelp();
@@ -2076,9 +2121,6 @@
         } else if (key === "r") {
           event.preventDefault();
           if (!resetAnnotation.disabled) resetAnnotation.click();
-        } else if (key === "s") {
-          event.preventDefault();
-          if (!saveAnnotation.disabled) saveAnnotation.click();
         }
       });
     }
@@ -2322,35 +2364,8 @@
         setBoxesDirty(false);
         redrawImage();
       });
-      saveAnnotation.addEventListener("click", async () => {
-        if (!currentPath || (!boxesDirty && currentLabelFile)) return;
-        const savedPath = currentPath;
-        let annotation;
-        try {
-          annotation = await postJson("/api/annotation", {
-            path: currentPath,
-            client_id: clientId(),
-            username: username || "独立用户",
-            boxes: currentBoxes,
-          });
-        } catch (error) {
-          alert(error.message);
-          await acquireCurrentLock();
-          return;
-        }
-        lockedByOther = null;
-        currentLabelFile = annotation.label_file || "";
-        currentBoxes = cloneBoxes(annotation.boxes);
-        savedBoxes = cloneBoxes(annotation.boxes);
-        setBoxesDirty(false);
-        redrawImage();
-        await loadStatistics();
-        await loadTree();
-        await refreshCurrentFiles();
-        const nextPath = nextAnnotationFilePath(savedPath);
-        if (nextPath) {
-          await selectImage(nextPath, fileRow(nextPath));
-        }
+      saveAnnotation.addEventListener("click", () => {
+        saveCurrentAnnotation();
       });
     }
 
