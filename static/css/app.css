@@ -1365,17 +1365,19 @@ main > :where(
 .resource-server a,
 .resource-server button,
 .resource-back-link {
-  height: 30px;
+  width: 86px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 10px;
-  border: 1px solid var(--line);
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: #ffffff;
-  color: #334e68;
+  background: transparent;
+  color: var(--resource-accent, #334e68);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 750;
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
@@ -1389,26 +1391,72 @@ main > :where(
 }
 
 .resource-server-actions form {
+  flex: 0 0 86px;
+  width: 86px;
+  height: 32px;
+  display: inline-flex;
   margin: 0;
 }
 
+.resource-server-actions > a,
+.resource-server-actions > button,
+.resource-server-actions form > button {
+  flex: 0 0 86px;
+  width: 86px;
+  min-width: 86px;
+  max-width: 86px;
+  height: 32px;
+  box-sizing: border-box;
+  appearance: none;
+}
+
+.resource-server-actions form > button {
+  margin: 0;
+}
+
+.resource-server-actions > a:visited {
+  color: var(--resource-accent, #334e68);
+}
+
+.resource-server-actions span {
+  margin: 0;
+  color: currentColor;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .resource-server button.resource-danger-action {
+  width: 86px;
+  height: 32px;
   color: #b42318;
-  border-color: #fed7d7;
-  background: #fffafa;
+  border-color: transparent;
+  background: transparent;
+}
+
+.resource-server-actions svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .resource-server a:hover,
 .resource-server button:hover,
 .resource-back-link:hover {
-  background: #e6f0ff;
-  color: #243b53;
+  border-color: var(--resource-accent, #93c5fd);
+  background: color-mix(in srgb, var(--resource-accent, #2563eb) 10%, #ffffff);
+  color: var(--resource-accent, #243b53);
 }
 
 .resource-server button.resource-danger-action:hover {
   color: #8a1f14;
   border-color: #f5b5b5;
-  background: #fff1f1;
+  background: #fffafa;
 }
 
 .resource-alert {
