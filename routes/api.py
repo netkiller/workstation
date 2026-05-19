@@ -83,6 +83,7 @@ def create_workstation_api_router(workstation):
             index,
             str(payload.get("action", "")).strip(),
             target_index,
+            str(payload.get("directory", "")).strip(),
         )
 
     @router.get("/statistics")

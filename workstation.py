@@ -176,17 +176,134 @@ class Workstation:
         self.classes = self.class_groups[0]["classes"] if self.class_groups else []
         return target
 
-    def _rewrite_label_indices(self, source_index: int, action: str, target_index: int | None = None):
+    def _unique_target(self, target_dir: Path, filename: str):
+        target = target_dir / filename
+        if not target.exists():
+            return target
+        stem = target.stem
+        suffix = target.suffix
+        index = 1
+        while True:
+            candidate = target_dir / f"{stem}-{index}{suffix}"
+            if not candidate.exists():
+                return candidate
+            index += 1
+
+    def _image_for_label_file(self, label_file: Path):
+        for suffix in Common.image_exts:
+            candidate = label_file.with_suffix(suffix)
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _label_ids(self, label_file: Path):
+        ids = []
+        try:
+            lines = label_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return ids
+        for line in lines:
+            parts = line.strip().split()
+            if len(parts) != 5:
+                continue
+            try:
+                class_id = int(parts[0])
+                [float(value) for value in parts[1:]]
+            except ValueError:
+                continue
+            ids.append(class_id)
+        return ids
+
+    def _copy_or_move_label_assets(self, source_index: int, action: str, directory_name: str):
+        directory_name = (directory_name or "").strip()
+        if not directory_name or "/" in directory_name or "\\" in directory_name:
+            raise HTTPException(status_code=400, detail="目录名无效")
+        if not self.class_groups:
+            raise HTTPException(status_code=404, detail="classes.txt 不存在")
+        classes = list(self.class_groups[0]["classes"])
+        if source_index < 0 or source_index >= len(classes):
+            raise HTTPException(status_code=400, detail="标签索引无效")
+        if action not in ("copy_to", "move_to"):
+            raise HTTPException(status_code=400, detail="invalid action")
+        target_dir = (self.workspace / directory_name).resolve()
+        if target_dir != self.workspace and self.workspace not in target_dir.parents:
+            raise HTTPException(status_code=400, detail="目录名无效")
+
+        matches = []
+        blocked = []
+        for label_file in sorted(self.workspace.rglob("*.txt")):
+            if label_file.name == "classes.txt":
+                continue
+            if target_dir.exists() and (label_file == target_dir or target_dir in label_file.parents):
+                continue
+            label_ids = self._label_ids(label_file)
+            if source_index not in label_ids:
+                continue
+            other_ids = sorted({class_id for class_id in label_ids if class_id != source_index})
+            image_file = self._image_for_label_file(label_file)
+            if other_ids:
+                blocked.append(
+                    {
+                        "txt": self._relative(label_file),
+                        "image": self._relative(image_file) if image_file else "",
+                        "labels": other_ids,
+                    }
+                )
+                continue
+            if image_file is None:
+                blocked.append({"txt": self._relative(label_file), "image": "", "labels": ["缺少图片"]})
+                continue
+            matches.append((image_file, label_file))
+
+        if blocked:
+            return {
+                "ok": False,
+                "blocked": blocked,
+                "message": "部分 .txt 包含多个不同标签，不满足复制或移动条件。",
+            }
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        changed = []
+        for image_file, label_file in matches:
+            image_target = self._unique_target(target_dir, image_file.name)
+            label_target = image_target.with_suffix(".txt")
+            if action == "copy_to":
+                shutil.copy2(image_file, image_target)
+                shutil.copy2(label_file, label_target)
+            else:
+                shutil.move(str(image_file), str(image_target))
+                shutil.move(str(label_file), str(label_target))
+            changed.append(
+                {
+                    "image": self._relative(image_file),
+                    "txt": self._relative(label_file),
+                    "to_image": self._relative(image_target),
+                    "to_txt": self._relative(label_target),
+                }
+            )
+
+        self._rebuild_workspace_index()
+        return {
+            "ok": True,
+            "action": action,
+            "source_index": source_index,
+            "directory": self._relative(target_dir),
+            "changed": changed,
+            "changed_count": len(changed),
+            "classes": self.classes,
+            "content": self._classes_text(),
+        }
+
+    def _rewrite_label_indices(self, source_index: int, action: str, target_index: int | None = None, directory_name: str = ""):
+        if action in ("copy_to", "move_to"):
+            return self._copy_or_move_label_assets(source_index, action, directory_name)
         if not self.class_groups:
             raise HTTPException(status_code=404, detail="classes.txt 不存在")
         classes_file = self.class_groups[0]["path"]
         classes = list(self.class_groups[0]["classes"])
         if source_index < 0 or source_index >= len(classes):
             raise HTTPException(status_code=400, detail="标签索引无效")
-        if action == "copy_to" and (target_index is None or target_index < 0 or target_index >= len(classes)):
-            raise HTTPException(status_code=400, detail="目标标签索引无效")
-        if action == "copy_to" and target_index == source_index:
-            raise HTTPException(status_code=400, detail="目标标签不能与当前标签相同")
         if action == "delete" and len(classes) <= 1:
             raise HTTPException(status_code=400, detail="classes.txt 至少保留一个标签")
 
@@ -225,13 +342,6 @@ class Workstation:
                         parts[0] = str(class_id - 1)
                         changed = True
                     next_lines.append(" ".join(parts))
-                elif action == "copy_to":
-                    next_lines.append(stripped)
-                    if class_id == source_index:
-                        copied = [str(target_index), *parts[1:]]
-                        next_lines.append(" ".join(copied))
-                        copied_lines += 1
-                        changed = True
                 else:
                     raise HTTPException(status_code=400, detail="invalid action")
             if changed:

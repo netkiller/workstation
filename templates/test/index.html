@@ -3,7 +3,7 @@
 {% block title %}{% if project_name %}项目 {{ project_name }} 测试{% else %}模型测试{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/test.css?v=20260518-task-set-color">
+  <link rel="stylesheet" href="/static/css/test.css?v=20260519-test-set-browse">
 {% endblock %}
 
 {% block content %}
@@ -124,6 +124,9 @@
                     <p>{{ item.description or "暂无描述" }}</p>
                   </div>
                   <div class="test-set-card-actions">
+                    <a class="test-set-browse-button" href="/media/image?project={{ current_project|urlencode }}&scope=test&set={{ item.name|urlencode }}" title="查看图片" aria-label="查看图片">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </a>
                     <a class="test-set-edit-button" href="/test/{{ current_project }}/folder/{{ item.name|urlencode }}" title="编辑测试集" aria-label="编辑测试集">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.4 2.6a2 2 0 0 1 3 3L12 15l-4 1 1-4z"></path></svg>
                     </a>

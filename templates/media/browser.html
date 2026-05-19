@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/static/css/media.css?v=20260519-fill-thumb-viewer">
+</head>
+<body>
+  <main class="media-page">
+    <header class="media-header">
+      <div>
+        <h1>{{ title }}</h1>
+        <p>{{ subtitle }}</p>
+      </div>
+      <div class="media-count">{{ count }} 个{{ "图像" if mode == "image" else "视频" }}</div>
+    </header>
+
+    {% if items %}
+      <section class="media-grid" aria-label="{{ title }}">
+        {% for item in items %}
+          <article class="media-card media-card-{{ item.orientation|default('landscape') }}" data-media-card>
+            <div class="media-preview media-preview-{{ item.orientation|default('landscape') }}">
+              {% if mode == "image" %}
+                <button
+                  type="button"
+                  class="media-preview-button"
+                  data-full-src="{{ item.original_src }}"
+                  data-title="{{ item.name }}"
+                  data-index="{{ loop.index0 }}"
+                >
+                  <img src="{{ item.src }}" alt="{{ item.name }}" loading="lazy">
+                </button>
+              {% else %}
+                <video src="{{ item.src }}" controls preload="metadata"></video>
+              {% endif %}
+            </div>
+            <div class="media-meta">
+              <strong title="{{ item.name }}">{{ item.name }}</strong>
+              <span title="{{ item.path }}">{{ item.path }}</span>
+            </div>
+          </article>
+        {% endfor %}
+      </section>
+      {% if mode == "image" %}
+        <nav class="media-pagination" aria-label="图像分页" hidden>
+          <button id="previousPage" type="button" aria-label="上一页" title="上一页">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+          </button>
+          <strong id="mediaPageStatus">1 / 1</strong>
+          <button id="nextPage" type="button" aria-label="下一页" title="下一页">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+          </button>
+        </nav>
+      {% endif %}
+    {% else %}
+      <section class="media-empty">
+        <h2>暂无{{ "匹配图像" if mode == "image" else "视频" }}</h2>
+        <p>{{ "当前标签没有找到对应图像。" if mode == "image" else "当前目录下没有找到视频文件。" }}</p>
+      </section>
+    {% endif %}
+  </main>
+
+  {% if mode == "image" %}
+    <dialog id="imageViewer" class="image-viewer">
+      <div class="image-viewer-bar">
+        <strong id="imageViewerTitle"></strong>
+        <button id="closeImageViewer" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="image-viewer-stage">
+        <img id="imageViewerImage" alt="">
+      </div>
+      <div class="image-viewer-nav">
+        <button id="previousImage" type="button" aria-label="上一张" title="上一张">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+        </button>
+        <span id="imageViewerCounter"></span>
+        <button id="nextImage" type="button" aria-label="下一张" title="下一张">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </dialog>
+    <script>
+      const viewer = document.getElementById("imageViewer");
+      const viewerImage = document.getElementById("imageViewerImage");
+      const viewerStage = document.querySelector(".image-viewer-stage");
+      const viewerTitle = document.getElementById("imageViewerTitle");
+      const closeViewer = document.getElementById("closeImageViewer");
+      const previousImage = document.getElementById("previousImage");
+      const nextImage = document.getElementById("nextImage");
+      const imageViewerCounter = document.getElementById("imageViewerCounter");
+      const previousPage = document.getElementById("previousPage");
+      const nextPage = document.getElementById("nextPage");
+      const mediaPageStatus = document.getElementById("mediaPageStatus");
+      const pagination = document.querySelector(".media-pagination");
+      const mediaGrid = document.querySelector(".media-grid");
+      const mediaCards = Array.from(document.querySelectorAll("[data-media-card]"));
+      const imageButtons = Array.from(document.querySelectorAll(".media-preview-button"));
+      let activeImageIndex = 0;
+      let pageStartIndex = 0;
+      let pageSize = Math.max(1, mediaCards.length);
+      let zoom = 1;
+      let panX = 0;
+      let panY = 0;
+      let draggingImage = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let dragPanX = 0;
+      let dragPanY = 0;
+
+      function applyImageTransform() {
+        viewerImage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+        viewerImage.style.cursor = zoom > 1 ? (draggingImage ? "grabbing" : "grab") : "zoom-in";
+      }
+
+      function resetImageTransform() {
+        zoom = 1;
+        panX = 0;
+        panY = 0;
+        applyImageTransform();
+      }
+
+      function setActiveImage(index) {
+        activeImageIndex = Math.max(0, Math.min(index, imageButtons.length - 1));
+        const button = imageButtons[activeImageIndex];
+        if (!button) return;
+        viewerImage.src = button.dataset.fullSrc || "";
+        viewerImage.alt = button.dataset.title || "";
+        viewerTitle.textContent = button.dataset.title || "";
+        imageViewerCounter.textContent = `${activeImageIndex + 1} / ${imageButtons.length}`;
+        previousImage.disabled = activeImageIndex <= 0;
+        nextImage.disabled = activeImageIndex >= imageButtons.length - 1;
+        resetImageTransform();
+      }
+
+      function calculatePageSize() {
+        if (!mediaGrid || mediaCards.length === 0) return 1;
+        const start = Math.max(0, Math.min(pageStartIndex, mediaCards.length - 1));
+        const footerSpace = pagination ? 74 : 0;
+        const bottomLimit = Math.max(240, window.innerHeight - footerSpace - 20);
+        mediaCards.forEach(card => {
+          card.hidden = true;
+        });
+        let count = 0;
+        for (let index = start; index < mediaCards.length; index += 1) {
+          const card = mediaCards[index];
+          card.hidden = false;
+          const rect = card.getBoundingClientRect();
+          if (rect.bottom > bottomLimit && count > 0) {
+            card.hidden = true;
+            break;
+          }
+          count += 1;
+        }
+        return Math.max(1, count);
+      }
+
+      function renderMediaPage(startIndex = pageStartIndex) {
+        pageStartIndex = Math.max(0, Math.min(startIndex, Math.max(0, mediaCards.length - 1)));
+        pageSize = calculatePageSize();
+        const end = Math.min(mediaCards.length, pageStartIndex + pageSize);
+        mediaCards.forEach((card, index) => {
+          card.hidden = index < pageStartIndex || index >= end;
+        });
+        if (pagination) {
+          pagination.hidden = mediaCards.length <= pageSize;
+          mediaPageStatus.textContent = `${pageStartIndex + 1}-${end} / ${mediaCards.length}`;
+          previousPage.disabled = pageStartIndex <= 0;
+          nextPage.disabled = end >= mediaCards.length;
+        }
+      }
+
+      function switchMediaPage(delta) {
+        if (delta > 0) {
+          renderMediaPage(pageStartIndex + pageSize);
+          return;
+        }
+        renderMediaPage(Math.max(0, pageStartIndex - pageSize));
+      }
+
+      imageButtons.forEach(button => {
+        button.addEventListener("click", () => {
+          setActiveImage(Number(button.dataset.index || 0));
+          viewer.showModal();
+        });
+      });
+
+      previousPage?.addEventListener("click", () => switchMediaPage(-1));
+      nextPage?.addEventListener("click", () => switchMediaPage(1));
+      previousImage.addEventListener("click", () => setActiveImage(activeImageIndex - 1));
+      nextImage.addEventListener("click", () => setActiveImage(activeImageIndex + 1));
+      closeViewer.addEventListener("click", () => viewer.close());
+      viewer.addEventListener("click", event => {
+        if (event.target === viewer) viewer.close();
+      });
+      viewerStage.addEventListener("wheel", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextZoom = Math.max(0.5, Math.min(6, zoom * (event.deltaY < 0 ? 1.12 : 0.88)));
+        if (nextZoom <= 1) {
+          zoom = 1;
+          panX = 0;
+          panY = 0;
+        } else {
+          zoom = nextZoom;
+        }
+        applyImageTransform();
+      }, {passive: false});
+      viewerImage.addEventListener("pointerdown", event => {
+        if (zoom <= 1) return;
+        event.preventDefault();
+        draggingImage = true;
+        dragStartX = event.clientX;
+        dragStartY = event.clientY;
+        dragPanX = panX;
+        dragPanY = panY;
+        viewerImage.setPointerCapture(event.pointerId);
+        applyImageTransform();
+      });
+      viewerImage.addEventListener("pointermove", event => {
+        if (!draggingImage) return;
+        panX = dragPanX + event.clientX - dragStartX;
+        panY = dragPanY + event.clientY - dragStartY;
+        applyImageTransform();
+      });
+      viewerImage.addEventListener("pointerup", event => {
+        draggingImage = false;
+        viewerImage.releasePointerCapture(event.pointerId);
+        applyImageTransform();
+      });
+      viewerImage.addEventListener("pointercancel", () => {
+        draggingImage = false;
+        applyImageTransform();
+      });
+      viewerImage.addEventListener("lostpointercapture", () => {
+        draggingImage = false;
+        applyImageTransform();
+      });
+      viewerImage.addEventListener("dblclick", resetImageTransform);
+      window.addEventListener("resize", () => {
+        renderMediaPage(pageStartIndex);
+      });
+      document.addEventListener("fullscreenchange", () => {
+        window.setTimeout(() => renderMediaPage(pageStartIndex), 120);
+      });
+      renderMediaPage(0);
+    </script>
+  {% endif %}
+</body>
+</html>

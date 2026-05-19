@@ -1515,12 +1515,15 @@ button.close-project-link {
 
 .upload-delete-button,
 .upload-option-icon-button {
-  width: 34px;
-  height: 34px;
+  box-sizing: border-box;
+  flex: 0 0 44px;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  padding: 0 !important;
   border: 1px solid #fecaca;
   border-radius: 6px;
   background: #fff;
@@ -1528,6 +1531,10 @@ button.close-project-link {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
+}
+
+.upload-option-icon-button {
+  text-decoration: none;
 }
 
 .upload-delete-button:hover {
@@ -1546,6 +1553,12 @@ button.close-project-link {
   border-color: #cbd5e1;
   background: #e6f0ff;
   color: #243b53;
+}
+
+.upload-browse-button:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .upload-delete-button svg,

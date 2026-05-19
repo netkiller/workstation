@@ -978,6 +978,7 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
   const directoryButton = zone.querySelector("[data-directory-button]");
   const batchDirectoryButton = zone.querySelector("[data-batch-directory-button]");
   const clearButton = zone.querySelector("[data-clear-upload]");
+  const browseButton = zone.querySelector("[data-browse-media]");
 
   zone.addEventListener("click", (event) => {
     if (zone.classList.contains("uploading")) {
@@ -994,6 +995,9 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
       return;
     }
     if (event.target.closest("[data-clear-upload]")) {
+      return;
+    }
+    if (event.target.closest("[data-browse-media]")) {
       return;
     }
     input.click();
@@ -1039,6 +1043,11 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
     event.preventDefault();
     event.stopPropagation();
     clearUploadedImages(clearButton);
+  });
+  browseButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.location.href = browseButton.href;
   });
   zone.addEventListener("dragover", (event) => {
     event.preventDefault();

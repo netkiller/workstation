@@ -6,16 +6,18 @@ import threading
 import time
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 from routes.annotate import create_workstation, register_annotate_routes
 from routes.api import create_workstation_api_router
-from routes.dataset import router as dataset_router
+from routes.dataset import jpeg_exif_thumbnail, router as dataset_router
 from routes.help import router as help_router
 from routes.model import router as model_router
 from routes.project import (
@@ -48,7 +50,10 @@ from routes.val import router as validate_router
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+templates = Jinja2Templates(directory=TEMPLATE_DIR)
 MEDIA_CONVERT_EXTS = {".heic", ".heif", ".tif", ".tiff"}
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
 
 try:
     from PIL import Image, ImageOps
@@ -248,6 +253,109 @@ def _media_image_response(path: Path):
     return Response(buffer.getvalue(), media_type="image/jpeg")
 
 
+def _label_indices(label_file: Path):
+    indices = set()
+    try:
+        lines = label_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return indices
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) != 5:
+            continue
+        try:
+            label_index = int(parts[0])
+            [float(value) for value in parts[1:]]
+        except ValueError:
+            continue
+        indices.add(label_index)
+    return indices
+
+
+def _browser_roots(project: str = ""):
+    if project:
+        project_workspace = project_root_workspace(project)
+        if project_workspace is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        project_workspace = project_workspace.resolve()
+        annotate_workspace = (project_workspace / ANNOTATE_DIR).resolve()
+        return project_workspace, annotate_workspace
+    workspace = workspace_path().resolve()
+    return workspace, workspace
+
+
+def _media_source_url(path: str, project: str = "", *, source: str = "/media", variant: str = ""):
+    query = {"path": path}
+    if project:
+        query["project"] = project
+    if variant:
+        query["variant"] = variant
+    return f"{source}?{urlencode(query)}"
+
+
+def _image_orientation(path: Path):
+    if Image is None:
+        return "landscape"
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            orientation = None
+            try:
+                orientation = image.getexif().get(274)
+            except Exception:
+                orientation = None
+            if orientation in {5, 6, 7, 8}:
+                width, height = height, width
+    except Exception:
+        return "landscape"
+    return "portrait" if height > width else "landscape"
+
+
+def _media_browser_items(
+    root: Path,
+    scan_root: Path,
+    extensions: set[str],
+    project: str = "",
+    labels: set[int] | None = None,
+):
+    if not scan_root.is_dir():
+        return []
+    items = []
+    for item in sorted(scan_root.rglob("*"), key=lambda value: value.as_posix().lower()):
+        if not item.is_file() or item.suffix.lower() not in extensions:
+            continue
+        if labels and not (labels & _label_indices(item.with_suffix(".txt"))):
+            continue
+        resolved = item.resolve()
+        if not is_inside(resolved, root):
+            continue
+        relative_path = resolved.relative_to(root).as_posix()
+        items.append(
+            {
+                "name": item.name,
+                "path": relative_path,
+                "src": _media_source_url(
+                    relative_path,
+                    project,
+                    variant="thumbnail" if extensions == IMAGE_EXTS else "",
+                ),
+                "original_src": _media_source_url(relative_path, project) if extensions == IMAGE_EXTS else "",
+                "orientation": _image_orientation(resolved) if extensions == IMAGE_EXTS else "landscape",
+            }
+        )
+    return items
+
+
+def _media_video_path(request: Request, path: str, project: str = ""):
+    workspace = _media_workspace(request, project)
+    file_path = (workspace / (path or "")).resolve()
+    if file_path != workspace and not is_inside(file_path, workspace):
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not file_path.is_file() or file_path.suffix.lower() not in VIDEO_EXTS:
+        raise HTTPException(status_code=404, detail="video not found")
+    return file_path
+
+
 def _report_media_path(task_id: str, image_index: int, model: int | None = None):
     report = read_test_report(task_id)
     task = next((item for item in load_test_tasks() if item.get("id") == task_id), None)
@@ -301,6 +409,9 @@ def _report_media_path(task_id: str, image_index: int, model: int | None = None)
 
 
 def _thumbnail_response(path: Path):
+    thumbnail = jpeg_exif_thumbnail(path)
+    if thumbnail:
+        return Response(content=thumbnail, media_type="image/jpeg")
     if Image is None:
         return FileResponse(path)
     try:
@@ -336,15 +447,100 @@ def media_report_thumbnail(task_id: str, image_index: int, model: int | None = Q
     return _thumbnail_response(_report_media_path(task_id, image_index, model))
 
 
+@app.get("/media/image", include_in_schema=False)
+def media_image_browser(
+    request: Request,
+    project: str = "",
+    label: int | None = Query(default=None),
+    labels: list[int] | None = Query(default=None),
+    label_name: str = "",
+    scope: str = "",
+    set_name: str = Query(default="", alias="set"),
+):
+    root, scan_root = _browser_roots(project)
+    if project and scope == "test":
+        scan_root = (root / TEST_DIR / "images" / set_name).resolve() if set_name else (root / TEST_DIR / "images").resolve()
+    selected_labels = []
+    if label is not None:
+        selected_labels.append(label)
+    selected_labels.extend(labels or [])
+    selected_label_set = set(selected_labels)
+    items = _media_browser_items(root, scan_root, IMAGE_EXTS, project=project, labels=selected_label_set)
+    subtitle_parts = []
+    if project:
+        subtitle_parts.append(f"项目 {project}")
+    if scope == "test":
+        subtitle_parts.append(f"测试集 {set_name}" if set_name else "测试集")
+    if selected_labels:
+        label_text = f"{label}: {label_name}" if label is not None and label_name else ", ".join(str(item) for item in selected_labels)
+        subtitle_parts.append(f"标签 {label_text}")
+    return templates.TemplateResponse(
+        request=request,
+        name="media/browser.html",
+        context={
+            "request": request,
+            "mode": "image",
+            "title": "图像浏览器",
+            "subtitle": " / ".join(subtitle_parts) or "全部图像",
+            "project": project,
+            "count": len(items),
+            "items": items,
+        },
+    )
+
+
+@app.get("/media/video", include_in_schema=False)
+def media_video_browser(request: Request, project: str = ""):
+    root, scan_root = _browser_roots(project)
+    items = _media_browser_items(root, scan_root, VIDEO_EXTS, project=project)
+    for item in items:
+        item["src"] = _media_source_url(item["path"], project, source="/media/video/source")
+    return templates.TemplateResponse(
+        request=request,
+        name="media/browser.html",
+        context={
+            "request": request,
+            "mode": "video",
+            "title": "视频浏览器",
+            "subtitle": f"项目 {project}" if project else "全部视频",
+            "project": project,
+            "count": len(items),
+            "items": items,
+        },
+    )
+
+
+@app.get("/media/video/source", include_in_schema=False)
+def media_video_source(request: Request, path: str, project: str = ""):
+    return FileResponse(_media_video_path(request, path, project))
+
+
 @app.get("/media")
 @app.get("/annotate/media")
 def media(
     request: Request,
-    path: str,
+    path: str = "",
     project: str = "",
     raw: bool = Query(default=False),
+    report: str = "",
+    image: int | None = Query(default=None),
+    model: int | None = Query(default=None),
+    variant: str = Query(default="original"),
 ):
+    if report:
+        if image is None:
+            raise HTTPException(status_code=400, detail="image index required")
+        report_path = _report_media_path(report, image, model)
+        if variant == "thumbnail":
+            return _thumbnail_response(report_path)
+        if variant not in ("original", "raw"):
+            raise HTTPException(status_code=400, detail="invalid media variant")
+        return _media_image_response(report_path)
+    if not path:
+        raise HTTPException(status_code=404, detail="image not found")
     file_path = _media_path(request, path, project)
+    if variant == "thumbnail":
+        return _thumbnail_response(file_path)
     if raw:
         return FileResponse(file_path)
     return _media_image_response(file_path)

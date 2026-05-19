@@ -268,7 +268,8 @@
 }
 
 .test-set-card-head button,
-.test-set-card-head .test-set-edit-button {
+.test-set-card-head .test-set-edit-button,
+.test-set-card-head .test-set-browse-button {
   height: 34px;
   display: inline-flex;
   align-items: center;
@@ -292,8 +293,19 @@
   width: 38px;
 }
 
-.test-set-card-head .test-set-edit-button {
+.test-set-card-head .test-set-browse-button {
+  width: 38px;
+}
+
+.test-set-card-head .test-set-edit-button,
+.test-set-card-head .test-set-browse-button {
   text-decoration: none;
+}
+
+.test-set-card-head .test-set-browse-button:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .test-set-card-head .test-set-edit-button:hover {
@@ -309,7 +321,8 @@
 }
 
 .test-set-card-head button svg,
-.test-set-card-head .test-set-edit-button svg {
+.test-set-card-head .test-set-edit-button svg,
+.test-set-card-head .test-set-browse-button svg {
   width: 18px;
   height: 18px;
   fill: none;

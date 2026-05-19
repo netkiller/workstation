@@ -243,8 +243,10 @@
     <button type="button" data-model-action="delete"><span class="menu-icon">✕</span><span>删除模型</span></button>
   </div>
   <div id="labelContextMenu" class="context-menu" hidden>
+    <button type="button" data-label-action="find"><span class="menu-icon">⌕</span><span>查找</span></button>
     <button type="button" data-label-action="delete"><span class="menu-icon">✕</span><span>删除</span></button>
     <button type="button" data-label-action="copy_to"><span class="menu-icon">⎘</span><span>复制到</span></button>
+    <button type="button" data-label-action="move_to"><span class="menu-icon">⇥</span><span>移动到</span></button>
   </div>
   <dialog id="modelUploadDialog" class="classes-dialog model-upload-dialog">
     <form id="modelUploadForm" class="classes-form">
@@ -1741,7 +1743,7 @@
       modelContextMenu.hidden = true;
       labelContextMenu.hidden = false;
       const menuWidth = labelContextMenu.offsetWidth || 218;
-      const menuHeight = labelContextMenu.offsetHeight || 88;
+      const menuHeight = labelContextMenu.offsetHeight || 152;
       labelContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - menuWidth - 8)}px`;
       labelContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - menuHeight - 8)}px`;
     }
@@ -1801,9 +1803,16 @@
           "这是高风险操作，执行前建议备份项目目录。",
         ].join("\n");
       }
+      if (action === "move_to") {
+        return [
+          `即将把仅包含标签 ${label.index}: ${label.label} 的图片和 .txt 移动到指定目录。`,
+          "执行前会扫描所有命中的 .txt；如果某个 .txt 同时包含其他标签，将阻止操作并列出文件。",
+          "这是高风险操作，执行前建议备份项目目录。",
+        ].join("\n");
+      }
       return [
-        `即将把标签 ${label.index}: ${label.label} 的所有标注复制到目标标签索引。`,
-        "此操作会批量写回所有包含该索引的 .txt 文件，原标注不会删除。",
+        `即将把仅包含标签 ${label.index}: ${label.label} 的图片和 .txt 复制到指定目录。`,
+        "执行前会扫描所有命中的 .txt；如果某个 .txt 同时包含其他标签，将阻止操作并列出文件。",
         "这是高风险操作，执行前建议备份项目目录。",
       ].join("\n");
     }
@@ -1812,20 +1821,31 @@
       const label = contextLabel;
       hideContextMenu();
       if (!label) return;
+      if (action === "find") {
+        const url = new URL("/" + "media/image", window.location.origin);
+        const project = window.yoloutilsProject || "";
+        if (project) {
+          url.searchParams.set("project", project);
+        }
+        url.searchParams.set("label", String(label.index));
+        url.searchParams.set("label_name", label.label || "");
+        window.open(url.toString(), "_blank", "noopener");
+        return;
+      }
       const payload = {action, index: Number(label.index)};
-      if (action === "copy_to") {
+      if (action === "copy_to" || action === "move_to") {
         const answer = await showContextActionDialog({
-          title: "复制标签标注",
+          title: action === "copy_to" ? "复制标签文件" : "移动标签文件",
           message: riskMessageForLabel(action, label),
           input: true,
-          inputLabel: "目标标签索引",
+          inputLabel: "目标目录名",
           value: "",
-          confirmText: "复制到",
+          confirmText: action === "copy_to" ? "复制到" : "移动到",
           risk: true,
         });
-        const target = Number.parseInt(answer?.name ?? "", 10);
-        if (!Number.isInteger(target)) return;
-        payload.target_index = target;
+        const directory = String(answer?.name ?? "").trim();
+        if (!directory) return;
+        payload.directory = directory;
       } else if (action === "delete") {
         const confirmed = await showContextActionDialog({
           title: "删除标签并重建索引",
@@ -1839,6 +1859,18 @@
       }
       try {
         const result = await postJson("/api/classes/action", payload);
+        if (result?.ok === false) {
+          const blocked = Array.isArray(result.blocked) ? result.blocked : [];
+          const list = blocked
+            .map(item => `${item.image || item.txt}  标签: ${(item.labels || []).join(", ")}`)
+            .join("\n");
+          await showContextActionDialog({
+            title: "不能复制或移动",
+            message: `${result.message || "不满足条件，不能复制或移动。"}${list ? `\n\n${list}` : ""}`,
+            confirmText: "知道了",
+          });
+          return;
+        }
         classesText = result.content || classesText;
       } catch (error) {
         alert(error.message);

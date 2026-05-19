@@ -13,7 +13,7 @@ from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from pathlib import PurePosixPath
-from urllib.parse import parse_qs, quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlencode
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -1486,19 +1486,19 @@ def read_report(task_id: str):
 
 
 def report_source_image_url(project: str, task_id: str, image_index: int):
-    return f"/media/thumbnail/reports/{task_id}/{image_index}"
+    return f"/media?{urlencode({'report': task_id, 'image': image_index, 'variant': 'thumbnail'})}"
 
 
 def report_prediction_image_url(project: str, task_id: str, image_index: int, model_index: int):
-    return f"/media/thumbnail/reports/{task_id}/{image_index}?model={model_index}"
+    return f"/media?{urlencode({'report': task_id, 'image': image_index, 'model': model_index, 'variant': 'thumbnail'})}"
 
 
 def report_original_source_image_url(task_id: str, image_index: int):
-    return f"/media/original/reports/{task_id}/{image_index}"
+    return f"/media?{urlencode({'report': task_id, 'image': image_index, 'variant': 'original'})}"
 
 
 def report_original_prediction_image_url(task_id: str, image_index: int, model_index: int):
-    return f"/media/original/reports/{task_id}/{image_index}?model={model_index}"
+    return f"/media?{urlencode({'report': task_id, 'image': image_index, 'model': model_index, 'variant': 'original'})}"
 
 
 def detection_confidence_values(text: str):
