@@ -124,7 +124,7 @@
                     <p>{{ item.description or "暂无描述" }}</p>
                   </div>
                   <div class="test-set-card-actions">
-                    <a class="test-set-browse-button" href="/media/image?project={{ current_project|urlencode }}&scope=test&set={{ item.name|urlencode }}" title="查看图片" aria-label="查看图片">
+                    <a class="test-set-browse-button" href="/media/image?project={{ current_project|urlencode }}&scope=test&set={{ item.name|urlencode }}&return_to={{ ('/test/' ~ current_project)|urlencode }}" title="查看图片" aria-label="查看图片">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                     </a>
                     <a class="test-set-edit-button" href="/test/{{ current_project }}/folder/{{ item.name|urlencode }}" title="编辑测试集" aria-label="编辑测试集">

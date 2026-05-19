@@ -456,6 +456,7 @@ def media_image_browser(
     label_name: str = "",
     scope: str = "",
     set_name: str = Query(default="", alias="set"),
+    return_to: str = "",
 ):
     root, scan_root = _browser_roots(project)
     if project and scope == "test":
@@ -485,6 +486,7 @@ def media_image_browser(
             "project": project,
             "count": len(items),
             "items": items,
+            "return_to": return_to,
         },
     )
 

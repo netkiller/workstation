@@ -1829,6 +1829,7 @@
         }
         url.searchParams.set("label", String(label.index));
         url.searchParams.set("label_name", label.label || "");
+        url.searchParams.set("return_to", window.location.pathname + window.location.search);
         window.open(url.toString(), "_blank", "noopener");
         return;
       }
@@ -1879,8 +1880,13 @@
       currentLabelFile = "";
       await loadLabels();
       await loadStatistics();
-      await refreshCurrentFiles();
-      if (currentPath) {
+      if (action === "copy_to" || action === "move_to") {
+        await loadTree();
+        await selectDir(currentDir, findTreeButton(currentDir));
+      } else {
+        await refreshCurrentFiles();
+      }
+      if (currentPath && (action !== "copy_to" && action !== "move_to")) {
         await selectImage(currentPath, fileRow(currentPath));
       }
     }

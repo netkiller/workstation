@@ -37,6 +37,45 @@ body {
   color: #172235;
 }
 
+.media-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.media-back-button {
+  width: fit-content;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 10px;
+  border: 1px solid #d6e1ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #31506f;
+  font-size: 15px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.media-back-button:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.media-back-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .media-header p {
   margin: 10px 0 0;
   font-size: 18px;

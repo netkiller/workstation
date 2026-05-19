@@ -9,7 +9,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from routes.project import header_context
-from routes.val import project_path, read_project_name, run_model_items, workspace_path
+from routes.train import load_tasks as load_train_tasks, model_items as train_model_items
+from routes.val import project_path, read_project_name, run_model_items as val_model_items, workspace_path
 
 
 router = APIRouter()
@@ -123,6 +124,36 @@ def run_predict(project: str, path: Path, model_path: Path, upload_dir: Path, ru
     }
 
 
+def predict_model_items(path: Path, current_project: str):
+    items = []
+    seen = set()
+    for model in train_model_items(load_train_tasks(), current_project):
+        run_dir = Path(model.get("run_dir") or "")
+        weights_dir = run_dir / "weights"
+        model_file = weights_dir / "best.pt"
+        if not model_file.is_file():
+            model_file = weights_dir / "last.pt"
+        if not model_file.is_file():
+            continue
+        resolved = model_file.resolve()
+        if not is_inside(resolved, path.resolve()):
+            continue
+        relative_path = resolved.relative_to(path.resolve()).as_posix()
+        seen.add(relative_path)
+        task = model.get("task") or {}
+        items.append(
+            {
+                "name": task.get("name") or run_dir.name,
+                "relative_path": relative_path,
+            }
+        )
+    for model in val_model_items(path):
+        relative_path = str(model.get("relative_path") or "")
+        if relative_path and relative_path not in seen:
+            items.append(model)
+    return items
+
+
 def predict_context(request: Request, current_project: str, result: dict | None = None):
     workspace = workspace_path()
     path = project_path(workspace, current_project)
@@ -133,7 +164,7 @@ def predict_context(request: Request, current_project: str, result: dict | None 
         "model_active": "predict",
         "current_project": current_project,
         "project_name": read_project_name(path) if path else "",
-        "models": run_model_items(path) if path else [],
+        "models": predict_model_items(path, current_project) if path else [],
         "result": result,
         **header_context(request, workspace),
     }

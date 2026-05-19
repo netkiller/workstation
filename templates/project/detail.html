@@ -137,7 +137,7 @@
               </span>
               <span data-upload-prompt>点击上传图片，或拖拽到这里</span>
               <span class="upload-options">
-                <a class="upload-option-icon-button upload-browse-button" href="/media/image?project={{ project.directory|urlencode }}" data-browse-media title="浏览已上传图片" aria-label="浏览已上传图片">
+                <a class="upload-option-icon-button upload-browse-button" href="/media/image?project={{ project.directory|urlencode }}&return_to={{ ('/project/' ~ project.directory)|urlencode }}" data-browse-media title="浏览已上传图片" aria-label="浏览已上传图片">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </a>
                 <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">
