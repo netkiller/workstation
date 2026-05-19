@@ -97,6 +97,9 @@ def default_resource_summary(error: str = ""):
         "disk_total": "未知",
         "gpu_count": 0,
         "gpu_memory_total": "0 B",
+        "torch_version": "",
+        "cuda_version": "",
+        "cuda_available": False,
     }
 
 
@@ -230,10 +233,11 @@ def run_ssh_commands(resource: dict):
             "disk_io": "awk '$3 !~ /^(loop|ram|sr)/ {r+=$6*512; w+=$10*512} END {print r+0\" \"w+0}' /proc/diskstats 2>/dev/null",
             "network": "awk -F'[: ]+' 'NR>2 && $2 != \"lo\" {rx+=$3; tx+=$11} END {print rx+0\" \"tx+0}' /proc/net/dev 2>/dev/null",
             "gpu": "command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits || true",
+            "torch_cuda": "python3 -c \"import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.device_count())\" 2>/dev/null || true",
         }
         output = {}
         for key, command in commands.items():
-            stdin, stdout, stderr = client.exec_command(command, timeout=10)
+            stdin, stdout, stderr = client.exec_command(command, timeout=20 if key == "torch_cuda" else 10)
             stdout_text = stdout.read().decode("utf-8", errors="replace").strip()
             stderr_text = stderr.read().decode("utf-8", errors="replace").strip()
             output[key] = stdout_text or stderr_text
@@ -270,6 +274,27 @@ def ssh_connect_kwargs(resource: dict):
     if resource.get("use_private_key") and resource.get("private_key"):
         return {"pkey": private_key_from_text(resource["private_key"], resource.get("password", ""))}
     return {"password": resource.get("password", "")}
+
+
+def parse_torch_cuda_info(raw: str):
+    lines = [line.strip() for line in (raw or "").splitlines() if line.strip()]
+    parts = (lines[-1] if lines else "").split()
+    info = {
+        "torch_version": "",
+        "cuda_version": "",
+        "cuda_available": False,
+        "gpu_count": 0,
+    }
+    if len(parts) < 4:
+        return info
+    info["torch_version"] = parts[0]
+    info["cuda_version"] = "" if parts[1] == "None" else parts[1]
+    info["cuda_available"] = parts[2].lower() == "true"
+    try:
+        info["gpu_count"] = max(int(parts[3]), 0)
+    except ValueError:
+        info["gpu_count"] = 0
+    return info
 
 
 def remote_metrics(resource: dict):
@@ -375,6 +400,9 @@ def remote_metrics(resource: dict):
             "temperature_percent": min(max(temperature, 0), 100),
         })
 
+    torch_cuda = parse_torch_cuda_info(commands.get("torch_cuda") or "")
+    gpu_count = torch_cuda["gpu_count"] if torch_cuda["gpu_count"] else len(gpu_items)
+
     return {
         "ok": result["ok"],
         "error": result["error"],
@@ -414,9 +442,10 @@ def remote_metrics(resource: dict):
             "rx_total": format_bytes(network_rx_bytes),
             "tx_total": format_bytes(network_tx_bytes),
         },
-        "gpu_count": len(gpu_items),
+        "gpu_count": gpu_count,
         "gpu_memory_total": format_bytes(gpu_memory_total),
         "gpus": gpu_items,
+        "torch_cuda": torch_cuda,
         "raw": commands,
     }
 
@@ -468,6 +497,12 @@ def empty_remote_metrics():
         "gpu_count": 0,
         "gpu_memory_total": "0 B",
         "gpus": [],
+        "torch_cuda": {
+            "torch_version": "",
+            "cuda_version": "",
+            "cuda_available": False,
+            "gpu_count": 0,
+        },
         "raw": {},
     }
 
@@ -501,6 +536,9 @@ def resource_summary(resource: dict):
         "disk_total": metrics["disk"]["total"],
         "gpu_count": metrics["gpu_count"],
         "gpu_memory_total": metrics["gpu_memory_total"],
+        "torch_version": metrics.get("torch_cuda", {}).get("torch_version", ""),
+        "cuda_version": metrics.get("torch_cuda", {}).get("cuda_version", ""),
+        "cuda_available": metrics.get("torch_cuda", {}).get("cuda_available", False),
     }
 
 

@@ -1796,6 +1796,86 @@
   gap: 14px;
 }
 
+.train-gpu-picker {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.train-gpu-picker-head {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.train-gpu-picker-head > span {
+  font-weight: 650;
+}
+
+.train-gpu-picker-head small {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.train-gpu-options {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.train-gpu-option {
+  height: 36px;
+  display: inline-flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px !important;
+  padding: 0 12px;
+  border: 1px solid #d8e4f2;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334e68 !important;
+  font-size: 13px !important;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.train-gpu-option:has(input:checked) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8 !important;
+}
+
+.train-gpu-option input {
+  width: 14px !important;
+  height: 14px !important;
+  padding: 0 !important;
+  accent-color: #2563eb;
+}
+
+.train-gpu-empty {
+  width: 100%;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .optional-params {
   display: grid;
   gap: 12px;

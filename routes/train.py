@@ -24,7 +24,7 @@ from starlette.background import BackgroundTask
 
 from routes.dataset import count_dataset_split, normalize_console_log, read_deploy_tasks
 from routes.edition import is_community_edition
-from routes.project import header_context
+from routes.project import compute_config, header_context
 from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 
 
@@ -213,6 +213,7 @@ def matched_dataset(project: str, dataset: str):
 
 def remote_dataset_dirs(project: str = ""):
     items = []
+    resources = {item["id"]: item for item in read_resources(workspace_path())}
     for project_dir in project_dirs():
         if project and project_dir.name != project:
             continue
@@ -228,6 +229,8 @@ def remote_dataset_dirs(project: str = ""):
             remote_path = str(task.get("target_path") or "")
             if not resource_id or not remote_path:
                 continue
+            resource = resources.get(resource_id, {})
+            summary = resource.get("summary", {}) if isinstance(resource, dict) else {}
             items.append(
                 {
                     "key": f"{resource_id}:{dataset_name}:{remote_path}",
@@ -237,6 +240,7 @@ def remote_dataset_dirs(project: str = ""):
                     "remote_path": remote_path,
                     "resource_id": resource_id,
                     "resource_name": str(task.get("resource_name") or "算力服务器"),
+                    "gpu_count": int(summary.get("gpu_count") or 0),
                 }
             )
     return items
@@ -1477,8 +1481,9 @@ def train_name_exists(project: str, name: str, exclude_task_id: str = ""):
 
 def train_dataset_options(project: str):
     options = []
+    local_gpu_count = int(compute_config(workspace_path()).get("gpu_count") or 0)
     for item in dataset_dirs(project):
-        options.append({**item, "key": f"local:{item['name']}", "source": "local", "scope_label": "本地"})
+        options.append({**item, "key": f"local:{item['name']}", "source": "local", "scope_label": "本地", "gpu_count": local_gpu_count})
     for item in remote_dataset_dirs(project):
         options.append({**item, "key": f"remote:{item['key']}", "source": "remote", "scope_label": "远程"})
     return options

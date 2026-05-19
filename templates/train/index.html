@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260518-train-dialog-close">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260519-train-gpu-picker">
 {% endblock %}
 
 {% block content %}
@@ -228,6 +228,7 @@
               value="{{ item.key }}"
               data-source="{{ item.source }}"
               data-project="{{ item.project }}"
+              data-gpu-count="{{ item.gpu_count or 0 }}"
               {% if item.source == "remote" %}data-resource-id="{{ item.resource_id }}" data-resource-name="{{ item.resource_name }}" data-remote-path="{{ item.remote_path }}"{% endif %}
               {% if dataset and item.key == dataset.key %}selected{% endif %}
             >{{ item.name }} · {{ item.scope_label }}{% if item.source == "remote" %} · {{ item.resource_name }}{% endif %}</option>
@@ -271,10 +272,14 @@
           <span>轮数</span>
           <input name="epochs" type="number" min="1" value="200" required>
         </label>
-        <label>
-          <span>device</span>
-          <input name="device" type="text" value="0" placeholder="cpu / 0 / 0,1">
-        </label>
+        <div class="train-gpu-picker" data-gpu-picker>
+          <input name="device" type="hidden" value="0" data-device-input>
+          <div class="train-gpu-picker-head">
+            <span>GPU</span>
+            <small data-gpu-picker-note>选择训练使用的 GPU</small>
+          </div>
+          <div class="train-gpu-options" data-gpu-options></div>
+        </div>
         <label>
           <span>batch</span>
           <input name="batch" type="number" min="1" placeholder="自动">
@@ -355,6 +360,9 @@
       const remotePathInput = dialog?.querySelector("[data-remote-dataset-path]");
       const trainScopeInput = dialog?.querySelector("[data-train-scope]");
       const projectInput = dialog?.querySelector('input[name="project"]');
+      const deviceInput = dialog?.querySelector("[data-device-input]");
+      const gpuOptions = dialog?.querySelector("[data-gpu-options]");
+      const gpuNote = dialog?.querySelector("[data-gpu-picker-note]");
       function renderOptionalParams() {
         if (!optionalFields) return;
         const enabled = Boolean(optionalToggle?.checked);
@@ -374,6 +382,41 @@
         if (resourceName) resourceName.textContent = option.dataset.resourceName || "算力服务器";
         if (remotePath) remotePath.textContent = option.dataset.remotePath || "";
         if (target) target.hidden = !isRemote;
+        renderGpuOptions(option);
+      }
+      function syncGpuDevice() {
+        if (!gpuOptions || !deviceInput) return;
+        const selected = Array.from(gpuOptions.querySelectorAll("input[type='checkbox']:checked"))
+          .map(input => input.value);
+        deviceInput.value = selected.join(",");
+      }
+      function renderGpuOptions(option) {
+        if (!gpuOptions || !deviceInput) return;
+        const count = Math.max(parseInt(option?.dataset.gpuCount || "0", 10) || 0, 0);
+        gpuOptions.textContent = "";
+        if (!count) {
+          deviceInput.value = "";
+          if (gpuNote) gpuNote.textContent = "未检测到 GPU，YOLO 将使用默认设备";
+          const empty = document.createElement("span");
+          empty.className = "train-gpu-empty";
+          empty.textContent = "未检测到 GPU";
+          gpuOptions.appendChild(empty);
+          return;
+        }
+        if (gpuNote) gpuNote.textContent = `${count} 张 GPU，可多选`;
+        for (let index = 0; index < count; index += 1) {
+          const label = document.createElement("label");
+          label.className = "train-gpu-option";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.value = String(index);
+          input.checked = index === 0;
+          const text = document.createElement("span");
+          text.textContent = `GPU ${index + 1}`;
+          label.append(input, text);
+          gpuOptions.appendChild(label);
+        }
+        syncGpuDevice();
       }
       function openDialog() {
         if (!dialog) return;
@@ -387,6 +430,7 @@
       }
       optionalToggle?.addEventListener("change", renderOptionalParams);
       select?.addEventListener("change", renderTrainTarget);
+      gpuOptions?.addEventListener("change", syncGpuDevice);
       document.querySelector("[data-open-train-dialog]")?.addEventListener("click", openDialog);
       document.querySelectorAll("[data-close-train-dialog]").forEach(button => button.addEventListener("click", closeDialog));
       dialog?.addEventListener("click", event => {
