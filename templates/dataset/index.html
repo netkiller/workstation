@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 数据集{% else %}数据集{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-current-file">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260519-icon-actions-train">
 {% endblock %}
 
 {% block content %}
@@ -97,14 +97,27 @@
                 </div>
               {% elif dataset.deploy_failed %}
                 <div class="dataset-footer dataset-failed-footer">
-                  <button class="download-button" type="button" data-watch-task-log data-log-url="/dataset/{{ dataset.project_dir }}/deploy/tasks/{{ dataset.deploy_task_id }}/log">日志</button>
-                  <button class="delete-button" type="button" data-delete-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}">删除</button>
-                  <button class="download-button deploy-button" type="button" data-retry-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}">部署</button>
+                  <a class="download-button dataset-icon-action" href="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}" title="查看" aria-label="查看">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </a>
+                  <button class="delete-button dataset-icon-action" type="button" data-delete-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}" title="删除" aria-label="删除">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+                  </button>
+                  <button class="download-button deploy-button dataset-icon-action" type="button" data-retry-deploy-task data-project="{{ dataset.project_dir }}" data-task-id="{{ dataset.deploy_task_id }}" title="部署" aria-label="部署">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 15v4h14v-4"></path></svg>
+                  </button>
                 </div>
               {% else %}
                 <div class="dataset-footer">
-                  <button class="download-button deploy-button" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}">部署</button>
-                  <a class="download-button train-button" href="/model/{{ dataset.project_dir }}/train?train_dialog=1&dataset={{ dataset.name }}{% if dataset.location_label and dataset.location_label != '本地' %}&remote=1{% endif %}">训练</a>
+                  <a class="download-button dataset-icon-action" href="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}" title="查看" aria-label="查看">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </a>
+                  <button class="download-button deploy-button dataset-icon-action" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}" title="部署" aria-label="部署">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 15v4h14v-4"></path></svg>
+                  </button>
+                  <a class="download-button train-button dataset-icon-action" href="/model/{{ dataset.project_dir }}/train?train_dialog=1&dataset={{ dataset.name }}{% if dataset.location_label and dataset.location_label != '本地' %}&remote=1{% endif %}" title="训练" aria-label="训练">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 1 1 16 0"></path><path d="M12 14l4-4"></path><path d="M5 18h14"></path><path d="M8 18v2"></path><path d="M16 18v2"></path></svg>
+                  </a>
                 </div>
               {% endif %}
             </article>
@@ -434,7 +447,8 @@
         const button = event.target.closest("[data-run-deploy]");
         if (!button) return;
         button.disabled = true;
-        button.textContent = "部署中";
+        button.title = "部署中";
+        button.setAttribute("aria-label", "部署中");
         const response = await fetch(`/dataset/${encodeURIComponent(button.dataset.project || "")}/${encodeURIComponent(button.dataset.name || "")}/deploy/run`, {
           method: "POST",
         });
@@ -442,7 +456,8 @@
         if (!response.ok || !payload.ok) {
           alert(payload.error || "部署失败");
           button.disabled = false;
-          button.textContent = "部署";
+          button.title = "部署";
+          button.setAttribute("aria-label", "部署");
           return;
         }
         watchDeployLog(payload.log_url);
@@ -470,7 +485,8 @@
         const button = event.target.closest("[data-retry-deploy-task]");
         if (!button) return;
         button.disabled = true;
-        button.textContent = "部署中";
+        button.title = "部署中";
+        button.setAttribute("aria-label", "部署中");
         const response = await fetch(`/dataset/${encodeURIComponent(button.dataset.project || "")}/deploy/tasks/${encodeURIComponent(button.dataset.taskId || "")}/retry`, {
           method: "POST",
         });
@@ -478,7 +494,8 @@
           const payload = await response.json().catch(() => ({}));
           alert(payload.error || "重新部署失败");
           button.disabled = false;
-          button.textContent = "部署";
+          button.title = "部署";
+          button.setAttribute("aria-label", "部署");
           return;
         }
         watchDeployLog(`/dataset/${encodeURIComponent(button.dataset.project || "")}/deploy/tasks/${encodeURIComponent(button.dataset.taskId || "")}/log`);

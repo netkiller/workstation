@@ -42,7 +42,7 @@
                 data-note="{{ item.note }}"
                 tabindex="0"
                 role="link"
-                title="点击进入服务器详情"
+                title="点击进入服务器监控"
               >
                 <div class="resource-server-logo" aria-label="{{ item.summary.system or 'Linux' }}">
                   {% set os_family = item.summary.os_family or "linux" %}
@@ -53,9 +53,9 @@
                   <span>{{ item.address }}</span>
                 </div>
                 <div class="resource-server-actions">
-                  <a href="{{ resources_base }}/server/{{ item.id }}" data-resource-action aria-label="进入 {{ item.name }} 详情">
+                  <a href="{{ resources_base }}/server/{{ item.id }}" data-resource-action aria-label="进入 {{ item.name }} 监控">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
-                    <span>详情</span>
+                    <span>监控</span>
                   </a>
                   <a href="{{ resources_base }}/server/{{ item.id }}/ssh" data-resource-action aria-label="通过 SSH 连接 {{ item.name }}">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"></path><path d="M8 10l3 2-3 2"></path><path d="M13 15h4"></path></svg>

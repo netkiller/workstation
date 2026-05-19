@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }}</title>
-  <link rel="stylesheet" href="/static/css/media.css?v=20260519-fill-thumb-viewer">
+  <link rel="stylesheet" href="/static/css/media.css?v=20260519-viewer-fit-box">
 </head>
 <body>
   <main class="media-page">
@@ -76,7 +76,9 @@
         <button id="closeImageViewer" type="button" aria-label="关闭">×</button>
       </div>
       <div class="image-viewer-stage">
-        <img id="imageViewerImage" alt="">
+        <div class="image-viewer-fit">
+          <img id="imageViewerImage" alt="">
+        </div>
       </div>
       <div class="image-viewer-nav">
         <button id="previousImage" type="button" aria-label="上一张" title="上一张">
@@ -144,8 +146,8 @@
       function calculatePageSize() {
         if (!mediaGrid || mediaCards.length === 0) return 1;
         const start = Math.max(0, Math.min(pageStartIndex, mediaCards.length - 1));
-        const footerSpace = pagination ? 74 : 0;
-        const bottomLimit = Math.max(240, window.innerHeight - footerSpace - 20);
+        const footerSpace = pagination ? 78 : 0;
+        const bottomLimit = Math.max(240, window.innerHeight - footerSpace - 18);
         mediaCards.forEach(card => {
           card.hidden = true;
         });
@@ -245,6 +247,7 @@
         applyImageTransform();
       });
       viewerImage.addEventListener("dblclick", resetImageTransform);
+      viewerImage.addEventListener("load", resetImageTransform);
       window.addEventListener("resize", () => {
         renderMediaPage(pageStartIndex);
       });

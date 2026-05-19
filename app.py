@@ -237,6 +237,7 @@ def _media_image_response(path: Path):
         raise HTTPException(status_code=415, detail="HEIC/HEIF 需要安装 pillow-heif")
     try:
         with Image.open(path) as image:
+            image = ImageOps.exif_transpose(image)
             if image.mode in ("RGBA", "LA") or (
                 image.mode == "P" and "transparency" in image.info
             ):
@@ -323,9 +324,16 @@ def _media_browser_items(
     if not scan_root.is_dir():
         return []
     items = []
-    for item in sorted(scan_root.rglob("*"), key=lambda value: value.as_posix().lower()):
+    candidates = []
+    for item in scan_root.rglob("*"):
         if not item.is_file() or item.suffix.lower() not in extensions:
             continue
+        try:
+            created_at = item.stat().st_ctime
+        except OSError:
+            created_at = 0
+        candidates.append((created_at, item))
+    for _created_at, item in sorted(candidates, key=lambda value: (-value[0], value[1].as_posix().lower())):
         if labels and not (labels & _label_indices(item.with_suffix(".txt"))):
             continue
         resolved = item.resolve()

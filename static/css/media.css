@@ -10,14 +10,18 @@
 }
 
 body {
+  min-height: 100vh;
   margin: 0;
   background: #f4f7fb;
 }
 
 .media-page {
   width: min(1680px, calc(100vw - 64px));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   margin: 0 auto;
-  padding: 42px 0 56px;
+  padding: 42px 0 18px;
 }
 
 .media-header {
@@ -100,6 +104,7 @@ body {
   grid-template-columns: repeat(auto-fill, 168px);
   gap: 18px;
   align-items: start;
+  align-content: start;
 }
 
 .media-card {
@@ -109,21 +114,23 @@ body {
   background: #fff;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   width: 168px;
+  height: 174px;
 }
 
 .media-preview {
   display: grid;
   place-items: center;
   width: 168px;
+  height: 112px;
   background: #eef3f9;
 }
 
 .media-preview-landscape {
-  aspect-ratio: 3 / 2;
+  aspect-ratio: auto;
 }
 
 .media-preview-portrait {
-  aspect-ratio: 2 / 3;
+  aspect-ratio: auto;
 }
 
 .media-preview-button {
@@ -180,7 +187,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  margin-top: 26px;
+  margin-top: auto;
+  padding-top: 18px;
 }
 
 .media-pagination button,
@@ -255,11 +263,17 @@ body {
   overflow: hidden;
 }
 
+.image-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+
 .image-viewer::backdrop {
   background: rgba(15, 23, 42, 0.58);
 }
 
 .image-viewer-bar {
+  flex: 0 0 58px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -293,15 +307,30 @@ body {
 }
 
 .image-viewer-stage {
-  display: grid;
-  place-items: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  height: calc(100% - 118px);
   background: #0f172a;
   overflow: hidden;
 }
 
-.image-viewer-stage img {
+.image-viewer-fit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.image-viewer-fit img {
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -313,6 +342,7 @@ body {
 }
 
 .image-viewer-nav {
+  flex: 0 0 60px;
   display: flex;
   align-items: center;
   justify-content: center;
