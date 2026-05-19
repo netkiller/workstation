@@ -6,7 +6,7 @@ import threading
 import time
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -285,6 +285,8 @@ def _browser_roots(project: str = ""):
 
 
 def _media_source_url(path: str, project: str = "", *, source: str = "/media", variant: str = ""):
+    if source == "/media" and project and variant in {"thumbnail", "original"}:
+        return f"/media/{quote(project, safe='')}/{variant}?{urlencode({'path': path})}"
     query = {"path": path}
     if project:
         query["project"] = project
@@ -515,6 +517,16 @@ def media_video_browser(request: Request, project: str = ""):
 @app.get("/media/video/source", include_in_schema=False)
 def media_video_source(request: Request, path: str, project: str = ""):
     return FileResponse(_media_video_path(request, path, project))
+
+
+@app.get("/media/{project}/thumbnail", include_in_schema=False)
+def media_project_thumbnail(request: Request, project: str, path: str):
+    return _thumbnail_response(_media_path(request, path, project))
+
+
+@app.get("/media/{project}/original", include_in_schema=False)
+def media_project_original(request: Request, project: str, path: str):
+    return _media_image_response(_media_path(request, path, project))
 
 
 @app.get("/media")
