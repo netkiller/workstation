@@ -70,6 +70,21 @@ def create_workstation_api_router(workstation):
             "content": workstation._classes_text(),
         }
 
+    @router.post("/classes/action")
+    async def classes_action(request: Request):
+        payload = await request.json()
+        target = payload.get("target_index")
+        try:
+            index = int(payload.get("index", -1))
+            target_index = int(target) if target not in (None, "") else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="标签索引无效")
+        return workstation._rewrite_label_indices(
+            index,
+            str(payload.get("action", "")).strip(),
+            target_index,
+        )
+
     @router.get("/statistics")
     def statistics():
         return workstation._statistics()

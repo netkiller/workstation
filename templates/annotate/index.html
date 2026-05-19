@@ -242,6 +242,10 @@
   <div id="modelContextMenu" class="context-menu" hidden>
     <button type="button" data-model-action="delete"><span class="menu-icon">✕</span><span>删除模型</span></button>
   </div>
+  <div id="labelContextMenu" class="context-menu" hidden>
+    <button type="button" data-label-action="delete"><span class="menu-icon">✕</span><span>删除</span></button>
+    <button type="button" data-label-action="copy_to"><span class="menu-icon">⎘</span><span>复制到</span></button>
+  </div>
   <dialog id="modelUploadDialog" class="classes-dialog model-upload-dialog">
     <form id="modelUploadForm" class="classes-form">
       <div class="shortcut-title"><span>上传标注模型</span><button id="closeModelUploadDialog" type="button" title="关闭">×</button></div>
@@ -262,6 +266,10 @@
       <label id="contextActionInputWrap" class="context-action-input-wrap" hidden>
         <span id="contextActionInputLabel">名称</span>
         <input id="contextActionInput" type="text" autocomplete="off">
+      </label>
+      <label id="contextActionRiskWrap" class="context-action-risk-wrap" hidden>
+        <input id="contextActionRiskCheck" type="checkbox">
+        <span>我已知道风险，确认执行此操作。</span>
       </label>
       <div class="context-action-buttons">
         <button id="contextActionCancel" class="secondary-button" type="button">取消</button>
@@ -338,6 +346,7 @@
     const cancelModelUploadDialog = document.getElementById("cancelModelUploadDialog");
     const confirmModelUpload = document.getElementById("confirmModelUpload");
     const modelContextMenu = document.getElementById("modelContextMenu");
+    const labelContextMenu = document.getElementById("labelContextMenu");
     const toggleModelPane = document.getElementById("toggleModelPane");
     const modelSplitter = document.getElementById("modelSplitter");
     const collaboration = document.getElementById("collaboration");
@@ -357,6 +366,8 @@
     const contextActionInputWrap = document.getElementById("contextActionInputWrap");
     const contextActionInputLabel = document.getElementById("contextActionInputLabel");
     const contextActionInput = document.getElementById("contextActionInput");
+    const contextActionRiskWrap = document.getElementById("contextActionRiskWrap");
+    const contextActionRiskCheck = document.getElementById("contextActionRiskCheck");
     const contextActionCancel = document.getElementById("contextActionCancel");
     const contextActionConfirm = document.getElementById("contextActionConfirm");
     const canvas = document.getElementById("canvas");
@@ -386,6 +397,7 @@
     let currentFiles = [];
     let contextFilePath = "";
     let contextTreePath = "";
+    let contextLabel = null;
     let contextActionResolve = null;
     let fileSortDirection = "asc";
     let annotateMode = false;
@@ -1124,6 +1136,7 @@
       contextModel = model;
       imageContextMenu.hidden = true;
       treeContextMenu.hidden = true;
+      labelContextMenu.hidden = true;
       modelContextMenu.hidden = false;
       const menuWidth = modelContextMenu.offsetWidth || 218;
       const menuHeight = modelContextMenu.offsetHeight || 44;
@@ -1256,8 +1269,16 @@
           row.className = "label-row";
           row.dataset.classId = String(index);
           row.dataset.label = label;
+          row.dataset.classesFile = group.classes_file || "";
           row.innerHTML = `<span class="swatch" style="background:${colors[index % colors.length]}"></span><span>${index}: ${escapeHtml(label)}</span>`;
           row.onclick = () => selectClassLabel(index, label, row);
+          if (groupIndex === 0) {
+            row.oncontextmenu = event => showLabelContextMenu(event, {
+              index,
+              label,
+              classes_file: group.classes_file || "",
+            });
+          }
           labelsEl.appendChild(row);
           if (!selectedAssigned) {
             selectClassLabel(index, label, row);
@@ -1679,6 +1700,7 @@
       imageContextMenu.hidden = true;
       treeContextMenu.hidden = true;
       modelContextMenu.hidden = true;
+      labelContextMenu.hidden = true;
     }
 
     function showContextMenu(event) {
@@ -1688,6 +1710,7 @@
       contextFilePath = targetButton?.dataset.path || currentPath;
       treeContextMenu.hidden = true;
       modelContextMenu.hidden = true;
+      labelContextMenu.hidden = true;
       imageContextMenu.hidden = false;
       const menuWidth = imageContextMenu.offsetWidth || 218;
       const menuHeight = imageContextMenu.offsetHeight || 240;
@@ -1701,11 +1724,26 @@
       contextTreePath = path || "";
       imageContextMenu.hidden = true;
       modelContextMenu.hidden = true;
+      labelContextMenu.hidden = true;
       treeContextMenu.hidden = false;
       const menuWidth = treeContextMenu.offsetWidth || 218;
       const menuHeight = treeContextMenu.offsetHeight || 210;
       treeContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - menuWidth - 8)}px`;
       treeContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - menuHeight - 8)}px`;
+    }
+
+    function showLabelContextMenu(event, label) {
+      event.preventDefault();
+      event.stopPropagation();
+      contextLabel = label;
+      imageContextMenu.hidden = true;
+      treeContextMenu.hidden = true;
+      modelContextMenu.hidden = true;
+      labelContextMenu.hidden = false;
+      const menuWidth = labelContextMenu.offsetWidth || 218;
+      const menuHeight = labelContextMenu.offsetHeight || 88;
+      labelContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - menuWidth - 8)}px`;
+      labelContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - menuHeight - 8)}px`;
     }
 
     function showContextActionDialog(options) {
@@ -1717,6 +1755,9 @@
         contextActionTitle.textContent = options.title || "确认操作";
         contextActionMessage.textContent = options.message || "";
         contextActionConfirm.textContent = options.confirmText || "确定";
+        contextActionRiskWrap.hidden = !options.risk;
+        contextActionRiskCheck.checked = false;
+        contextActionConfirm.disabled = Boolean(options.risk);
         if (options.input) {
           contextActionInputWrap.hidden = false;
           contextActionInputLabel.textContent = options.inputLabel || "名称";
@@ -1732,8 +1773,10 @@
         if (options.input) {
           contextActionInput.focus();
           contextActionInput.select();
-        } else {
+        } else if (!options.risk) {
           contextActionConfirm.focus();
+        } else {
+          contextActionRiskCheck.focus();
         }
       });
     }
@@ -1744,8 +1787,69 @@
       if (contextActionDialog.open) {
         contextActionDialog.close();
       }
+      contextActionConfirm.disabled = false;
       if (resolve) {
         resolve(value);
+      }
+    }
+
+    function riskMessageForLabel(action, label) {
+      if (action === "delete") {
+        return [
+          `即将删除标签 ${label.index}: ${label.label}。`,
+          "此操作会修改 classes.txt，并批量打开所有标注 .txt：删除对应索引的标注行，再把后续索引整体前移。",
+          "这是高风险操作，执行前建议备份项目目录。",
+        ].join("\n");
+      }
+      return [
+        `即将把标签 ${label.index}: ${label.label} 的所有标注复制到目标标签索引。`,
+        "此操作会批量写回所有包含该索引的 .txt 文件，原标注不会删除。",
+        "这是高风险操作，执行前建议备份项目目录。",
+      ].join("\n");
+    }
+
+    async function runLabelAction(action) {
+      const label = contextLabel;
+      hideContextMenu();
+      if (!label) return;
+      const payload = {action, index: Number(label.index)};
+      if (action === "copy_to") {
+        const answer = await showContextActionDialog({
+          title: "复制标签标注",
+          message: riskMessageForLabel(action, label),
+          input: true,
+          inputLabel: "目标标签索引",
+          value: "",
+          confirmText: "复制到",
+          risk: true,
+        });
+        const target = Number.parseInt(answer?.name ?? "", 10);
+        if (!Number.isInteger(target)) return;
+        payload.target_index = target;
+      } else if (action === "delete") {
+        const confirmed = await showContextActionDialog({
+          title: "删除标签并重建索引",
+          message: riskMessageForLabel(action, label),
+          confirmText: "删除并重建",
+          risk: true,
+        });
+        if (!confirmed) return;
+      } else {
+        return;
+      }
+      try {
+        const result = await postJson("/api/classes/action", payload);
+        classesText = result.content || classesText;
+      } catch (error) {
+        alert(error.message);
+        return;
+      }
+      currentLabelFile = "";
+      await loadLabels();
+      await loadStatistics();
+      await refreshCurrentFiles();
+      if (currentPath) {
+        await selectImage(currentPath, fileRow(currentPath));
       }
     }
 
@@ -2280,8 +2384,15 @@
         button.addEventListener("click", () => runDirectoryAction(button.dataset.directoryAction));
       });
       modelContextMenu.querySelector("[data-model-action='delete']")?.addEventListener("click", deleteContextModel);
+      labelContextMenu.querySelectorAll("[data-label-action]").forEach(button => {
+        button.addEventListener("click", () => runLabelAction(button.dataset.labelAction));
+      });
+      contextActionRiskCheck.addEventListener("change", () => {
+        contextActionConfirm.disabled = !contextActionRiskWrap.hidden && !contextActionRiskCheck.checked;
+      });
       contextActionForm.addEventListener("submit", event => {
         event.preventDefault();
+        if (!contextActionRiskWrap.hidden && !contextActionRiskCheck.checked) return;
         closeContextActionDialog({name: contextActionInput.value});
       });
       contextActionCancel.addEventListener("click", () => closeContextActionDialog(null));

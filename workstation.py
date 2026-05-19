@@ -176,6 +176,90 @@ class Workstation:
         self.classes = self.class_groups[0]["classes"] if self.class_groups else []
         return target
 
+    def _rewrite_label_indices(self, source_index: int, action: str, target_index: int | None = None):
+        if not self.class_groups:
+            raise HTTPException(status_code=404, detail="classes.txt 不存在")
+        classes_file = self.class_groups[0]["path"]
+        classes = list(self.class_groups[0]["classes"])
+        if source_index < 0 or source_index >= len(classes):
+            raise HTTPException(status_code=400, detail="标签索引无效")
+        if action == "copy_to" and (target_index is None or target_index < 0 or target_index >= len(classes)):
+            raise HTTPException(status_code=400, detail="目标标签索引无效")
+        if action == "copy_to" and target_index == source_index:
+            raise HTTPException(status_code=400, detail="目标标签不能与当前标签相同")
+        if action == "delete" and len(classes) <= 1:
+            raise HTTPException(status_code=400, detail="classes.txt 至少保留一个标签")
+
+        changed_files = []
+        removed_lines = 0
+        copied_lines = 0
+        for label_file in sorted(self.workspace.rglob("*.txt")):
+            if label_file.name == "classes.txt":
+                continue
+            try:
+                original_lines = label_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            next_lines = []
+            changed = False
+            for line in original_lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                parts = stripped.split()
+                if len(parts) != 5:
+                    next_lines.append(stripped)
+                    continue
+                try:
+                    class_id = int(parts[0])
+                    [float(value) for value in parts[1:]]
+                except ValueError:
+                    next_lines.append(stripped)
+                    continue
+                if action == "delete":
+                    if class_id == source_index:
+                        removed_lines += 1
+                        changed = True
+                        continue
+                    if class_id > source_index:
+                        parts[0] = str(class_id - 1)
+                        changed = True
+                    next_lines.append(" ".join(parts))
+                elif action == "copy_to":
+                    next_lines.append(stripped)
+                    if class_id == source_index:
+                        copied = [str(target_index), *parts[1:]]
+                        next_lines.append(" ".join(copied))
+                        copied_lines += 1
+                        changed = True
+                else:
+                    raise HTTPException(status_code=400, detail="invalid action")
+            if changed:
+                label_file.write_text(("\n".join(next_lines) + "\n") if next_lines else "", encoding="utf-8")
+                changed_files.append(self._relative(label_file))
+
+        deleted_label = None
+        if action == "delete":
+            deleted_label = classes.pop(source_index)
+            classes_file.write_text("\n".join(classes) + "\n", encoding="utf-8")
+        self.class_groups = self._load_class_groups()
+        self.classes_file = self.class_groups[0]["path"] if self.class_groups else None
+        self.classes = self.class_groups[0]["classes"] if self.class_groups else []
+        self._rebuild_workspace_index()
+        return {
+            "ok": True,
+            "action": action,
+            "source_index": source_index,
+            "target_index": target_index,
+            "deleted_label": deleted_label,
+            "changed_files": changed_files,
+            "changed_count": len(changed_files),
+            "removed_lines": removed_lines,
+            "copied_lines": copied_lines,
+            "classes": self.classes,
+            "content": self._classes_text(),
+        }
+
     def _max_class_count(self):
         return max([len(group["classes"]) for group in self.class_groups] + [len(self.classes), 0])
 
