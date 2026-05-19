@@ -292,7 +292,7 @@
         if (!logUrl) return;
         if (deployLogTimer) clearInterval(deployLogTimer);
         let offset = 0;
-        const first = await loadDeployLog(logUrl, 0, true);
+        const first = await loadDeployLog(logUrl, 0, window.yoloutilsFooterConsole?.isOpen?.());
         if (!first) return;
         offset = Number(first.size || 0);
         if (!activeBuildStatuses.has(first.status || "")) {
@@ -400,7 +400,7 @@
         close();
         form.reset();
         randomIcon();
-        watchBuildLog(payload.log_url);
+        scheduleDatasetRefresh();
         await refreshDatasetList();
       });
       document.addEventListener("click", event => {

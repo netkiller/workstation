@@ -218,10 +218,10 @@
           <div class="project-resource-tags" aria-label="测试集列表">
             {% if project.test_set_tags %}
               {% for test_set in project.test_set_tags %}
-                <span class="project-resource-tag project-resource-tag-static" style="--resource-tag-color: {{ test_set.color }}" title="{{ test_set.name }}{% if test_set.updated_at %} · {{ test_set.updated_at }}{% endif %}">
+                <a class="project-resource-tag" href="/media/image?project={{ project.directory|urlencode }}&scope=test&set={{ test_set.name|urlencode }}&return_to={{ ('/project/' ~ project.directory)|urlencode }}" style="--resource-tag-color: {{ test_set.color }}" title="{{ test_set.name }}{% if test_set.updated_at %} · {{ test_set.updated_at }}{% endif %}">
                   <b>{{ test_set.name }}</b>
                   <small>{{ test_set.count }} 张</small>
-                </span>
+                </a>
               {% endfor %}
             {% else %}
               <span class="project-resource-empty">暂无测试集</span>

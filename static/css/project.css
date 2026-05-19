@@ -1458,7 +1458,7 @@ button.close-project-link {
 
 .upload-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: minmax(0, 1.618fr) minmax(360px, 1fr);
   gap: 16px;
 }
 

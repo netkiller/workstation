@@ -28,7 +28,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic", ".heif"}
 JPEG_EXTS = {".jpg", ".jpeg"}
-DATASET_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+DATASET_NAME_PATTERN = re.compile(r"^[^\x00-\x1f\x7f/\\:]+$")
 ANNOTATE_DIR = "annotate"
 DEPLOY_MODES = {"full": "全量", "incremental": "增量", "sync": "同步", "diff": "同步"}
 DEPLOY_TARGETS = {"local": "本地", "remote": "远程"}
@@ -422,8 +422,8 @@ def deploy_mode_icon(mode: str):
 
 def build_dataset(workspace: Path, project: str, name: str, val_percent: int, test_percent: int, icon: str = ""):
     name = (name or "").strip()
-    if not name or not DATASET_NAME_PATTERN.match(name):
-        return None, "数据集名称只能包含字母、数字、点、下划线和连字符"
+    if not name or name in {".", ".."} or not DATASET_NAME_PATTERN.match(name):
+        return None, "数据集名称不能包含路径分隔符、冒号或控制字符"
     if val_percent < 0 or test_percent < 0 or val_percent + test_percent > 100:
         return None, "val 和 test 百分比之和不能超过 100"
 
@@ -550,8 +550,8 @@ def create_build_task(
     resource_id: str = "",
 ):
     name = (name or "").strip()
-    if not name or not DATASET_NAME_PATTERN.match(name):
-        return None, "数据集名称只能包含字母、数字、点、下划线和连字符"
+    if not name or name in {".", ".."} or not DATASET_NAME_PATTERN.match(name):
+        return None, "数据集名称不能包含路径分隔符、冒号或控制字符"
     if val_percent < 0 or test_percent < 0 or val_percent + test_percent > 100:
         return None, "val 和 test 百分比之和不能超过 100"
     dataset_path = project_path / "datasets" / name
