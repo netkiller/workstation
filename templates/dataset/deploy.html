@@ -3,7 +3,7 @@
 {% block title %}部署数据集{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260515-current-file">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260520-deploy-modes">
 {% endblock %}
 
 {% block content %}
@@ -23,7 +23,7 @@
         <div class="deploy-card-head">
           <div>
             <h2>手动部署</h2>
-            <p>优先使用 rsync 执行全量或同步部署，缺失时自动使用 scp。</p>
+            <p>优先使用 rsync 执行全量、增量和同步部署；未安装 rsync 时仅用 scp 执行全量部署。</p>
           </div>
         </div>
 
@@ -58,10 +58,14 @@
           <input name="target_path" type="text" value="~/datasets/{% if selected_dataset %}{{ selected_dataset.name }}{% endif %}" placeholder="~/datasets/dataset-name" required>
         </label>
 
-        <div class="deploy-methods deploy-mode-segment" role="radiogroup" aria-label="部署方式" data-mode-segment data-mode="sync">
-          <label><input type="radio" name="mode" value="full"> <span>全量</span></label>
-          <label><input type="radio" name="mode" value="sync" checked> <span>同步</span></label>
+        <div class="deploy-methods{% if deploy_modes | length == 1 %} deploy-methods-one{% elif deploy_modes | length == 3 %} deploy-methods-three{% endif %} deploy-mode-segment" role="radiogroup" aria-label="部署方式" data-mode-segment data-mode="{{ 'sync' if 'sync' in deploy_modes else 'full' }}">
+          {% for mode, label in deploy_modes.items() %}
+            <label><input type="radio" name="mode" value="{{ mode }}" {% if (mode == 'sync' and 'sync' in deploy_modes) or (mode == 'full' and 'sync' not in deploy_modes) %}checked{% endif %}> <span>{{ label }}</span></label>
+          {% endfor %}
         </div>
+        {% if not rsync_available %}
+          <p class="dataset-deploy-empty">当前环境未安装 rsync，仅支持全量部署。</p>
+        {% endif %}
 
         <button class="project-link-button" type="submit" {% if not datasets or not resources %}disabled{% endif %}>开始部署</button>
       </form>

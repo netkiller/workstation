@@ -56,6 +56,7 @@ h2 { margin: 0; padding: 12px 14px; font-size: 13px; border-bottom: 1px solid #e
 .icon-button { flex: 0 0 28px; width: 28px; min-width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; text-align: center; border-radius: 6px; font-size: 16px; line-height: 1; color: #52606d; }
 .icon-button:hover { background: #e6f0ff; color: #243b53; }
 .collapse-button { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; line-height: 1; padding: 0; }
+.histogram-mode-toggle.active { color: #1d4ed8; background: #dbeafe; }
 .viewer-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 main:not(.files-hidden) #showFiles { display: none; }
 .show-files-from-tree { display: none; }
@@ -198,9 +199,9 @@ button:hover, button.active { background: #e6f0ff; }
 .tree-node { position: relative; }
 .tree-row { display: flex; align-items: center; min-width: 0; }
 .tree-node.root-node > .tree-row > .tree-toggle-placeholder { display: none; }
-.tree-children { margin-left: 14px; padding-left: 8px; border-left: 1px solid #d9e2ec; }
-.tree-toggle { flex: 0 0 22px; width: 22px; min-width: 22px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #7b8794; font-size: 13px; }
-.tree-toggle-placeholder { flex: 0 0 22px; width: 22px; min-width: 22px; }
+.tree-children { margin-left: 2px; padding-left: 3px; border-left: 1px solid #d9e2ec; }
+.tree-toggle { flex: 0 0 12px; width: 12px; min-width: 12px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #7b8794; font-size: 12px; }
+.tree-toggle-placeholder { flex: 0 0 12px; width: 12px; min-width: 12px; }
 .tree-select { flex: 1 1 auto; display: flex; align-items: center; gap: 7px; min-width: 0; padding: 6px 8px; }
 .tree-icon { flex: 0 0 auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; line-height: 1; font-weight: 700; }
 .tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

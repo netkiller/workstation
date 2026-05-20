@@ -2,6 +2,31 @@
 
 {% block title %}SFTP {{ resource.name }}{% endblock %}
 
+{% macro render_sftp_tree_node(node) %}
+  <li>
+    {% if node.children %}
+      <details {% if node.open %}open{% endif %}>
+        <summary>
+          <a class="{% if node.active %}active{% endif %}" href="{{ node.href }}" title="{{ node.path }}">
+            <span aria-hidden="true">▣</span>
+            <span>{{ node.name }}</span>
+          </a>
+        </summary>
+        <ul>
+          {% for child in node.children %}
+            {{ render_sftp_tree_node(child) }}
+          {% endfor %}
+        </ul>
+      </details>
+    {% else %}
+      <a class="{% if node.active %}active{% endif %}" href="{{ node.href }}" title="{{ node.path }}">
+        <span aria-hidden="true">▣</span>
+        <span>{{ node.name }}</span>
+      </a>
+    {% endif %}
+  </li>
+{% endmacro %}
+
 {% block content %}
   <main class="resources-main sftp-main">
     <section class="toolbar" aria-labelledby="resource-sftp-title">
@@ -31,42 +56,61 @@
           <strong>SFTP 连接失败</strong>
           <span>{{ listing["error"] }}</span>
         </div>
-      {% elif listing["items"] %}
-        <div class="sftp-table-wrap">
-          <table class="sftp-table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>类型</th>
-                <th>大小</th>
-                <th>修改时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for item in listing["items"] %}
-                <tr>
-                  <td>
-                    {% if item.is_dir %}
-                      <a href="{{ item.href }}"><span aria-hidden="true">▣</span>{{ item.name }}</a>
-                    {% else %}
-                      <span><span aria-hidden="true">▤</span>{{ item.name }}</span>
-                    {% endif %}
-                  </td>
-                  <td>{{ item.type }}</td>
-                  <td>{{ item.size }}</td>
-                  <td>{{ item.mtime }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
       {% else %}
-        <div class="empty compact">空目录</div>
+        <div class="sftp-browser">
+          <aside class="sftp-tree-panel" aria-label="远程目录树">
+            <div class="sftp-tree-head">目录树</div>
+            {% if listing.tree %}
+              <ul class="sftp-tree">
+                {{ render_sftp_tree_node(listing.tree) }}
+              </ul>
+            {% else %}
+              <div class="empty compact">暂无目录</div>
+            {% endif %}
+          </aside>
+          <div class="sftp-files-panel">
+            {% if listing["items"] %}
+              <div class="sftp-table-wrap">
+                <table class="sftp-table">
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>类型</th>
+                      <th>权限</th>
+                      <th>大小</th>
+                      <th>修改时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in listing["items"] %}
+                      <tr>
+                        <td>
+                          {% if item.is_dir %}
+                            <a href="{{ item.href }}"><span aria-hidden="true">▣</span>{{ item.name }}</a>
+                          {% else %}
+                            <span><span aria-hidden="true">▤</span>{{ item.name }}</span>
+                          {% endif %}
+                        </td>
+                        <td>{{ item.type }}</td>
+                        <td><code class="sftp-permission">{{ item.permission }}</code></td>
+                        <td>{{ item.size }}</td>
+                        <td>{{ item.mtime }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="empty compact">空目录</div>
+            {% endif %}
+          </div>
+        </div>
       {% endif %}
     </section>
   </main>
 
   {% set footer_id = "resources" %}
+  {% set footer_breadcrumb = listing.breadcrumb if listing.ok else none %}
   {% set footer_left = workspace %}
   {% include "partials/footer.html" %}
 {% endblock %}

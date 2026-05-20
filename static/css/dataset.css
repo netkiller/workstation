@@ -653,6 +653,14 @@
   transform: translateX(100%);
 }
 
+.deploy-methods-one {
+  grid-template-columns: 1fr;
+}
+
+.deploy-methods-one::before {
+  width: calc(100% - 8px);
+}
+
 .deploy-methods-three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

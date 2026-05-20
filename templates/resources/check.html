@@ -50,6 +50,9 @@
             <div class="resource-check-body">
               <strong>{{ item.name }}</strong>
               <span>{{ item.version }}</span>
+              {% if item.hint %}
+                <em>{{ item.hint }}</em>
+              {% endif %}
             </div>
             <div class="resource-check-action">
               {% if item.ok %}

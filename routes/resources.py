@@ -627,8 +627,20 @@ def tool_check_items(resource: dict | None):
             "version": server_version or summary.get("error") or "未知",
             "installable": False,
             "install_label": "",
+            "hint": "",
         }
     ]
+
+    ok, out, err = local_shell("command -v sshpass >/dev/null 2>&1 && sshpass -V | head -n 1", timeout=8)
+    checks.append({
+        "key": "sshpass",
+        "name": "sshpass",
+        "ok": ok and bool(out),
+        "version": out or err or "未安装",
+        "installable": True,
+        "install_label": "安装",
+        "hint": "本机工具，用于密码认证的远程部署。macOS: brew install hudochenkov/sshpass/sshpass；Ubuntu/Debian: sudo apt install sshpass。",
+    })
 
     ok, out, err = check_command(
         resource,
@@ -642,6 +654,7 @@ def tool_check_items(resource: dict | None):
         "version": out or err or "未安装",
         "installable": False,
         "install_label": "需按驱动环境安装",
+        "hint": "CUDA 需要按显卡驱动、系统版本和 PyTorch/YOLO 环境匹配安装。",
     })
 
     ok, out, err = check_command(
@@ -656,6 +669,7 @@ def tool_check_items(resource: dict | None):
         "version": out or err or "未安装",
         "installable": True,
         "install_label": "一键安装",
+        "hint": "用于训练、验证和预测的 YOLO 命令行与 Python 包。",
     })
 
     ok, out, err = check_command(
@@ -670,11 +684,30 @@ def tool_check_items(resource: dict | None):
         "version": out or err or "未安装",
         "installable": True,
         "install_label": "一键安装",
+        "hint": "工作站远程任务辅助工具。",
     })
     return checks
 
 
 def install_tool(resource: dict | None, tool: str):
+    if tool == "sshpass":
+        command = (
+            "if command -v brew >/dev/null 2>&1; then "
+            "brew install hudochenkov/sshpass/sshpass; "
+            "elif command -v apt-get >/dev/null 2>&1; then "
+            "sudo apt-get update && sudo apt-get install -y sshpass; "
+            "elif command -v dnf >/dev/null 2>&1; then "
+            "sudo dnf install -y sshpass; "
+            "elif command -v yum >/dev/null 2>&1; then "
+            "sudo yum install -y sshpass; "
+            "elif command -v apk >/dev/null 2>&1; then "
+            "sudo apk add sshpass; "
+            "else "
+            "echo '未找到 brew/apt-get/dnf/yum/apk，请手动安装 sshpass。' >&2; exit 1; "
+            "fi"
+        )
+        ok, out, err = local_shell(command, timeout=180)
+        return ok, out or err or ("安装完成" if ok else "安装失败")
     commands = {
         "yolo": "python3 -m pip install -U ultralytics",
         "netkiller-yoloutils": "python3 -m pip install -U netkiller-yoloutils -i https://pypi.tuna.tsinghua.edu.cn/simple",
@@ -847,6 +880,93 @@ def resource_ssh(resource_id: str, request: Request, project: str = ""):
     return response
 
 
+def sftp_href(path: str):
+    return "?" + urlencode({"path": path})
+
+
+def sftp_path_ancestors(path: str):
+    normalized = path if path.startswith("/") else f"/{path}"
+    normalized = posixpath.normpath(normalized)
+    if normalized == "/":
+        return ["/"]
+    ancestors = ["/"]
+    cursor = ""
+    for part in [part for part in normalized.split("/") if part]:
+        cursor = posixpath.join(cursor or "/", part)
+        ancestors.append(cursor)
+    return ancestors
+
+
+def sftp_directory_children(sftp, path: str, limit: int = 200):
+    children = []
+    try:
+        entries = sftp.listdir_attr(path)
+    except Exception:
+        return children
+    for entry in sorted(entries, key=lambda item: item.filename.lower()):
+        if not stat_module.S_ISDIR(entry.st_mode):
+            continue
+        if entry.filename in {".", ".."}:
+            continue
+        child_path = posixpath.join(path.rstrip("/") or "/", entry.filename)
+        children.append(
+            {
+                "name": entry.filename,
+                "path": child_path,
+                "href": sftp_href(child_path),
+                "active": False,
+                "open": False,
+                "children": [],
+            }
+        )
+        if len(children) >= limit:
+            break
+    return children
+
+
+def sftp_directory_tree(sftp, current_path: str):
+    ancestors = sftp_path_ancestors(current_path)
+    ancestor_set = set(ancestors)
+
+    def build_node(path: str):
+        node = {
+            "name": "/" if path == "/" else posixpath.basename(path),
+            "path": path,
+            "href": sftp_href(path),
+            "active": path == current_path,
+            "open": path in ancestor_set,
+            "children": [],
+        }
+        children = sftp_directory_children(sftp, path)
+        next_children = []
+        for child in children:
+            if child["path"] in ancestor_set:
+                next_children.append(build_node(child["path"]))
+            else:
+                next_children.append(child)
+        node["children"] = next_children
+        return node
+
+    tree = build_node("/")
+    if current_path != "/" and not any(child.get("open") for child in tree.get("children", [])):
+        return build_node(current_path)
+    return tree
+
+
+def sftp_breadcrumb(path: str):
+    crumbs = []
+    for item_path in sftp_path_ancestors(path):
+        crumbs.append(
+            {
+                "name": "/" if item_path == "/" else posixpath.basename(item_path),
+                "path": item_path,
+                "href": sftp_href(item_path),
+                "active": item_path == path,
+            }
+        )
+    return crumbs
+
+
 def sftp_items(resource: dict, requested_path: str):
     import paramiko
 
@@ -878,9 +998,10 @@ def sftp_items(resource: dict, requested_path: str):
                 {
                     "name": entry.filename,
                     "path": child_path,
-                    "href": "?" + urlencode({"path": child_path}),
+                    "href": sftp_href(child_path),
                     "type": "目录" if is_dir else "文件",
                     "is_dir": is_dir,
+                    "permission": stat_module.filemode(entry.st_mode),
                     "size": entry.st_size,
                     "mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(entry.st_mtime)),
                 }
@@ -889,7 +1010,9 @@ def sftp_items(resource: dict, requested_path: str):
         return {
             "ok": True,
             "path": current_path,
-            "parent_href": "?" + urlencode({"path": parent_path}),
+            "parent_href": sftp_href(parent_path),
+            "tree": sftp_directory_tree(sftp, current_path),
+            "breadcrumb": sftp_breadcrumb(current_path),
             "items": rows,
             "error": "",
         }

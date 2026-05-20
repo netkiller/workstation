@@ -50,7 +50,7 @@ running_build_tasks: set[str] = set()
 running_deploy_tasks: set[str] = set()
 BUILD_RUNNABLE_STATUSES = {"排队中", "创建中"}
 DEPLOY_RUNNABLE_STATUSES = {"排队中", "进行中"}
-ACTIVE_DEPLOY_STATUSES = {"排队中", "进行中", "等待确认"}
+ACTIVE_DEPLOY_STATUSES = {"排队中", "进行中"}
 LOG_TIMESTAMP_PREFIX = re.compile(r"^\[[^\]]+\]\s*")
 
 
@@ -400,10 +400,11 @@ def latest_dataset_deploy_task(project_path: Path, dataset_name: str):
 
 def dataset_deploy_defaults(project_path: Path, dataset_name: str):
     latest = latest_dataset_deploy_task(project_path, dataset_name)
+    default_mode = "sync" if deploy_rsync_available() else "full"
     if latest:
         return {
             "resource_id": str(latest.get("resource_id") or ""),
-            "mode": "sync",
+            "mode": default_mode,
             "target_path": str(latest.get("target_path") or f"~/datasets/{dataset_name}"),
         }
     resources = read_resources(workspace_path())
@@ -411,13 +412,23 @@ def dataset_deploy_defaults(project_path: Path, dataset_name: str):
         return None
     return {
         "resource_id": str(resources[0].get("id") or ""),
-        "mode": "sync",
+        "mode": default_mode,
         "target_path": f"~/datasets/{dataset_name}",
     }
 
 
 def deploy_mode_icon(mode: str):
     return "↻" if mode in {"sync", "diff", "incremental"} else "⬢"
+
+
+def available_deploy_modes():
+    if deploy_rsync_available():
+        return {
+            "full": DEPLOY_MODES["full"],
+            "incremental": DEPLOY_MODES["incremental"],
+            "sync": DEPLOY_MODES["sync"],
+        }
+    return {"full": DEPLOY_MODES["full"]}
 
 
 def build_dataset(workspace: Path, project: str, name: str, val_percent: int, test_percent: int, icon: str = ""):
@@ -564,6 +575,8 @@ def create_build_task(
     if deploy_enabled:
         if deploy_mode not in {"full", "incremental", "sync"}:
             return None, "部署方式不正确"
+        if deploy_mode in {"incremental", "sync"} and not deploy_rsync_available():
+            return None, "当前环境未安装 rsync，不能使用增量或同步部署"
         if find_resource(workspace_path(), resource_id) is None:
             return None, "请选择算力服务器"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -579,7 +592,7 @@ def create_build_task(
         "progress": 0,
         "error": "",
         "deploy_enabled": bool(deploy_enabled),
-        "deploy_mode": deploy_mode if deploy_mode in {"full", "incremental", "sync"} else "sync",
+        "deploy_mode": deploy_mode if deploy_mode in {"full", "incremental", "sync"} else ("sync" if deploy_rsync_available() else "full"),
         "resource_id": resource_id if deploy_enabled else "",
         "target_path": f"~/datasets/{name}" if deploy_enabled else "",
         "log_path": str(log_path),
@@ -1055,6 +1068,10 @@ def deploy_transfer_tool():
     return "", ""
 
 
+def deploy_rsync_available():
+    return shutil.which("rsync") is not None
+
+
 def rsync_file_output_args(rsync_path: str, log_path: Path | None = None):
     version_label = "未知版本"
     help_text = ""
@@ -1151,13 +1168,14 @@ def build_deploy_commands(task: dict, source: Path, resource: dict | None, log_p
             source_arg = str(source / ".")
             base = [tool_path, "-r"]
 
+    if mode in {"incremental", "sync", "diff"} and tool_name != "rsync":
+        return [], temp_files, tool_name, "当前环境未安装 rsync，scp 不支持增量或同步部署。"
     if mode == "full":
-        command = [*base, source_arg, target_arg]
-        if tool_name == "rsync":
-            command.insert(len(base), "--delete")
-        return [command], temp_files, tool_name, ""
-    if mode in {"sync", "diff", "incremental"}:
         return [[*base, source_arg, target_arg]], temp_files, tool_name, ""
+    if mode == "incremental":
+        return [[*base, source_arg, target_arg]], temp_files, tool_name, ""
+    if mode in {"sync", "diff"}:
+        return [[*base, "--delete", source_arg, target_arg]], temp_files, tool_name, ""
     append_deploy_log(log_path, f"未知部署方式: {mode}")
     return [], temp_files, tool_name, "未知部署方式"
 
@@ -1181,23 +1199,15 @@ def run_deploy_task(project_path: Path, task: dict):
             exists, error = remote_path_exists(resource, task["target_path"])
             if error:
                 raise RuntimeError(error)
-            if task["mode"] == "full" and exists and not task.get("overwrite"):
-                message = "目标目录已存在，不能执行全量部署。请确认是否删除覆盖。"
-                update_deploy_task(project_path, task_id, status="等待确认", progress=0, error=message)
-                append_deploy_log(log_path, message)
-                return
-            prepare_error = remote_prepare(resource, task["target_path"], task["mode"] == "full" and bool(task.get("overwrite")))
+            if task["mode"] == "full" and exists:
+                raise RuntimeError("目标目录已存在，不能执行全量部署。请更换部署位置，或先删除远程目录。")
+            prepare_error = remote_prepare(resource, task["target_path"], False)
             if prepare_error:
                 raise RuntimeError(prepare_error)
         else:
             target = Path(task["target_path"]).expanduser()
             if task["mode"] == "full" and target.exists():
-                if not task.get("overwrite"):
-                    message = "目标目录已存在，不能执行全量部署。请确认是否删除覆盖。"
-                    update_deploy_task(project_path, task_id, status="等待确认", progress=0, error=message)
-                    append_deploy_log(log_path, message)
-                    return
-                shutil.rmtree(target)
+                raise RuntimeError("目标目录已存在，不能执行全量部署。请更换部署位置，或先删除目标目录。")
             target.mkdir(parents=True, exist_ok=True)
 
         update_deploy_task(project_path, task_id, progress=20)
@@ -1253,6 +1263,8 @@ def create_deploy_task(project_path: Path, dataset_path: Path, dataset_name: str
     mode = (form.get("mode", "sync") or "sync").strip()
     if mode not in DEPLOY_MODES:
         return None, "部署方式不正确"
+    if mode in {"incremental", "sync", "diff"} and not deploy_rsync_available():
+        return None, "当前环境未安装 rsync，不能使用增量或同步部署"
     resource = find_resource(workspace_path(), resource_id)
     if resource is None:
         return None, "请选择算力服务器"
@@ -1620,6 +1632,8 @@ def dataset(request: Request, project: str = ""):
             "dataset_icons": DATASET_ICONS,
             "project_classes": project_classes_preview(None),
             "resources": read_resources(workspace),
+            "deploy_modes": available_deploy_modes(),
+            "rsync_available": deploy_rsync_available(),
             **header_context(request, workspace),
         },
     )
@@ -1644,6 +1658,8 @@ def dataset_with_project(request: Request, project: str):
             "dataset_icons": DATASET_ICONS,
             "project_classes": project_classes_preview(current_project_path),
             "resources": read_resources(workspace),
+            "deploy_modes": available_deploy_modes(),
+            "rsync_available": deploy_rsync_available(),
             **header_context(request, workspace),
         },
     )
@@ -1676,8 +1692,9 @@ def dataset_deploy(request: Request, project: str, name: str = ""):
             "active_page": "dataset",
             "current_project": project,
             "current_project_name": project_name(current_project_path),
-            "deploy_modes": DEPLOY_MODES,
+            "deploy_modes": available_deploy_modes(),
             "deploy_targets": DEPLOY_TARGETS,
+            "rsync_available": deploy_rsync_available(),
             "footer_console_url": f"/dataset/{project}/deploy/tasks/{latest_task['id']}/log" if latest_task else "",
             **header_context(request, workspace),
         },
@@ -1998,7 +2015,7 @@ async def create_dataset(request: Request):
             int(payload.get("test_percent", 0) or 0),
             str(payload.get("icon", "")),
             bool(payload.get("deploy_enabled")),
-            str(payload.get("deploy_mode", "sync") or "sync"),
+            str(payload.get("deploy_mode", "sync" if deploy_rsync_available() else "full") or ("sync" if deploy_rsync_available() else "full")),
             str(payload.get("resource_id", "") or ""),
         )
         if error:

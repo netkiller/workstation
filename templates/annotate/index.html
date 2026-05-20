@@ -183,7 +183,13 @@
         </div>
         <div id="histogramSplitter" class="histogram-splitter" title="拖动调整标签和直方图比例"></div>
         <div id="histogramPane" class="histogram-pane">
-          <div class="pane-header"><h2><span class="pane-title-icon">▥</span>直方图</h2><button id="toggleHistogram" class="icon-button collapse-button" title="折叠/展开直方图">⌄</button></div>
+          <div class="pane-header">
+            <h2><span id="histogramTitleIcon" class="pane-title-icon">▥</span><span id="histogramTitleText">直方图</span></h2>
+            <div class="pane-tools">
+              <button id="switchHistogramMode" class="icon-button histogram-mode-toggle" title="切换为色阶">◫</button>
+              <button id="toggleHistogram" class="icon-button collapse-button" title="折叠/展开直方图">⌄</button>
+            </div>
+          </div>
           <div id="histogram" class="histogram"><canvas id="histogramCanvas"></canvas></div>
         </div>
       </div>
@@ -304,6 +310,9 @@
     const histogramSplitter = document.getElementById("histogramSplitter");
     const histogramCanvas = document.getElementById("histogramCanvas");
     const histogramCtx = histogramCanvas.getContext("2d");
+    const histogramTitleIcon = document.getElementById("histogramTitleIcon");
+    const histogramTitleText = document.getElementById("histogramTitleText");
+    const switchHistogramMode = document.getElementById("switchHistogramMode");
     const splitter = document.getElementById("splitter");
     const rightPanel = document.getElementById("rightPanel");
     const exifPane = document.getElementById("exifPane");
@@ -421,6 +430,7 @@
     let statisticsData = null;
     let histogramExpandedTopHeight = null;
     let histogramExpandedLabelsHeight = null;
+    let histogramMode = "histogram";
     let selectedAutoModel = "";
     let contextModel = null;
     let autoAnnotateEnabled = false;
@@ -517,7 +527,7 @@
       button.title = node.path || node.name || "/";
       const icon = document.createElement("span");
       icon.className = "tree-icon";
-      icon.textContent = node.complete ? "[x]" : "[]";
+      icon.textContent = node.complete ? "[✓]" : "[]";
       icon.style.color = hashColor(node.path || node.name || "/");
       const name = document.createElement("span");
       name.className = "tree-name";
@@ -826,7 +836,7 @@
       wrapper.scrollTop += ratioY * (after.height - before.height);
     }
 
-    function drawHistogram(image) {
+    function imageToneData(image) {
       const sampleWidth = Math.min(256, image.naturalWidth);
       const sampleHeight = Math.max(1, Math.round(image.naturalHeight * sampleWidth / image.naturalWidth));
       const sampleCanvas = document.createElement("canvas");
@@ -838,11 +848,20 @@
       const red = new Array(256).fill(0);
       const green = new Array(256).fill(0);
       const blue = new Array(256).fill(0);
+      const luminance = new Array(256).fill(0);
       for (let index = 0; index < pixels.length; index += 4) {
-        red[pixels[index]] += 1;
-        green[pixels[index + 1]] += 1;
-        blue[pixels[index + 2]] += 1;
+        const r = pixels[index];
+        const g = pixels[index + 1];
+        const b = pixels[index + 2];
+        red[r] += 1;
+        green[g] += 1;
+        blue[b] += 1;
+        luminance[Math.round(r * 0.299 + g * 0.587 + b * 0.114)] += 1;
       }
+      return {red, green, blue, luminance, total: sampleWidth * sampleHeight};
+    }
+
+    function prepareHistogramCanvas() {
       const width = histogramCanvas.clientWidth || 180;
       const height = histogramCanvas.clientHeight || 92;
       const dpr = window.devicePixelRatio || 1;
@@ -852,6 +871,12 @@
       histogramCtx.clearRect(0, 0, width, height);
       histogramCtx.fillStyle = "#fff";
       histogramCtx.fillRect(0, 0, width, height);
+      return {width, height};
+    }
+
+    function drawHistogram(image) {
+      const {red, green, blue} = imageToneData(image);
+      const {width, height} = prepareHistogramCanvas();
       drawHistogramChannel(red, "#e11d48", width, height);
       drawHistogramChannel(green, "#16a34a", width, height);
       drawHistogramChannel(blue, "#2563eb", width, height);
@@ -872,6 +897,54 @@
       histogramCtx.lineWidth = 1.4;
       histogramCtx.stroke();
       histogramCtx.globalAlpha = 1;
+    }
+
+    function drawLevels(image) {
+      const {luminance} = imageToneData(image);
+      const {width, height} = prepareHistogramCanvas();
+      const chartHeight = Math.max(24, height - 18);
+      const maxValue = Math.max(...luminance);
+      histogramCtx.fillStyle = "#3f3f3f";
+      histogramCtx.fillRect(0, 0, width, chartHeight);
+      if (maxValue) {
+        histogramCtx.beginPath();
+        histogramCtx.moveTo(0, chartHeight);
+        luminance.forEach((value, index) => {
+          const x = index / 255 * width;
+          const y = chartHeight - value / maxValue * (chartHeight - 8) - 4;
+          histogramCtx.lineTo(x, y);
+        });
+        histogramCtx.lineTo(width, chartHeight);
+        histogramCtx.closePath();
+        histogramCtx.fillStyle = "#ffffff";
+        histogramCtx.fill();
+        histogramCtx.strokeStyle = "#ffffff";
+        histogramCtx.globalAlpha = 1;
+        histogramCtx.lineWidth = 1;
+        histogramCtx.stroke();
+      }
+      histogramCtx.fillStyle = "#ffffff";
+      histogramCtx.fillRect(0, chartHeight, width, height - chartHeight);
+      const gradient = histogramCtx.createLinearGradient(0, 0, width, 0);
+      gradient.addColorStop(0, "#020617");
+      gradient.addColorStop(0.5, "#94a3b8");
+      gradient.addColorStop(1, "#ffffff");
+      histogramCtx.fillStyle = gradient;
+      histogramCtx.fillRect(0, chartHeight + 5, width, 10);
+      histogramCtx.strokeStyle = "#cbd5e1";
+      histogramCtx.lineWidth = 1;
+      histogramCtx.strokeRect(0.5, chartHeight + 5.5, width - 1, 9);
+    }
+
+    function updateHistogramModeHeader() {
+      const levels = histogramMode === "levels";
+      if (histogramTitleIcon) histogramTitleIcon.textContent = levels ? "◫" : "▥";
+      if (histogramTitleText) histogramTitleText.textContent = levels ? "色阶" : "直方图";
+      if (switchHistogramMode) {
+        switchHistogramMode.classList.toggle("active", levels);
+        switchHistogramMode.textContent = levels ? "▥" : "◫";
+        switchHistogramMode.title = levels ? "切换为直方图" : "切换为色阶";
+      }
     }
 
     async function loadExif(path) {
@@ -2622,7 +2695,11 @@
       if (!currentImage || rightPanel.classList.contains("histogram-collapsed")) return;
       requestAnimationFrame(() => {
         applyRightPanelGoldenLayout();
-        requestAnimationFrame(() => drawHistogram(currentImage));
+        requestAnimationFrame(() => {
+          updateHistogramModeHeader();
+          if (histogramMode === "levels") drawLevels(currentImage);
+          else drawHistogram(currentImage);
+        });
       });
     }
 
@@ -2958,6 +3035,11 @@
         scheduleRightPanelGoldenLayout();
       });
       window.addEventListener("resize", scheduleRightPanelGoldenLayout);
+      switchHistogramMode.addEventListener("click", () => {
+        histogramMode = histogramMode === "levels" ? "histogram" : "levels";
+        updateHistogramModeHeader();
+        redrawHistogram();
+      });
       toggleHistogram.addEventListener("click", () => {
         const isCollapsed = rightPanel.classList.contains("histogram-collapsed");
         if (isCollapsed) {

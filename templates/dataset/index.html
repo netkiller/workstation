@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 数据集{% else %}数据集{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260519-icon-actions-train">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260520-deploy-modes">
 {% endblock %}
 
 {% block content %}
@@ -190,11 +190,14 @@
               {% endfor %}
             </select>
           </label>
-          <div class="deploy-methods deploy-methods-three deploy-mode-segment dataset-deploy-mode" role="radiogroup" aria-label="部署方式" data-create-mode-segment data-dataset-deploy-mode data-mode="sync">
-            <label><input type="radio" name="deploy_mode" value="full"> <span>全量</span></label>
-            <label><input type="radio" name="deploy_mode" value="incremental"> <span>增量</span></label>
-            <label><input type="radio" name="deploy_mode" value="sync" checked> <span>同步</span></label>
+          <div class="deploy-methods{% if deploy_modes | length == 1 %} deploy-methods-one{% elif deploy_modes | length == 3 %} deploy-methods-three{% endif %} deploy-mode-segment dataset-deploy-mode" role="radiogroup" aria-label="部署方式" data-create-mode-segment data-dataset-deploy-mode data-mode="{{ 'sync' if 'sync' in deploy_modes else 'full' }}">
+            {% for mode, label in deploy_modes.items() %}
+              <label><input type="radio" name="deploy_mode" value="{{ mode }}" {% if (mode == 'sync' and 'sync' in deploy_modes) or (mode == 'full' and 'sync' not in deploy_modes) %}checked{% endif %}> <span>{{ label }}</span></label>
+            {% endfor %}
           </div>
+          {% if not rsync_available %}
+            <p class="dataset-deploy-empty">当前环境未安装 rsync，仅支持全量部署。</p>
+          {% endif %}
           {% if not resources %}
             <p class="dataset-deploy-empty">暂无算力服务器，请先在算力页添加。</p>
           {% endif %}
