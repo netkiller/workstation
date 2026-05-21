@@ -3,7 +3,7 @@
 {% block title %}新建训练任务{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260516-remote-target-hidden">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260521-train-options-zh">
 {% endblock %}
 
 {% block content %}
@@ -76,21 +76,23 @@
             </select>
           </label>
           <label>
-            <span>轮数</span>
-            <input name="epochs" type="number" min="1" value="200" required>
-          </label>
-          <label>
-            <span>device</span>
+            <span>设备(device)</span>
             <input name="device" type="text" value="0" placeholder="cpu / 0 / 0,1">
           </label>
-          <label>
-            <span>batch</span>
-            <input name="batch" type="number" min="1" placeholder="自动">
-          </label>
-          <label>
-            <span>workers</span>
-            <input name="workers" type="number" min="0" placeholder="自动">
-          </label>
+          <div class="train-basic-row train-form-wide">
+            <label>
+              <span>轮数</span>
+              <input name="epochs" type="number" min="1" value="200" required>
+            </label>
+            <label>
+              <span>批次(batch)</span>
+              <input name="batch" type="number" min="1" placeholder="自动">
+            </label>
+            <label>
+              <span>线程(workers)</span>
+              <input name="workers" type="number" min="0" placeholder="自动">
+            </label>
+          </div>
         </div>
 
         <section class="optional-params" aria-label="可选参数">
@@ -100,7 +102,7 @@
           </label>
           <div class="form-grid" data-optional-params-fields hidden>
             <label>
-              <span>amp</span>
+              <span>混合精度(amp)</span>
               <select name="amp" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -108,19 +110,19 @@
               </select>
             </label>
             <label>
-              <span>imgsz</span>
+              <span>图像尺寸(imgsz)</span>
               <input name="imgsz" type="number" min="32" step="32" value="640" disabled>
             </label>
             <label>
-              <span>data</span>
+              <span>数据配置(data)</span>
               <input name="data" type="text" placeholder="留空自动生成 data.yaml" disabled>
             </label>
             <label>
-              <span>patience</span>
+              <span>耐心轮数(patience)</span>
               <input name="patience" type="number" min="0" placeholder="自动" disabled>
             </label>
             <label>
-              <span>optimizer</span>
+              <span>优化器(optimizer)</span>
               <select name="optimizer" disabled>
                 <option value="">自动</option>
                 <option value="auto">auto</option>
@@ -133,27 +135,27 @@
               </select>
             </label>
             <label>
-              <span>lr0</span>
+              <span>初始学习率(lr0)</span>
               <input name="lr0" type="number" min="0" step="0.0001" placeholder="自动" disabled>
             </label>
             <label>
-              <span>lrf</span>
+              <span>最终学习率比例(lrf)</span>
               <input name="lrf" type="number" min="0" step="0.0001" placeholder="自动" disabled>
             </label>
             <label>
-              <span>momentum</span>
+              <span>动量(momentum)</span>
               <input name="momentum" type="number" min="0" step="0.0001" placeholder="自动" disabled>
             </label>
             <label>
-              <span>weight_decay</span>
+              <span>权重衰减(weight_decay)</span>
               <input name="weight_decay" type="number" min="0" step="0.00001" placeholder="自动" disabled>
             </label>
             <label>
-              <span>warmup_epochs</span>
+              <span>预热轮数(warmup_epochs)</span>
               <input name="warmup_epochs" type="number" min="0" step="0.1" placeholder="自动" disabled>
             </label>
             <label>
-              <span>cos_lr</span>
+              <span>余弦学习率(cos_lr)</span>
               <select name="cos_lr" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -161,11 +163,11 @@
               </select>
             </label>
             <label>
-              <span>close_mosaic</span>
+              <span>关闭马赛克轮数(close_mosaic)</span>
               <input name="close_mosaic" type="number" min="0" placeholder="自动" disabled>
             </label>
             <label>
-              <span>cache</span>
+              <span>缓存(cache)</span>
               <select name="cache" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -175,7 +177,7 @@
               </select>
             </label>
             <label>
-              <span>rect</span>
+              <span>矩形训练(rect)</span>
               <select name="rect" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -183,7 +185,7 @@
               </select>
             </label>
             <label>
-              <span>resume</span>
+              <span>恢复训练(resume)</span>
               <select name="resume" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -191,7 +193,7 @@
               </select>
             </label>
             <label>
-              <span>pretrained</span>
+              <span>预训练权重(pretrained)</span>
               <select name="pretrained" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -199,11 +201,11 @@
               </select>
             </label>
             <label>
-              <span>seed</span>
+              <span>随机种子(seed)</span>
               <input name="seed" type="number" min="0" placeholder="自动" disabled>
             </label>
             <label>
-              <span>deterministic</span>
+              <span>确定性训练(deterministic)</span>
               <select name="deterministic" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -211,7 +213,7 @@
               </select>
             </label>
             <label>
-              <span>single_cls</span>
+              <span>单类别(single_cls)</span>
               <select name="single_cls" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -219,7 +221,7 @@
               </select>
             </label>
             <label>
-              <span>plots</span>
+              <span>保存图表(plots)</span>
               <select name="plots" disabled>
                 <option value="">自动</option>
                 <option value="true">true</option>
@@ -227,75 +229,75 @@
               </select>
             </label>
             <label>
-              <span>save_period</span>
+              <span>保存周期(save_period)</span>
               <input name="save_period" type="number" placeholder="自动" disabled>
             </label>
             <label>
-              <span>freeze</span>
+              <span>冻结层(freeze)</span>
               <input name="freeze" type="text" placeholder="例如 10 或 0,1,2" disabled>
             </label>
             <label>
-              <span>dropout</span>
+              <span>随机失活(dropout)</span>
               <input name="dropout" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>hsv_h</span>
+              <span>色相增强(hsv_h)</span>
               <input name="hsv_h" type="number" min="0" step="0.001" placeholder="自动" disabled>
             </label>
             <label>
-              <span>hsv_s</span>
+              <span>饱和度增强(hsv_s)</span>
               <input name="hsv_s" type="number" min="0" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>hsv_v</span>
+              <span>亮度增强(hsv_v)</span>
               <input name="hsv_v" type="number" min="0" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>degrees</span>
+              <span>旋转角度(degrees)</span>
               <input name="degrees" type="number" step="0.1" placeholder="自动" disabled>
             </label>
             <label>
-              <span>translate</span>
+              <span>平移比例(translate)</span>
               <input name="translate" type="number" min="0" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>scale</span>
+              <span>缩放比例(scale)</span>
               <input name="scale" type="number" min="0" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>shear</span>
+              <span>剪切角度(shear)</span>
               <input name="shear" type="number" step="0.1" placeholder="自动" disabled>
             </label>
             <label>
-              <span>perspective</span>
+              <span>透视变换(perspective)</span>
               <input name="perspective" type="number" min="0" step="0.0001" placeholder="自动" disabled>
             </label>
             <label>
-              <span>flipud</span>
+              <span>上下翻转(flipud)</span>
               <input name="flipud" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>fliplr</span>
+              <span>左右翻转(fliplr)</span>
               <input name="fliplr" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>mosaic</span>
+              <span>马赛克增强(mosaic)</span>
               <input name="mosaic" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>mixup</span>
+              <span>混合增强(mixup)</span>
               <input name="mixup" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>copy_paste</span>
+              <span>复制粘贴增强(copy_paste)</span>
               <input name="copy_paste" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>erasing</span>
+              <span>随机擦除(erasing)</span>
               <input name="erasing" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
             <label>
-              <span>crop_fraction</span>
+              <span>裁剪比例(crop_fraction)</span>
               <input name="crop_fraction" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled>
             </label>
           </div>

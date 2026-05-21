@@ -81,24 +81,24 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
     project_button = (
         '<button id="projectButton" class="header-button" '
         f'title="项目" onclick="location.href=\'{project_url}\'">'
-        '<span class="header-icon">▤</span><span>项目</span></button>'
+        '<span class="nav-icon header-icon">▤</span><span>项目</span></button>'
     )
     resources_url = f"/resources/{quote(project, safe='')}" if project else "/resources"
     resources_button = (
         '<button id="resourcesButton" class="header-button" title="算力" '
         f'onclick="location.href=\'{resources_url}\'">'
-        '<span class="header-icon">▥</span><span>算力</span></button>'
+        '<span class="nav-icon header-icon">▥</span><span>算力</span></button>'
     )
     test_url = f"/test/{quote(project, safe='')}" if project else "/test"
     test_button = (
         '<button id="testButton" class="header-button" title="测试" '
         f'onclick="location.href=\'{test_url}\'">'
-        '<span class="header-icon">◉</span><span>测试</span></button>'
+        '<span class="nav-icon header-icon">◉</span><span>测试</span></button>'
     )
     team_button = (
         '<button id="teamButton" class="header-button" title="团队" '
         f'onclick="location.href=\'{team_url}\'">'
-        '<span class="header-icon">◌</span><span>团队</span></button>'
+        '<span class="nav-icon header-icon">◎</span><span>团队</span></button>'
         if team_mode_enabled()
         else ""
     )
@@ -147,8 +147,8 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
             1,
         )
         .replace(
-            '</button>\n    </div>\n    <div class="header-actions">',
-            f'</button>{test_button}\n    </div>\n    <div class="header-actions">',
+            '</button>\n    </nav>\n    <div class="header-actions">',
+            f'</button>{test_button}\n    </nav>\n    <div class="header-actions">',
             1,
         )
         .replace(

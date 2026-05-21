@@ -3,7 +3,7 @@
 {% block title %}{% if current_project_name %}项目 {{ current_project_name }} 训练{% else %}训练{% endif %}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260519-train-gpu-picker">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260521-train-options-zh">
 {% endblock %}
 
 {% block content %}
@@ -251,7 +251,7 @@
         <span>部署位置</span><strong data-remote-path>{{ dataset.remote_path if dataset and dataset.source == "remote" else "" }}</strong>
       </div>
 
-      <div class="form-grid">
+      <div class="form-grid train-create-grid">
         <label>
           <span>模型</span>
           <select name="model_version" required>
@@ -268,26 +268,32 @@
             {% endfor %}
           </select>
         </label>
-        <label>
-          <span>轮数</span>
-          <input name="epochs" type="number" min="1" value="200" required>
-        </label>
-        <div class="train-gpu-picker" data-gpu-picker>
+        <div class="train-basic-row">
+          <label>
+            <span>轮数</span>
+            <input name="epochs" type="number" min="1" value="200" required>
+          </label>
+          <label>
+            <span>批次(batch)</span>
+            <input name="batch" type="number" min="1" placeholder="自动">
+          </label>
+          <label>
+            <span>线程(workers)</span>
+            <input name="workers" type="number" min="0" placeholder="自动">
+          </label>
+        </div>
+        <div class="train-gpu-picker train-form-wide" data-gpu-picker>
           <input name="device" type="hidden" value="0" data-device-input>
           <div class="train-gpu-picker-head">
             <span>GPU</span>
+            <label class="train-gpu-select-all" data-gpu-select-all-wrap hidden>
+              <input type="checkbox" data-gpu-select-all>
+              <span>全选</span>
+            </label>
             <small data-gpu-picker-note>选择训练使用的 GPU</small>
           </div>
           <div class="train-gpu-options" data-gpu-options></div>
         </div>
-        <label>
-          <span>batch</span>
-          <input name="batch" type="number" min="1" placeholder="自动">
-        </label>
-        <label>
-          <span>workers</span>
-          <input name="workers" type="number" min="0" placeholder="自动">
-        </label>
       </div>
 
       <section class="optional-params" aria-label="可选参数">
@@ -296,44 +302,44 @@
           <span>可选参数</span>
         </label>
         <div class="form-grid train-options-grid" data-optional-params-fields hidden>
-          <label><span title="是否启用自动混合精度 AMP，可减少显存占用。">amp</span><select name="amp" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="训练图片尺寸，通常为 640，需为 32 的倍数。">imgsz</span><input name="imgsz" type="number" min="32" step="32" value="640" disabled></label>
-          <label><span title="自定义 data.yaml 路径，留空时自动生成。">data</span><input name="data" type="text" placeholder="留空自动生成 data.yaml" disabled></label>
-          <label><span title="EarlyStopping 等待轮数，指标长期不提升时提前停止。">patience</span><input name="patience" type="number" min="0" placeholder="自动" disabled></label>
-          <label><span title="优化器类型，auto 会由 YOLO 自动选择。">optimizer</span><select name="optimizer" disabled><option value="">自动</option><option value="auto">auto</option><option value="SGD">SGD</option><option value="Adam">Adam</option><option value="AdamW">AdamW</option><option value="NAdam">NAdam</option><option value="RAdam">RAdam</option><option value="RMSProp">RMSProp</option></select></label>
-          <label><span title="初始学习率。">lr0</span><input name="lr0" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
-          <label><span title="最终学习率比例，用于学习率调度。">lrf</span><input name="lrf" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
-          <label><span title="SGD/Adam 等优化器的动量参数。">momentum</span><input name="momentum" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
-          <label><span title="权重衰减，用于正则化减少过拟合。">weight_decay</span><input name="weight_decay" type="number" min="0" step="0.00001" placeholder="自动" disabled></label>
-          <label><span title="预热训练轮数，逐步提升学习率。">warmup_epochs</span><input name="warmup_epochs" type="number" min="0" step="0.1" placeholder="自动" disabled></label>
-          <label><span title="启用余弦学习率调度。">cos_lr</span><select name="cos_lr" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="训练最后若干轮关闭 mosaic 增强。">close_mosaic</span><input name="close_mosaic" type="number" min="0" placeholder="自动" disabled></label>
-          <label><span title="缓存图片到 RAM 或磁盘，可加速训练但占用资源。">cache</span><select name="cache" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option><option value="ram">ram</option><option value="disk">disk</option></select></label>
-          <label><span title="矩形训练，按图片比例分组减少 padding。">rect</span><select name="rect" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="从上一次中断位置恢复训练。">resume</span><select name="resume" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="使用预训练权重初始化。">pretrained</span><select name="pretrained" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="随机种子，用于提高实验可复现性。">seed</span><input name="seed" type="number" min="0" placeholder="自动" disabled></label>
-          <label><span title="启用确定性训练，提升复现性但可能降低速度。">deterministic</span><select name="deterministic" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="把所有类别当作单类别训练。">single_cls</span><select name="single_cls" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="保存训练曲线、标签分布、结果图等图表。">plots</span><select name="plots" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
-          <label><span title="每隔多少轮保存一次权重，-1 或留空表示默认。">save_period</span><input name="save_period" type="number" placeholder="自动" disabled></label>
-          <label><span title="冻结前若干层或指定层，例如 10 或 0,1,2。">freeze</span><input name="freeze" type="text" placeholder="例如 10 或 0,1,2" disabled></label>
-          <label><span title="分类头 dropout 比例，用于减少过拟合。">dropout</span><input name="dropout" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="HSV 色相增强幅度。">hsv_h</span><input name="hsv_h" type="number" min="0" step="0.001" placeholder="自动" disabled></label>
-          <label><span title="HSV 饱和度增强幅度。">hsv_s</span><input name="hsv_s" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="HSV 亮度增强幅度。">hsv_v</span><input name="hsv_v" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="随机旋转角度范围。">degrees</span><input name="degrees" type="number" step="0.1" placeholder="自动" disabled></label>
-          <label><span title="随机平移比例。">translate</span><input name="translate" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="随机缩放比例。">scale</span><input name="scale" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="随机剪切角度。">shear</span><input name="shear" type="number" step="0.1" placeholder="自动" disabled></label>
-          <label><span title="随机透视变换比例。">perspective</span><input name="perspective" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
-          <label><span title="上下翻转概率。">flipud</span><input name="flipud" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="左右翻转概率。">fliplr</span><input name="fliplr" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="mosaic 数据增强概率。">mosaic</span><input name="mosaic" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="mixup 数据增强概率。">mixup</span><input name="mixup" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="copy-paste 数据增强概率。">copy_paste</span><input name="copy_paste" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="随机擦除增强概率。">erasing</span><input name="erasing" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
-          <label><span title="分类任务随机裁剪比例，检测任务通常保持默认。">crop_fraction</span><input name="crop_fraction" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="是否启用自动混合精度 AMP，可减少显存占用。">混合精度(amp)</span><select name="amp" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="训练图片尺寸，通常为 640，需为 32 的倍数。">图像尺寸(imgsz)</span><input name="imgsz" type="number" min="32" step="32" value="640" disabled></label>
+          <label><span title="自定义 data.yaml 路径，留空时自动生成。">数据配置(data)</span><input name="data" type="text" placeholder="留空自动生成 data.yaml" disabled></label>
+          <label><span title="EarlyStopping 等待轮数，指标长期不提升时提前停止。">耐心轮数(patience)</span><input name="patience" type="number" min="0" placeholder="自动" disabled></label>
+          <label><span title="优化器类型，auto 会由 YOLO 自动选择。">优化器(optimizer)</span><select name="optimizer" disabled><option value="">自动</option><option value="auto">auto</option><option value="SGD">SGD</option><option value="Adam">Adam</option><option value="AdamW">AdamW</option><option value="NAdam">NAdam</option><option value="RAdam">RAdam</option><option value="RMSProp">RMSProp</option></select></label>
+          <label><span title="初始学习率。">初始学习率(lr0)</span><input name="lr0" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
+          <label><span title="最终学习率比例，用于学习率调度。">最终学习率比例(lrf)</span><input name="lrf" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
+          <label><span title="SGD/Adam 等优化器的动量参数。">动量(momentum)</span><input name="momentum" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
+          <label><span title="权重衰减，用于正则化减少过拟合。">权重衰减(weight_decay)</span><input name="weight_decay" type="number" min="0" step="0.00001" placeholder="自动" disabled></label>
+          <label><span title="预热训练轮数，逐步提升学习率。">预热轮数(warmup_epochs)</span><input name="warmup_epochs" type="number" min="0" step="0.1" placeholder="自动" disabled></label>
+          <label><span title="启用余弦学习率调度。">余弦学习率(cos_lr)</span><select name="cos_lr" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="训练最后若干轮关闭 mosaic 增强。">关闭马赛克轮数(close_mosaic)</span><input name="close_mosaic" type="number" min="0" placeholder="自动" disabled></label>
+          <label><span title="缓存图片到 RAM 或磁盘，可加速训练但占用资源。">缓存(cache)</span><select name="cache" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option><option value="ram">ram</option><option value="disk">disk</option></select></label>
+          <label><span title="矩形训练，按图片比例分组减少 padding。">矩形训练(rect)</span><select name="rect" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="从上一次中断位置恢复训练。">恢复训练(resume)</span><select name="resume" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="使用预训练权重初始化。">预训练权重(pretrained)</span><select name="pretrained" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="随机种子，用于提高实验可复现性。">随机种子(seed)</span><input name="seed" type="number" min="0" placeholder="自动" disabled></label>
+          <label><span title="启用确定性训练，提升复现性但可能降低速度。">确定性训练(deterministic)</span><select name="deterministic" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="把所有类别当作单类别训练。">单类别(single_cls)</span><select name="single_cls" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="保存训练曲线、标签分布、结果图等图表。">保存图表(plots)</span><select name="plots" disabled><option value="">自动</option><option value="true">true</option><option value="false">false</option></select></label>
+          <label><span title="每隔多少轮保存一次权重，-1 或留空表示默认。">保存周期(save_period)</span><input name="save_period" type="number" placeholder="自动" disabled></label>
+          <label><span title="冻结前若干层或指定层，例如 10 或 0,1,2。">冻结层(freeze)</span><input name="freeze" type="text" placeholder="例如 10 或 0,1,2" disabled></label>
+          <label><span title="分类头 dropout 比例，用于减少过拟合。">随机失活(dropout)</span><input name="dropout" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="HSV 色相增强幅度。">色相增强(hsv_h)</span><input name="hsv_h" type="number" min="0" step="0.001" placeholder="自动" disabled></label>
+          <label><span title="HSV 饱和度增强幅度。">饱和度增强(hsv_s)</span><input name="hsv_s" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="HSV 亮度增强幅度。">亮度增强(hsv_v)</span><input name="hsv_v" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="随机旋转角度范围。">旋转角度(degrees)</span><input name="degrees" type="number" step="0.1" placeholder="自动" disabled></label>
+          <label><span title="随机平移比例。">平移比例(translate)</span><input name="translate" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="随机缩放比例。">缩放比例(scale)</span><input name="scale" type="number" min="0" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="随机剪切角度。">剪切角度(shear)</span><input name="shear" type="number" step="0.1" placeholder="自动" disabled></label>
+          <label><span title="随机透视变换比例。">透视变换(perspective)</span><input name="perspective" type="number" min="0" step="0.0001" placeholder="自动" disabled></label>
+          <label><span title="上下翻转概率。">上下翻转(flipud)</span><input name="flipud" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="左右翻转概率。">左右翻转(fliplr)</span><input name="fliplr" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="mosaic 数据增强概率。">马赛克增强(mosaic)</span><input name="mosaic" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="mixup 数据增强概率。">混合增强(mixup)</span><input name="mixup" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="copy-paste 数据增强概率。">复制粘贴增强(copy_paste)</span><input name="copy_paste" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="随机擦除增强概率。">随机擦除(erasing)</span><input name="erasing" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
+          <label><span title="分类任务随机裁剪比例，检测任务通常保持默认。">裁剪比例(crop_fraction)</span><input name="crop_fraction" type="number" min="0" max="1" step="0.01" placeholder="自动" disabled></label>
         </div>
       </section>
 
@@ -363,6 +369,8 @@
       const deviceInput = dialog?.querySelector("[data-device-input]");
       const gpuOptions = dialog?.querySelector("[data-gpu-options]");
       const gpuNote = dialog?.querySelector("[data-gpu-picker-note]");
+      const gpuSelectAllWrap = dialog?.querySelector("[data-gpu-select-all-wrap]");
+      const gpuSelectAll = dialog?.querySelector("[data-gpu-select-all]");
       function renderOptionalParams() {
         if (!optionalFields) return;
         const enabled = Boolean(optionalToggle?.checked);
@@ -386,14 +394,25 @@
       }
       function syncGpuDevice() {
         if (!gpuOptions || !deviceInput) return;
-        const selected = Array.from(gpuOptions.querySelectorAll("input[type='checkbox']:checked"))
+        const checkboxes = Array.from(gpuOptions.querySelectorAll("input[type='checkbox']"));
+        const selected = checkboxes
+          .filter(input => input.checked)
           .map(input => input.value);
         deviceInput.value = selected.join(",");
+        if (gpuSelectAll) {
+          gpuSelectAll.checked = checkboxes.length > 0 && selected.length === checkboxes.length;
+          gpuSelectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+        }
       }
       function renderGpuOptions(option) {
         if (!gpuOptions || !deviceInput) return;
         const count = Math.max(parseInt(option?.dataset.gpuCount || "0", 10) || 0, 0);
         gpuOptions.textContent = "";
+        if (gpuSelectAllWrap) gpuSelectAllWrap.hidden = count <= 1;
+        if (gpuSelectAll) {
+          gpuSelectAll.checked = false;
+          gpuSelectAll.indeterminate = false;
+        }
         if (!count) {
           deviceInput.value = "";
           if (gpuNote) gpuNote.textContent = "未检测到 GPU，YOLO 将使用默认设备";
@@ -431,6 +450,13 @@
       optionalToggle?.addEventListener("change", renderOptionalParams);
       select?.addEventListener("change", renderTrainTarget);
       gpuOptions?.addEventListener("change", syncGpuDevice);
+      gpuSelectAll?.addEventListener("change", () => {
+        if (!gpuOptions || !gpuSelectAll) return;
+        gpuOptions.querySelectorAll("input[type='checkbox']").forEach(input => {
+          input.checked = gpuSelectAll.checked;
+        });
+        syncGpuDevice();
+      });
       document.querySelector("[data-open-train-dialog]")?.addEventListener("click", openDialog);
       document.querySelectorAll("[data-close-train-dialog]").forEach(button => button.addEventListener("click", closeDialog));
       dialog?.addEventListener("click", event => {
