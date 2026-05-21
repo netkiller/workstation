@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 html { min-height: 100%; background: #f5f7fa; }
 body { margin: 0; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2933; background: #f5f7fa; }
-header { height: 44px; display: grid; grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr); align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid #d9e2ec; background: #fff; font-weight: 650; }
+header { height: 44px; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 16px; padding: 0 24px; border-bottom: 1px solid #d9e2ec; background: #fff; font-weight: 650; overflow: hidden; }
 .header-title { min-width: 0; height: 100%; display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .header-home-link { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; border: 1px solid #d9e2ec; border-radius: 6px; background: #fff; color: #334e68; text-decoration: none; }
 .header-home-link:hover { background: #e6f0ff; color: #243b53; }
@@ -13,9 +13,9 @@ header { height: 44px; display: grid; grid-template-columns: minmax(160px, 1fr) 
 .enterprise-link.user-avatar-link { flex: 0 0 34px; width: 34px; min-width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; color: #fff; font-size: 18px; font-weight: 400; box-shadow: 0 0 0 1px rgba(31, 41, 51, .08); }
 .enterprise-link.username-link { max-width: 160px; min-width: 0; height: auto; padding: 0; overflow: hidden; border: 0; background: transparent; color: #64748b; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .enterprise-link:hover { background: #e6f0ff; color: #243b53; }
-.header-modes { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.header-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.header-button { width: auto; min-width: 62px; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #d9e2ec; border-radius: 6px; background: #fff; color: #334e68; font-size: 12px; line-height: 1; white-space: nowrap; }
+.header-modes { min-width: 0; max-width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.header-actions { min-width: 0; max-width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.header-button { flex: 0 0 auto; width: auto; min-width: 62px; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #d9e2ec; border-radius: 6px; background: #fff; color: #334e68; font-size: 12px; line-height: 1; white-space: nowrap; }
 .header-button:hover { background: #e6f0ff; color: #243b53; }
 .header-button.active { border-color: #2563eb; background: #dbeafe; color: #1d4ed8; }
 .header-icon { font-size: 15px; line-height: 1; }

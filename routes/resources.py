@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import posixpath
+import shlex
 import stat as stat_module
 import time
 import asyncio
@@ -1059,6 +1060,12 @@ def resource_sftp(resource_id: str, request: Request, project: str = "", path: s
     return response
 
 
+def ssh_tmux_session_name(resource: dict):
+    raw = str(resource.get("id") or resource_key(resource))
+    safe = "".join(char if char.isalnum() else "_" for char in raw)
+    return f"yolows_{safe[:48] or resource_key(resource)}"
+
+
 def open_ssh_shell(resource: dict):
     import paramiko
 
@@ -1078,7 +1085,21 @@ def open_ssh_shell(resource: dict):
     )
     channel = client.invoke_shell(term="xterm-256color", width=120, height=32)
     channel.setblocking(False)
+    session = shlex.quote(ssh_tmux_session_name(resource))
     channel.send("stty erase '^?' 2>/dev/null; bind '\"\\e[3~\": delete-char' 2>/dev/null\r")
+    channel.send(
+        "if command -v tmux >/dev/null 2>&1; then "
+        f"if tmux has-session -t {session} 2>/dev/null; then "
+        f"tmux capture-pane -pt {session} -S -200 2>/dev/null; "
+        f"exec tmux attach-session -t {session}; "
+        "else "
+        f"exec tmux new-session -s {session}; "
+        "fi; "
+        "else "
+        "printf '\\r\\n远程服务器未安装 tmux，当前 OpenSSH 会话无法持久保留。\\r\\n'; "
+        "exec ${SHELL:-/bin/sh} -l; "
+        "fi\r"
+    )
     return client, channel
 
 

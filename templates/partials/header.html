@@ -13,29 +13,29 @@
     {% endif %}
     {% if current_project and header_project_name %}
       <strong class="header-project-name">{{ header_project_name }}</strong>
-    {% endif %}
-    {% if username %}
-      <span class="user-avatar" style="--user-color: {{ username_color | default('#3b82f6') }}" aria-hidden="true">{{ username_initial | default(username[:1]) }}</span>
-      <span class="username-badge">{{ username }}</span>
-      <form class="logout-form" method="post" action="/team/logout">
-        <button type="submit">注销</button>
-      </form>
-      {% if current_project %}
-        <a class="close-current-project" href="/project" title="关闭当前项目"><span class="nav-icon">×</span><span>关闭项目</span></a>
+      {% if username and active_page != "annotate" %}
+        <a class="close-current-project" href="/project" title="关闭当前项目"><span class="nav-icon">×</span><span>关闭</span></a>
       {% endif %}
-    {% else %}
+    {% endif %}
+    {% if not username %}
       {% if not current_project or not header_project_name %}
         <strong>Yolo Workstation</strong>
       {% endif %}
     {% endif %}
   </div>
+  {% set has_header_context = is_team_mode is defined %}
+  {% set team_mode_active = is_team_mode | default(false) %}
+  {% set team_authenticated = is_team_authenticated | default(false) %}
+  {% set show_workspace_nav = (has_header_context and not team_mode_active) or team_authenticated %}
   <nav aria-label="主导航">
-    {% if is_team_mode %}
+    {% if team_mode_active %}
     <a{% if active_page == "team" %} class="active"{% endif %} href="/team{% if current_project %}/{{ current_project }}{% endif %}"><span class="nav-icon">◌</span><span>团队</span></a>
     {% endif %}
-    <a{% if active_page == "project" %} class="active"{% endif %} href="{% if current_project %}/project/{{ current_project }}{% else %}/project{% endif %}"><span class="nav-icon">▤</span><span>项目</span></a>
-    <a{% if active_page == "resources" %} class="active"{% endif %} href="{% if current_project %}/resources/{{ current_project }}{% else %}/resources{% endif %}"><span class="nav-icon">▥</span><span>算力</span></a>
-    {% if current_project %}
+    {% if show_workspace_nav %}
+      <a{% if active_page == "project" %} class="active"{% endif %} href="{% if current_project %}/project/{{ current_project }}{% else %}/project{% endif %}"><span class="nav-icon">▤</span><span>项目</span></a>
+      <a{% if active_page == "resources" %} class="active"{% endif %} href="{% if current_project %}/resources/{{ current_project }}{% else %}/resources{% endif %}"><span class="nav-icon">▥</span><span>算力</span></a>
+    {% endif %}
+    {% if show_workspace_nav and current_project %}
       <a{% if active_page == "annotate" %} class="active"{% endif %} href="/annotate/{{ current_project }}"><span class="nav-icon">▧</span><span>标注</span></a>
       <a{% if active_page == "dataset" %} class="active"{% endif %} href="/dataset{% if current_project %}/{{ current_project }}{% endif %}"><span class="nav-icon">▦</span><span>数据集</span></a>
       <a{% if active_page == "model" %} class="active"{% endif %} href="/model/{{ current_project }}"><span class="nav-icon">◎</span><span>模型</span></a>
@@ -45,6 +45,15 @@
   <div class="header-actions">
     {% if is_team_mode %}
       <button class="public-header-button" type="button" data-public-share data-share-url="{{ share_url }}" title="分享工作站地址"><span class="nav-icon">⇪</span><span>分享</span></button>
+    {% endif %}
+    {% if username %}
+      <span class="header-user">
+        <span class="user-avatar" style="--user-color: {{ username_color | default('#3b82f6') }}" aria-hidden="true">{{ username_initial | default(username[:1]) }}</span>
+        <span class="username-badge">{{ username }}</span>
+        <form class="logout-form" method="post" action="/team/logout">
+          <button type="submit">注销</button>
+        </form>
+      </span>
     {% endif %}
   </div>
 </header>
@@ -68,5 +77,20 @@
         }
       }
     });
+  })();
+  (() => {
+    if (!document.querySelector(".username-badge") || window.yoloutilsHeaderHeartbeat) {
+      return;
+    }
+    window.yoloutilsHeaderHeartbeat = true;
+    const ping = async () => {
+      try {
+        await fetch("/team/heartbeat", {method: "POST", cache: "no-store"});
+      } catch (error) {
+        // The next heartbeat will retry.
+      }
+    };
+    ping();
+    setInterval(ping, 15000);
   })();
 </script>

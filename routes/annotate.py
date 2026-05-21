@@ -102,15 +102,7 @@ def workstation_html(workstation: Workstation, active_mode: str = "annotate", pr
         if team_mode_enabled()
         else ""
     )
-    user_header = (
-        ""
-        f'<span class="enterprise-link user-avatar-link" style="background:{user_color(username)}">'
-        f'{html_escape(username[:1])}</span>'
-        f'<span class="enterprise-link username-link">{escaped_username}</span>'
-        '<form method="post" action="/team/logout" style="margin:0"><button class="enterprise-link" type="submit">注销</button></form>'
-        if team_mode_enabled()
-        else ""
-    )
+    user_header = ""
     html = (
         html.replace('"/api/', '"/annotate/api/')
         .replace("'/api/", "'/annotate/api/")

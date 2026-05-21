@@ -4,6 +4,7 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
 import traceback
 import getpass
@@ -53,6 +54,7 @@ MODEL_TAG_COLORS = ("#1667c7", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#dc2
 DATASET_TAG_COLORS = ("#16a34a", "#1667c7", "#f59e0b", "#7c3aed", "#0891b2", "#dc2626", "#0f766e", "#c2410c")
 TEST_SET_TAG_COLORS = ("#0891b2", "#1667c7", "#7c3aed", "#f59e0b", "#16a34a", "#dc2626", "#0f766e", "#c2410c")
 USER_HEARTBEAT_TIMEOUT = 45
+USER_SESSION_LOCK = threading.Lock()
 PROJECT_UPLOAD_LOG = ".project.log"
 WORKSPACE_LOG = ".workstation/workspace.log"
 PROJECT_INDEX = ".workstation/index.json"
@@ -267,6 +269,27 @@ def read_user_session_data(workspace: Path, prune: bool = True):
     }
 
 
+def write_user_session_data(workspace: Path, users: list[str], projects: dict[str, str] | None = None, seen_at: dict[str, float] | None = None):
+    users = sorted({str(user).strip() for user in users if str(user).strip()}, key=str.lower)
+    projects = {
+        str(user).strip(): str(project).strip()
+        for user, project in (projects or {}).items()
+        if str(user).strip() in users and str(project).strip()
+    }
+    now = time.time()
+    seen_at = {
+        user: float((seen_at or {}).get(user, now) or now)
+        for user in users
+    }
+    path = users_file(workspace)
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    tmp_path.write_text(
+        json.dumps({"users": users, "projects": projects, "seen_at": seen_at}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
+
+
 def read_online_users(workspace: Path):
     return read_user_session_data(workspace)["users"]
 
@@ -276,69 +299,52 @@ def read_user_projects(workspace: Path):
 
 
 def write_online_users(workspace: Path, users: list[str]):
-    session = read_user_session_data(workspace)
-    projects = {
-        user: project
-        for user, project in session["projects"].items()
-        if user in users
-    }
-    seen_at = {
-        user: session["seen_at"].get(user, time.time())
-        for user in users
-    }
-    users_file(workspace).write_text(
-        json.dumps(
-            {"users": sorted(set(users), key=str.lower), "projects": projects, "seen_at": seen_at},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    with USER_SESSION_LOCK:
+        session = read_user_session_data(workspace, prune=False)
+        projects = {
+            user: project
+            for user, project in session["projects"].items()
+            if user in users
+        }
+        seen_at = {
+            user: session["seen_at"].get(user, time.time())
+            for user in users
+        }
+        write_user_session_data(workspace, users, projects, seen_at)
 
 
 def write_user_project(workspace: Path, username: str, project: str = ""):
     username = (username or "").strip()
     if not username:
         return
-    session = read_user_session_data(workspace)
-    users = sorted(set(session["users"]), key=str.lower)
-    if username not in users:
-        return
-    projects = session["projects"]
-    if project:
-        projects[username] = project
-    else:
-        projects.pop(username, None)
-    session["seen_at"][username] = time.time()
-    users_file(workspace).write_text(
-        json.dumps({"users": users, "projects": projects, "seen_at": session["seen_at"]}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    with USER_SESSION_LOCK:
+        session = read_user_session_data(workspace, prune=False)
+        users = sorted(set(session["users"] + [username]), key=str.lower)
+        projects = session["projects"]
+        if project:
+            projects[username] = project
+        else:
+            projects.pop(username, None)
+        session["seen_at"][username] = time.time()
+        write_user_session_data(workspace, users, projects, session["seen_at"])
 
 
 def touch_user(workspace: Path, username: str):
     username = (username or "").strip()
     if not username:
         return None
-    session = read_user_session_data(workspace, prune=False)
-    users = sorted(set(session["users"]), key=str.lower)
-    if username not in users:
-        return None
-    session["seen_at"][username] = time.time()
-    users_file(workspace).write_text(
-        json.dumps(
-            {"users": users, "projects": session["projects"], "seen_at": session["seen_at"]},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    return session
+    with USER_SESSION_LOCK:
+        session = read_user_session_data(workspace, prune=False)
+        users = sorted(set(session["users"] + [username]), key=str.lower)
+        session["seen_at"][username] = time.time()
+        write_user_session_data(workspace, users, session["projects"], session["seen_at"])
+        session["users"] = users
+        return session
 
 
 def current_username(request: Request, workspace: Path):
     username = unquote(request.cookies.get("workstation_username") or "").strip()
-    if username not in read_user_session_data(workspace, prune=False)["users"]:
+    if not username:
         return ""
     touch_user(workspace, username)
     return username
@@ -395,6 +401,7 @@ def header_context(request: Request, workspace: Path):
         "username_initial": username[:1],
         "username_color": user_color(username) if username else "",
         "is_team_mode": is_team_mode,
+        "is_team_authenticated": bool(username) if is_team_mode else True,
         "share_url": share_url(request) if is_team_mode else "",
         "header_project_name": current_project_meta["name"] if current_project_meta else "",
         "header_project_icon": current_project_meta["icon"] if current_project_meta else "",
@@ -1087,7 +1094,7 @@ def project_detail_redirect(directory: str, error: str = None):
 
 
 def login_redirect(error: str = None):
-    url = "/login"
+    url = "/team/login"
     if error:
         url = f"{url}?{urlencode({'error': error})}"
     return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
@@ -1228,6 +1235,14 @@ def refresh_projects(request: Request):
 
 
 @router.get("/login")
+def legacy_login_page(request: Request):
+    target = "/team/login"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/team/login")
 def login_page(request: Request):
     workspace = workspace_path()
     if team_mode_enabled() and current_username(request, workspace):
@@ -1260,8 +1275,8 @@ def team(request: Request):
     workspace = workspace_path()
     username = current_username(request, workspace)
     if team_mode_enabled() and not username:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    requested_project = request.query_params.get("project") or request.cookies.get("current_project", "")
+        return RedirectResponse(url="/team/login", status_code=status.HTTP_303_SEE_OTHER)
+    requested_project = request.query_params.get("project") or ""
     if requested_project and project_dir(workspace, requested_project):
         return RedirectResponse(url=f"/team/{requested_project}", status_code=status.HTTP_303_SEE_OTHER)
     current_project = ""
@@ -1293,7 +1308,7 @@ def team_with_project(directory: str, request: Request):
     workspace = workspace_path()
     username = current_username(request, workspace)
     if team_mode_enabled() and not username:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/team/login", status_code=status.HTTP_303_SEE_OTHER)
     current_project = directory if project_dir(workspace, directory) else ""
     projects = project_items(workspace)
     project_names = {project["directory"]: project["name"] for project in projects}
@@ -1325,13 +1340,16 @@ async def login(request: Request):
     form = await form_fields(request)
     workspace = workspace_path()
     username = (form.get("username", [""])[0] or "").strip()
-    users = read_online_users(workspace)
     if not username:
         return login_redirect("请输入用户名")
-    if username in users:
-        return login_redirect("用户名已存在，请更换用户名")
-    users.append(username)
-    write_online_users(workspace, users)
+    with USER_SESSION_LOCK:
+        active_users = read_online_users(workspace)
+        if username in active_users:
+            return login_redirect("用户名已存在，请更换用户名")
+        session = read_user_session_data(workspace, prune=False)
+        users = sorted(set(session["users"] + [username]), key=str.lower)
+        session["seen_at"][username] = time.time()
+        write_user_session_data(workspace, users, session["projects"], session["seen_at"])
     response = RedirectResponse(url="/team", status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie("workstation_username", quote(username), httponly=True, samesite="lax")
     return response
@@ -1346,8 +1364,12 @@ async def legacy_login(request: Request):
 def logout(request: Request):
     workspace = workspace_path()
     username = unquote(request.cookies.get("workstation_username") or "").strip()
-    users = [user for user in read_online_users(workspace) if user != username]
-    write_online_users(workspace, users)
+    with USER_SESSION_LOCK:
+        session = read_user_session_data(workspace, prune=False)
+        users = [user for user in session["users"] if user != username]
+        projects = {user: project for user, project in session["projects"].items() if user != username}
+        seen_at = {user: timestamp for user, timestamp in session["seen_at"].items() if user != username}
+        write_user_session_data(workspace, users, projects, seen_at)
     response = RedirectResponse(url="/team", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie("workstation_username")
     response.delete_cookie("current_project")

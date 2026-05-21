@@ -189,7 +189,7 @@ async def require_basic_auth(request: Request, call_next):
 def index(request: Request):
     if team_mode_enabled():
         if not current_username(request, workspace_path()):
-            return RedirectResponse(url="/login")
+            return RedirectResponse(url="/team/login")
         return RedirectResponse(url="/team")
     return RedirectResponse(url="/project")
 
