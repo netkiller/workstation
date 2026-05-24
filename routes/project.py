@@ -1112,7 +1112,7 @@ async def form_fields(request: Request):
 
 
 def ensure_project_structure(path: Path):
-    for subdir in (ANNOTATE_DIR, TEST_DIR, "datasets", "models"):
+    for subdir in (ANNOTATE_DIR, TEST_DIR, "datasets", "models", "runs"):
         (path / subdir).mkdir(parents=True, exist_ok=True)
 
 
@@ -1137,6 +1137,33 @@ def save_upload(filename: str, content: bytes, target_dir: Path):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
+
+
+def validate_yolo_run_upload(files):
+    roots = set()
+    normalized_paths = set()
+    for filename, _content in files:
+        relative = upload_relative_path(filename)
+        if relative is None:
+            return None, "模型目录包含非法路径"
+        parts = relative.parts
+        if len(parts) < 2:
+            return None, "请选择完整的 YOLO run 目录，不能只选择单个文件"
+        roots.add(parts[0])
+        normalized_paths.add("/".join(parts).lower())
+    if not roots:
+        return None, "请选择 YOLO run 目录上传"
+    if len(roots) != 1:
+        return None, "一次只能上传一个 YOLO run 目录"
+    root = next(iter(roots))
+    root_key = root.lower()
+    has_weight = (
+        f"{root_key}/weights/best.pt" in normalized_paths
+        or f"{root_key}/weights/last.pt" in normalized_paths
+    )
+    if not has_weight:
+        return None, "目录结构不符合 YOLO run：必须包含 weights/best.pt 或 weights/last.pt"
+    return root, None
 
 
 def upload_progress_line(**payload):
@@ -1704,12 +1731,15 @@ async def upload_model(directory: str, request: Request):
     if path is None or not path.is_dir():
         return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
     files = await uploaded_files(request)
-    saved = [save_upload(filename, content, path / "models") for filename, content in files]
+    _run_name, error = validate_yolo_run_upload(files)
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    saved = [save_upload(filename, content, path / "runs") for filename, content in files]
     saved = [item for item in saved if item is not None]
     append_upload_log(
         path,
-        f"上传模型：接收 {len(files)} 个，保存 {len(saved)} 个",
+        f"上传 YOLO run：接收 {len(files)} 个，保存 {len(saved)} 个",
         [relative_log_entry(path, item) for item in saved],
     )
-    index = build_project_index(path)
-    return {"ok": True, "saved": len(saved), "count": int(index.get("models", {}).get("count") or 0)}
+    build_project_index(path)
+    return {"ok": True, "saved": len(saved), "count": len(project_run_models(path))}

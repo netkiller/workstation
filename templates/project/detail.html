@@ -3,7 +3,7 @@
 {% block title %}当前项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260519-upload-browse-button">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260524-annotate-model-upload-2">
 {% endblock %}
 
 {% block content %}
@@ -122,31 +122,51 @@
         <section class="upload-layout" data-project="{{ project.directory }}">
           <article class="upload-panel">
             <div class="panel-head">
-              <h2>上传图片</h2>
+              <h2>上传标注资源</h2>
               <span class="count" data-image-count>{{ project.image_count }} 个文件</span>
             </div>
-            <div class="drop-zone" data-upload-zone data-upload-kind="images" role="button" tabindex="0">
-              <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
-              <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
-              <span class="upload-icon" aria-hidden="true">
-                <span class="upload-symbol">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 4l8 8h-5v7H9v-7H4z"></path>
-                  </svg>
+            <div class="annotate-resource-grid">
+              <div class="drop-zone" data-upload-zone data-upload-kind="images" role="button" tabindex="0">
+                <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
+                <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
+                <span class="upload-icon" aria-hidden="true">
+                  <span class="upload-symbol">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 4l8 8h-5v7H9v-7H4z"></path>
+                    </svg>
+                  </span>
                 </span>
-              </span>
-              <span data-upload-prompt>点击上传图片，或拖拽到这里</span>
-              <span class="upload-options">
-                <a class="upload-option-icon-button upload-browse-button" href="/media/image?project={{ project.directory|urlencode }}&return_to={{ ('/project/' ~ project.directory)|urlencode }}" data-browse-media title="浏览已上传图片" aria-label="浏览已上传图片">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                </a>
-                <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
-                </button>
-                <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
-                </button>
-              </span>
+                <span data-upload-prompt>点击上传图片，或拖拽到这里</span>
+                <span class="upload-options">
+                  <a class="upload-option-icon-button upload-browse-button" href="/media/image?project={{ project.directory|urlencode }}&return_to={{ ('/project/' ~ project.directory)|urlencode }}" data-browse-media title="浏览已上传图片" aria-label="浏览已上传图片">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </a>
+                  <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
+                  </button>
+                  <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
+                  </button>
+                </span>
+              </div>
+              <div class="classes-inline-panel">
+                <div class="classes-inline-upload">
+                  <div class="classes-upload-card" data-upload-zone data-upload-kind="classes" role="button" tabindex="0">
+                    <input type="file" name="files" accept=".txt,text/plain" hidden>
+                    <span class="upload-icon" aria-hidden="true">
+                      <span class="upload-symbol">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M12 4l8 8h-5v7H9v-7H4z"></path>
+                        </svg>
+                      </span>
+                    </span>
+                    <span data-upload-label>{% if project.has_classes %}已上传{% else %}上传 classes.txt{% endif %}</span>
+                    <button class="upload-option-icon-button classes-edit-icon-button" type="button" id="editClassesButton" title="{% if project.has_classes %}编辑 classes.txt{% else %}创建 classes.txt{% endif %}" aria-label="{% if project.has_classes %}编辑 classes.txt{% else %}创建 classes.txt{% endif %}">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16z"></path><path d="M13.5 6.5l4 4"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <a
               class="action-link{% if not project.has_images %} disabled{% endif %}"
@@ -157,19 +177,23 @@
             >去标注</a>
           </article>
 
-          <article class="upload-panel classes-panel">
+          <article class="upload-panel model-upload-panel">
             <div class="panel-head">
-              <h2>classes.txt</h2>
-              <span class="count" data-classes-status>{% if project.has_classes %}已上传{% else %}未上传{% endif %}</span>
+              <h2>模型上传</h2>
+              <span class="count" data-model-count>{{ project.run_models | length }} 个</span>
             </div>
-            <div class="classes-upload-card" data-upload-zone data-upload-kind="classes" role="button" tabindex="0">
-              <input type="file" name="files" accept=".txt,text/plain" hidden>
-              <span class="upload-icon" aria-hidden="true"><span class="upload-symbol">⇧</span></span>
-              <span data-upload-label>上传 classes.txt</span>
+            <div class="classes-upload-card model-upload-card" data-upload-zone data-upload-kind="model" role="button" tabindex="0">
+              <input type="file" name="files" multiple webkitdirectory directory hidden data-directory-input>
+              <span class="upload-icon" aria-hidden="true">
+                <span class="upload-symbol">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 4l8 8h-5v7H9v-7H4z"></path>
+                  </svg>
+                </span>
+              </span>
+              <span data-upload-label>点击上传模型，或拖拽到这里</span>
             </div>
-            <button class="secondary-button" type="button" id="editClassesButton" data-classes-edit-label>
-              {% if project.has_classes %}编辑{% else %}创建 classes.txt{% endif %}
-            </button>
+            <p class="model-upload-hint">目录内必须包含 weights/best.pt 或 weights/last.pt，上传后保存到 runs 目录。</p>
           </article>
 
         </section>
@@ -271,5 +295,5 @@
   {% set footer_console_url = "/project/" ~ project.directory ~ "/logs" %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260519-upload-browse-button"></script>
+  <script src="/static/js/project.js?v=20260524-annotate-model-upload-2"></script>
 {% endblock %}

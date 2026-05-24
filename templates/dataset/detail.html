@@ -3,20 +3,23 @@
 {% block title %}数据集 {{ dataset.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260519-detail-head-static">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260524-detail-description-actions">
 {% endblock %}
 
 {% block content %}
   <main class="dataset-detail-main">
     <section class="dataset-detail-head" aria-labelledby="dataset-title">
-      <div>
+      <div class="dataset-detail-title">
         <h1 id="dataset-title">数据集 {{ dataset.name }}</h1>
-      </div>
-      <div class="dataset-detail-actions">
-        <button class="delete-button" type="button" data-delete-dataset data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}" data-has-remote="{{ '1' if dataset.deploy_target and dataset.deploy_target != '本地' else '0' }}">删除</button>
-        <button class="download-button deploy-button" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}">部署</button>
-        <a class="download-button" href="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}/download">下载</a>
-        <a class="secondary-button" href="/dataset/{{ dataset.project_dir }}">返回数据集</a>
+        <div class="dataset-detail-subrow">
+          <p>数据集汇总当前图片、标签和 train / val / test 划分，可用于训练、部署、下载与样本核查。</p>
+          <div class="dataset-detail-actions">
+            <button class="delete-button" type="button" data-delete-dataset data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}" data-has-remote="{{ '1' if dataset.deploy_target and dataset.deploy_target != '本地' else '0' }}">删除</button>
+            <button class="download-button deploy-button" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-name="{{ dataset.name }}">部署</button>
+            <a class="download-button" href="/dataset/{{ dataset.project_dir }}/{{ dataset.name }}/download">下载</a>
+            <a class="secondary-button" href="/dataset/{{ dataset.project_dir }}">返回数据集</a>
+          </div>
+        </div>
       </div>
     </section>
 

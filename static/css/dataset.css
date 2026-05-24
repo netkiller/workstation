@@ -997,33 +997,52 @@
   position: static !important;
   top: auto !important;
   z-index: auto !important;
-  display: flex;
-  align-items: center !important;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  text-align: left !important;
   min-height: 44px;
   width: auto !important;
-  grid-template-columns: none !important;
   margin: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
+.dataset-detail-title {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  justify-self: stretch !important;
+  justify-items: stretch;
+  text-align: left;
+}
+
+.dataset-detail-subrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+}
+
 .dataset-detail-actions {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  margin-left: auto;
+  align-self: flex-end;
   justify-self: auto !important;
 }
 
 .dataset-detail-head h1 {
-  margin: 0;
+  margin: 0 !important;
+  justify-self: start;
+  text-align: left !important;
 }
 
 .dataset-detail-head p {
-  margin: 6px 0 0;
+  margin: 0 !important;
   color: var(--muted);
   font-size: 13px;
 }

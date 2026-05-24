@@ -1096,6 +1096,14 @@ button.close-project-link {
   font-size: 18px;
 }
 
+.annotate-resource-grid {
+  min-height: 180px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.618fr) minmax(220px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
 .drop-zone {
   position: relative;
   min-height: 180px;
@@ -1121,6 +1129,48 @@ button.close-project-link {
 
 .drop-zone.uploading {
   pointer-events: none;
+}
+
+.classes-inline-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.classes-inline-upload {
+  min-height: 0;
+  display: grid;
+}
+
+.classes-inline-panel .classes-upload-card {
+  min-height: 180px;
+  height: 100%;
+  gap: 10px;
+  padding: 18px;
+}
+
+.classes-inline-panel .upload-icon {
+  width: 54px;
+  height: 54px;
+}
+
+.classes-edit-icon-button {
+  margin-top: 2px;
+}
+
+.model-upload-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.model-upload-card {
+  min-height: 180px;
+}
+
+.model-upload-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .upload-delete-button,
@@ -1242,6 +1292,11 @@ button.close-project-link {
   stroke-width: 1.45;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.classes-inline-panel .upload-symbol svg {
+  width: 30px;
+  height: 30px;
 }
 
 .upload-symbol.upload-symbol-percent {
@@ -1517,6 +1572,10 @@ button.close-project-link {
   }
 
   .upload-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .annotate-resource-grid {
     grid-template-columns: 1fr;
   }
 

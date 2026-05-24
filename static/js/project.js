@@ -274,8 +274,10 @@ if (classesDialog && classesForm && editClassesButton) {
     }
     const status = document.querySelector("[data-classes-status]");
     if (status) status.textContent = "已上传";
-    const buttonLabel = document.querySelector("[data-classes-edit-label]");
-    if (buttonLabel) buttonLabel.textContent = "编辑";
+    const uploadLabel = document.querySelector('[data-upload-kind="classes"] [data-upload-label]');
+    if (uploadLabel) uploadLabel.textContent = "已上传";
+    editClassesButton.title = "编辑 classes.txt";
+    editClassesButton.setAttribute("aria-label", "编辑 classes.txt");
     window.yoloutilsReloadFooterConsole?.();
     classesDialog.close();
   });
@@ -691,7 +693,7 @@ function isTestImageUpload(item) {
   return TEST_IMAGE_EXTENSIONS.has(ext);
 }
 
-async function filesFromDataTransfer(dataTransfer) {
+async function filesFromDataTransfer(dataTransfer, keepRoot = false) {
   const items = Array.from(dataTransfer.items || []);
   const entries = items
     .map((item) => item.webkitGetAsEntry?.())
@@ -703,14 +705,47 @@ async function filesFromDataTransfer(dataTransfer) {
 
   const files = [];
   for (const entry of entries) {
-    files.push(...await filesFromEntry(entry));
+    files.push(...await filesFromEntry(entry, "", keepRoot));
   }
   return files;
+}
+
+function validateYoloRunUpload(items) {
+  const files = Array.from(items || []);
+  if (!files.length) return {ok: false, error: "请选择 YOLO run 目录上传。"};
+  const roots = new Set();
+  const normalizedPaths = new Set();
+  for (const item of files) {
+    const path = uploadItemPath(item).replaceAll("\\", "/");
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 2) {
+      return {ok: false, error: "请选择完整的 YOLO run 目录，不能只选择单个文件。"};
+    }
+    roots.add(parts[0]);
+    normalizedPaths.add(parts.join("/").toLowerCase());
+  }
+  if (roots.size !== 1) {
+    return {ok: false, error: "一次只能上传一个 YOLO run 目录。"};
+  }
+  const root = Array.from(roots)[0].toLowerCase();
+  const hasBest = normalizedPaths.has(`${root}/weights/best.pt`);
+  const hasLast = normalizedPaths.has(`${root}/weights/last.pt`);
+  if (!hasBest && !hasLast) {
+    return {ok: false, error: "目录结构不符合 YOLO run：必须包含 weights/best.pt 或 weights/last.pt。"};
+  }
+  return {ok: true};
 }
 
 async function uploadFiles(zone, files) {
   const kind = zone.dataset.uploadKind;
   let uploads = Array.from(files);
+  if (kind === "model") {
+    const validation = validateYoloRunUpload(uploads);
+    if (!validation.ok) {
+      alert(validation.error);
+      return;
+    }
+  }
   if (kind === "test" || kind?.startsWith("test/")) {
     const before = uploads.length;
     uploads = uploads.filter(isTestImageUpload);
@@ -820,18 +855,22 @@ async function uploadFiles(zone, files) {
         }
       }
     } else if (kind === "model") {
-      document.querySelector("[data-model-count]").textContent = `${data.count} 个文件`;
+      document.querySelector("[data-model-count]").textContent = `${data.count} 个`;
       setActionEnabled("[data-model-action]", data.count > 0);
+      window.setTimeout(() => window.location.reload(), 500);
     } else if (kind === "classes" || kind === "test-classes") {
       const label = zone.querySelector("[data-upload-label]");
       if (label) {
-        label.textContent = "classes.txt 已上传";
+        label.textContent = kind === "classes" ? "已上传" : "classes.txt 已上传";
       }
       const status = document.querySelector(kind === "test-classes" ? "[data-test-classes-status]" : "[data-classes-status]");
       if (status) status.textContent = "已上传";
       if (kind === "classes") {
-        const buttonLabel = document.querySelector("[data-classes-edit-label]");
-        if (buttonLabel) buttonLabel.textContent = "编辑";
+        const editButton = document.querySelector("#editClassesButton");
+        if (editButton) {
+          editButton.title = "编辑 classes.txt";
+          editButton.setAttribute("aria-label", "编辑 classes.txt");
+        }
       }
       if (kind === "test-classes" && document.querySelector("[data-test-page]")) {
         window.setTimeout(() => window.location.reload(), 500);
@@ -1000,6 +1039,9 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
     if (event.target.closest("[data-browse-media]")) {
       return;
     }
+    if (event.target.closest("#editClassesButton")) {
+      return;
+    }
     input.click();
   });
   zone.addEventListener("keydown", (event) => {
@@ -1013,11 +1055,18 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
     event.preventDefault();
     input.click();
   });
-  input.addEventListener("change", () => uploadFiles(zone, filesFromFileList(input.files)));
-  input.addEventListener("click", () => {
-    input.value = "";
+  if (input !== directoryInput) {
+    input.addEventListener("change", () => uploadFiles(zone, filesFromFileList(input.files)));
+    input.addEventListener("click", () => {
+      input.value = "";
+    });
+  }
+  directoryInput?.addEventListener("change", () => {
+    const fileItems = zone.dataset.uploadKind === "model"
+      ? filesFromFileListKeepRoot(directoryInput.files)
+      : filesFromFileList(directoryInput.files);
+    uploadFiles(zone, fileItems);
   });
-  directoryInput?.addEventListener("change", () => uploadFiles(zone, filesFromFileList(directoryInput.files)));
   directoryInput?.addEventListener("click", () => {
     directoryInput.value = "";
   });
@@ -1059,6 +1108,6 @@ document.querySelectorAll("[data-upload-zone]").forEach((zone) => {
     event.preventDefault();
     if (zone.classList.contains("uploading")) return;
     zone.classList.remove("dragging");
-    uploadFiles(zone, await filesFromDataTransfer(event.dataTransfer));
+    uploadFiles(zone, await filesFromDataTransfer(event.dataTransfer, zone.dataset.uploadKind === "model"));
   });
 });
