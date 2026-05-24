@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% if project_name %}{{ project_name }} 手机预测{% else %}手机预测{% endif %}</title>
+  <link rel="stylesheet" href="/static/css/predict.css?v=20260524-mobile-predict">
+</head>
+<body class="mobile-predict-body">
+  <main class="mobile-predict-page">
+    <header class="mobile-predict-head">
+      <div>
+        <h1>手机预测</h1>
+        <p>{% if project_name %}{{ project_name }}{% else %}{{ current_project }}{% endif %}</p>
+      </div>
+      <select data-mobile-model {% if not models %}disabled{% endif %} aria-label="选择模型">
+        {% for model in models %}
+          <option value="{{ model.relative_path }}" {% if model.relative_path == selected_model %}selected{% endif %}>{{ model.name }}</option>
+        {% endfor %}
+      </select>
+    </header>
+
+    <section class="mobile-camera-card" aria-label="手机摄像头预测">
+      <div class="mobile-camera-stage">
+        <video data-mobile-video playsinline autoplay muted></video>
+        <canvas data-mobile-canvas></canvas>
+      </div>
+      <div class="mobile-predict-status" data-mobile-status>正在打开摄像头...</div>
+      <div class="mobile-labels" data-mobile-labels>暂无标签</div>
+      <div class="mobile-actions">
+        <button type="button" data-mobile-photo>拍照识别</button>
+        <button type="button" data-mobile-video-toggle>视频识别</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const video = document.querySelector("[data-mobile-video]");
+      const canvas = document.querySelector("[data-mobile-canvas]");
+      const status = document.querySelector("[data-mobile-status]");
+      const labels = document.querySelector("[data-mobile-labels]");
+      const photoButton = document.querySelector("[data-mobile-photo]");
+      const videoButton = document.querySelector("[data-mobile-video-toggle]");
+      const modelSelect = document.querySelector("[data-mobile-model]");
+      const context = canvas.getContext("2d");
+      let stream = null;
+      let videoTimer = null;
+      let busy = false;
+      let lastBoxes = [];
+      let freezeFrame = false;
+
+      function setStatus(text) {
+        status.textContent = text || "";
+      }
+
+      function resizeCanvas() {
+        const width = video.videoWidth || canvas.clientWidth || 640;
+        const height = video.videoHeight || canvas.clientHeight || 480;
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+      }
+
+      function drawFrame(boxes = lastBoxes) {
+        if (!video.videoWidth) return;
+        resizeCanvas();
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        context.lineWidth = Math.max(3, Math.round(canvas.width / 220));
+        context.font = `${Math.max(18, Math.round(canvas.width / 28))}px system-ui, -apple-system, sans-serif`;
+        context.textBaseline = "top";
+        boxes.forEach(box => {
+          const x1 = box.x1 * canvas.width;
+          const y1 = box.y1 * canvas.height;
+          const x2 = box.x2 * canvas.width;
+          const y2 = box.y2 * canvas.height;
+          const text = `${box.label}${box.confidence ? ` ${(box.confidence * 100).toFixed(0)}%` : ""}`;
+          const textWidth = context.measureText(text).width + 14;
+          const textHeight = Math.max(24, Math.round(canvas.width / 22));
+          context.strokeStyle = "#22c55e";
+          context.fillStyle = "rgba(34, 197, 94, .18)";
+          context.strokeRect(x1, y1, x2 - x1, y2 - y1);
+          context.fillRect(x1, Math.max(0, y1 - textHeight), textWidth, textHeight);
+          context.fillStyle = "#ffffff";
+          context.fillText(text, x1 + 7, Math.max(0, y1 - textHeight + 3));
+        });
+      }
+
+      function updateLabels(nextLabels) {
+        labels.textContent = nextLabels && nextLabels.length ? nextLabels.join("、") : "未识别到标签";
+      }
+
+      async function frameBlob() {
+        drawFrame([]);
+        return new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.86));
+      }
+
+      async function predictFrame(mode) {
+        if (busy || !modelSelect?.value || !video.videoWidth) return;
+        busy = true;
+        try {
+          const blob = await frameBlob();
+          if (!blob) return;
+          const data = new FormData();
+          data.append("model", modelSelect.value);
+          data.append("image", blob, `${mode}_${Date.now()}.jpg`);
+          const response = await fetch(`/model/{{ current_project }}/predict/mobile/frame`, {method: "POST", body: data});
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) {
+            setStatus(payload.error || "预测失败");
+            return;
+          }
+          lastBoxes = payload.boxes || [];
+          drawFrame(lastBoxes);
+          updateLabels(payload.labels || []);
+          setStatus(mode === "video" ? "视频识别中" : "拍照识别完成");
+        } catch (error) {
+          setStatus(`预测失败：${error.message}`);
+        } finally {
+          busy = false;
+        }
+      }
+
+      async function openCamera() {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {facingMode: {ideal: "environment"}},
+            audio: false,
+          });
+          video.srcObject = stream;
+          await video.play();
+          resizeCanvas();
+          setStatus("摄像头已打开");
+        } catch (error) {
+          setStatus(`无法打开摄像头：${error.message}。手机浏览器通常要求 HTTPS 或 localhost 才允许调用摄像头。`);
+        }
+      }
+
+      photoButton.addEventListener("click", () => {
+        freezeFrame = true;
+        predictFrame("photo");
+      });
+      videoButton.addEventListener("click", () => {
+        if (videoTimer) {
+          clearInterval(videoTimer);
+          videoTimer = null;
+          videoButton.textContent = "视频识别";
+          setStatus("视频识别已停止");
+          return;
+        }
+        freezeFrame = false;
+        videoButton.textContent = "停止视频";
+        setStatus("视频识别中");
+        predictFrame("video");
+        videoTimer = setInterval(() => predictFrame("video"), 900);
+      });
+      video.addEventListener("loadedmetadata", () => {
+        resizeCanvas();
+      });
+      window.addEventListener("resize", () => drawFrame(lastBoxes), {passive: true});
+      function renderPreview() {
+        if (!freezeFrame && video.videoWidth) drawFrame(lastBoxes);
+        requestAnimationFrame(renderPreview);
+      }
+      openCamera();
+      renderPreview();
+    })();
+  </script>
+</body>
+</html>
