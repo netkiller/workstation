@@ -3,7 +3,8 @@
 {% block title %}模型 {{ task.name }} 指标{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/train.css?v=20260515-model-detail-head">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260526-metric-analysis-tab">
+  <link rel="stylesheet" href="/static/css/analysis.css?v=20260526-analysis">
 {% endblock %}
 
 {% block content %}
@@ -53,39 +54,165 @@
     <section class="model-layout">
       <section class="model-results">
         <section class="model-section">
-          {% if assets.image_tabs or assets.args or assets.csv.headers %}
+          {% if assets.analysis_rows or assets.image_tabs or assets.args or assets.csv.headers %}
             <div class="result-tabs" data-result-tabs>
               <div class="result-tab-list" role="tablist" aria-label="结果图片分类">
+                {% if assets.analysis_rows %}
+                  <button
+                    type="button"
+                    class="result-tab active"
+                    role="tab"
+                    aria-selected="true"
+                    data-result-tab="analysis"
+                  >指标分析</button>
+                {% endif %}
                 {% for tab in assets.image_tabs %}
                   <button
                     type="button"
-                    class="result-tab{% if loop.first %} active{% endif %}"
+                    class="result-tab{% if not assets.analysis_rows and loop.first %} active{% endif %}"
                     role="tab"
-                    aria-selected="{{ 'true' if loop.first else 'false' }}"
+                    aria-selected="{{ 'true' if not assets.analysis_rows and loop.first else 'false' }}"
                     data-result-tab="{{ loop.index0 }}"
                   >{{ tab.label }}（{{ tab.images | length }}）</button>
                 {% endfor %}
                 {% if assets.args %}
                   <button
                     type="button"
-                    class="result-tab{% if not assets.image_tabs %} active{% endif %}"
+                    class="result-tab{% if not assets.analysis_rows and not assets.image_tabs %} active{% endif %}"
                     role="tab"
-                    aria-selected="{{ 'true' if not assets.image_tabs else 'false' }}"
+                    aria-selected="{{ 'true' if not assets.analysis_rows and not assets.image_tabs else 'false' }}"
                     data-result-tab="args"
                   >args.yaml</button>
                 {% endif %}
                 {% if assets.csv.headers %}
                   <button
                     type="button"
-                    class="result-tab{% if not assets.image_tabs and not assets.args %} active{% endif %}"
+                    class="result-tab{% if not assets.analysis_rows and not assets.image_tabs and not assets.args %} active{% endif %}"
                     role="tab"
-                    aria-selected="{{ 'true' if not assets.image_tabs and not assets.args else 'false' }}"
+                    aria-selected="{{ 'true' if not assets.analysis_rows and not assets.image_tabs and not assets.args else 'false' }}"
                     data-result-tab="csv"
                   >results.csv</button>
                 {% endif %}
               </div>
+              {% if assets.analysis_rows %}
+                <div class="result-tab-panel active" data-result-panel="analysis">
+                  <section class="analysis-dashboard model-metrics-analysis" aria-label="YOLO 训练数据分析">
+                    <script type="application/json" data-analysis-rows>{{ assets.analysis_rows | tojson }}</script>
+                    <div class="analysis-brand">
+                      <div class="analysis-logo" aria-hidden="true">Y</div>
+                      <div>
+                        <h2>YOLO <span>训练数据分析</span></h2>
+                        <p>读取当前模型 results.csv · CSV → Charts</p>
+                      </div>
+                    </div>
+                    <div id="dashboard" class="analysis-result" hidden>
+                      <div class="section-title">训练概览</div>
+                      <div class="stats-grid" id="statsGrid"></div>
+                      <div class="epoch-control">
+                        <label for="epochStart">显示范围</label>
+                        <input type="range" id="epochStart" min="0" value="0">
+                        <span class="epoch-badge" id="epochStartLabel">1</span>
+                        <span class="range-arrow">→</span>
+                        <input type="range" id="epochEnd" min="0" value="100">
+                        <span class="epoch-badge" id="epochEndLabel">100</span>
+                        <button class="range-reset" type="button" onclick="resetRange()">重置</button>
+                      </div>
+                      <div class="tabs" role="tablist" aria-label="分析图表">
+                        <button class="tab active" type="button" onclick="showTab('metrics', this)">核心指标</button>
+                        <button class="tab" type="button" onclick="showTab('loss', this)">损失曲线</button>
+                        <button class="tab" type="button" onclick="showTab('lr', this)">学习率</button>
+                        <button class="tab" type="button" onclick="showTab('prcurve', this)">P-R 综合</button>
+                        <button class="tab" type="button" onclick="showTab('table', this)">数据表</button>
+                      </div>
+                      <div id="tab-metrics" class="tab-content">
+                        <div class="charts-grid">
+                          <div class="chart-panel chart-full" style="--panel-color:#1667c7">
+                            <h3>mAP50 & mAP50-95 曲线</h3>
+                            <div class="chart-desc">目标检测综合精度，mAP50 使用 IoU=0.5，mAP50-95 更严格。</div>
+                            <div class="chart-wrap"><canvas id="chartMAP"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#10b981">
+                            <h3>Precision（精确率）</h3>
+                            <div class="chart-desc">TP / (TP+FP)，用于观察误报控制能力。</div>
+                            <div class="chart-wrap"><canvas id="chartPrecision"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#7c3aed">
+                            <h3>Recall（召回率）</h3>
+                            <div class="chart-desc">TP / (TP+FN)，用于观察漏检控制能力。</div>
+                            <div class="chart-wrap"><canvas id="chartRecall"></canvas></div>
+                          </div>
+                          <div class="chart-panel chart-full" style="--panel-color:#f59e0b">
+                            <h3>Precision vs Recall 对比</h3>
+                            <div class="chart-desc">查看精确率和召回率在训练过程中的平衡变化。</div>
+                            <div class="chart-wrap"><canvas id="chartPROverEpoch"></canvas></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="tab-loss" class="tab-content" hidden>
+                        <div class="charts-grid">
+                          <div class="chart-panel chart-full" style="--panel-color:#ef4444">
+                            <h3>Train vs Val 总损失</h3>
+                            <div class="chart-desc">Box + Cls + DFL 合并，用于观察过拟合拐点。</div>
+                            <div class="chart-wrap"><canvas id="chartTotalLoss"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#ef4444">
+                            <h3>Box Loss</h3>
+                            <div class="chart-desc">边界框回归损失。</div>
+                            <div class="chart-wrap"><canvas id="chartBoxLoss"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#f59e0b">
+                            <h3>Cls Loss（分类损失）</h3>
+                            <div class="chart-desc">类别预测损失。</div>
+                            <div class="chart-wrap"><canvas id="chartClsLoss"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#7c3aed">
+                            <h3>DFL Loss</h3>
+                            <div class="chart-desc">分布式焦点损失。</div>
+                            <div class="chart-wrap"><canvas id="chartDflLoss"></canvas></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="tab-lr" class="tab-content" hidden>
+                        <div class="charts-grid">
+                          <div class="chart-panel chart-full" style="--panel-color:#1667c7">
+                            <h3>学习率调度曲线</h3>
+                            <div class="chart-desc">各参数组学习率随 epoch 的变化。</div>
+                            <div class="chart-wrap"><canvas id="chartLR"></canvas></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="tab-prcurve" class="tab-content" hidden>
+                        <div class="charts-grid">
+                          <div class="chart-panel chart-full" style="--panel-color:#10b981">
+                            <h3>Precision–Recall 散点图</h3>
+                            <div class="chart-desc">每个 epoch 一个点，越接近右上角越好。</div>
+                            <div class="chart-wrap chart-tall"><canvas id="chartPRScatter"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#f59e0b">
+                            <h3>F1 Score</h3>
+                            <div class="chart-desc">Precision 与 Recall 的调和均值。</div>
+                            <div class="chart-wrap"><canvas id="chartF1"></canvas></div>
+                          </div>
+                          <div class="chart-panel" style="--panel-color:#ef4444">
+                            <h3>误报率估算</h3>
+                            <div class="chart-desc">1 - Precision，越低越好。</div>
+                            <div class="chart-wrap"><canvas id="chartFPR"></canvas></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="tab-table" class="tab-content" hidden>
+                        <div class="chart-panel">
+                          <h3>训练数据明细表</h3>
+                          <div class="chart-desc" id="tableDesc">最优 epoch 行高亮显示。</div>
+                          <div class="table-wrap" id="tableContainer"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              {% endif %}
               {% if assets.args %}
-                <div class="result-tab-panel args-tab-panel{% if not assets.image_tabs %} active{% endif %}" data-result-panel="args" {% if assets.image_tabs %}hidden{% endif %}>
+                <div class="result-tab-panel args-tab-panel{% if not assets.analysis_rows and not assets.image_tabs %} active{% endif %}" data-result-panel="args" {% if assets.analysis_rows or assets.image_tabs %}hidden{% endif %}>
                   {% if assets.train_command %}
                     <section class="command-card">
                       <div class="command-card-head">
@@ -102,7 +229,7 @@
                 </div>
               {% endif %}
               {% for tab in assets.image_tabs %}
-                <div class="result-tab-panel{% if loop.first %} active{% endif %}" data-result-panel="{{ loop.index0 }}" {% if not loop.first %}hidden{% endif %}>
+                <div class="result-tab-panel{% if not assets.analysis_rows and loop.first %} active{% endif %}" data-result-panel="{{ loop.index0 }}" {% if assets.analysis_rows or not loop.first %}hidden{% endif %}>
                   <div class="result-image-grid{% if tab.label == 'results.png' %} result-image-grid-fluid{% endif %}{% if tab.label == 'labels.jpg' %} result-image-grid-fit{% endif %} result-image-grid-{{ tab.label }}">
                     {% for image in tab.images %}
                       <article class="result-image-card">
@@ -114,7 +241,7 @@
                 </div>
               {% endfor %}
               {% if assets.csv.headers %}
-                <div class="result-tab-panel{% if not assets.image_tabs and not assets.args %} active{% endif %}" data-result-panel="csv" {% if assets.image_tabs or assets.args %}hidden{% endif %}>
+                <div class="result-tab-panel{% if not assets.analysis_rows and not assets.image_tabs and not assets.args %} active{% endif %}" data-result-panel="csv" {% if assets.analysis_rows or assets.image_tabs or assets.args %}hidden{% endif %}>
                   <div class="result-table-wrap">
                     <table class="result-table">
                       <thead>
@@ -156,6 +283,10 @@
       <figcaption data-image-preview-caption></figcaption>
     </figure>
   </dialog>
+  {% if assets.analysis_rows %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="/static/js/analysis.js?v=20260526-model-metrics"></script>
+  {% endif %}
   <script>
     (() => {
       document.querySelectorAll("[data-result-tabs]").forEach((root) => {

@@ -4,7 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Yolo Workstation{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=20260521-header-align">
+  <script>
+    (() => {
+      const stored = localStorage.getItem("yolows-theme");
+      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+      const theme = stored === "dark" || (stored === "system" && prefersDark) ? "dark" : "light";
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.themeMode = stored === "dark" || stored === "system" ? stored : "light";
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/app.css?v=20260526-theme">
   {% block styles %}{% endblock %}
 </head>
 <body>

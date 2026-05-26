@@ -43,6 +43,7 @@
     {% endif %}
   </nav>
   <div class="header-actions">
+    <button class="public-header-button theme-toggle-button" type="button" data-theme-toggle title="切换白天/夜晚模式" aria-label="切换白天/夜晚模式"><span class="nav-icon" data-theme-icon>☀</span><span data-theme-label>白天</span></button>
     {% if is_team_mode %}
       <button class="public-header-button" type="button" data-public-share data-share-url="{{ share_url }}" title="分享工作站地址"><span class="nav-icon">⇪</span><span>分享</span></button>
     {% endif %}
@@ -58,6 +59,43 @@
   </div>
 </header>
 <script>
+  (() => {
+    const storageKey = "yolows-theme";
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const button = document.querySelector("[data-theme-toggle]");
+    const icon = document.querySelector("[data-theme-icon]");
+    const label = document.querySelector("[data-theme-label]");
+    const currentMode = () => {
+      const stored = localStorage.getItem(storageKey);
+      return stored === "dark" || stored === "system" ? stored : "light";
+    };
+    const effectiveTheme = (mode) => {
+      if (mode === "system") return media?.matches ? "dark" : "light";
+      return mode === "dark" ? "dark" : "light";
+    };
+    const applyTheme = (mode) => {
+      const theme = effectiveTheme(mode);
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.themeMode = mode;
+      if (icon) icon.textContent = mode === "system" ? "◐" : (theme === "dark" ? "☾" : "☀");
+      if (label) label.textContent = mode === "system" ? "系统" : (theme === "dark" ? "夜晚" : "白天");
+      if (button) {
+        button.dataset.themeState = mode;
+        button.title = mode === "system" ? "当前跟随系统，点击切换白天模式" : (theme === "dark" ? "当前夜晚模式，点击切换系统模式" : "当前白天模式，点击切换夜晚模式");
+      }
+      window.dispatchEvent(new CustomEvent("yolows-theme-change", {detail: {theme}}));
+    };
+    applyTheme(currentMode());
+    button?.addEventListener("click", () => {
+      const mode = currentMode();
+      const next = mode === "light" ? "dark" : (mode === "dark" ? "system" : "light");
+      localStorage.setItem(storageKey, next);
+      applyTheme(next);
+    });
+    media?.addEventListener?.("change", () => {
+      if (currentMode() === "system") applyTheme("system");
+    });
+  })();
   (() => {
     const share = document.querySelector("[data-public-share]");
     share?.addEventListener("click", async () => {

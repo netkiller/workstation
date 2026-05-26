@@ -700,7 +700,7 @@ async function filesFromDataTransfer(dataTransfer, keepRoot = false) {
     .filter(Boolean);
 
   if (!entries.length) {
-    return filesFromFileList(dataTransfer.files);
+    return keepRoot ? filesFromFileListKeepRoot(dataTransfer.files) : filesFromFileList(dataTransfer.files);
   }
 
   const files = [];
@@ -999,7 +999,12 @@ function uploadWithProgress(url, formData, onProgress) {
           data = JSON.parse(request.responseText || "{}");
         }
       } catch (error) {
-        reject(new Error("上传响应解析失败"));
+        const contentType = request.getResponseHeader("content-type") || "未知类型";
+        const responseText = String(request.responseText || "").trim();
+        const summary = responseText
+          ? responseText.replace(/\s+/g, " ").slice(0, 240)
+          : "服务器返回空响应";
+        reject(new Error(`上传响应解析失败：HTTP ${request.status || 0}，${contentType}，${summary}`));
         return;
       }
       resolve({status: request.status, data});

@@ -180,6 +180,20 @@ def model_context(request: Request, current_project: str):
     }
 
 
+def analysis_context(request: Request, current_project: str):
+    workspace = workspace_path()
+    path = project_path(workspace, current_project)
+    return {
+        "request": request,
+        "workspace": workspace,
+        "active_page": "model",
+        "model_active": "analysis",
+        "current_project": current_project,
+        "project_name": read_project_name(path) if path else "",
+        **header_context(request, workspace),
+    }
+
+
 @router.get("/model")
 def model_index(request: Request):
     project = request.query_params.get("project", "")
@@ -193,6 +207,30 @@ def model_index(request: Request):
     )
     if current_project:
         response.set_cookie("current_project", current_project, httponly=True, samesite="lax")
+    return response
+
+
+@router.get("/model/analysis")
+def model_analysis_index(request: Request):
+    project = request.query_params.get("project", "")
+    current_project = project or request.cookies.get("current_project", "")
+    if current_project:
+        return RedirectResponse(url=f"/model/{current_project}/analysis", status_code=status.HTTP_303_SEE_OTHER)
+    return templates.TemplateResponse(
+        request=request,
+        name="model/analysis.html",
+        context=analysis_context(request, ""),
+    )
+
+
+@router.get("/model/{project}/analysis")
+def model_analysis_project(request: Request, project: str):
+    response = templates.TemplateResponse(
+        request=request,
+        name="model/analysis.html",
+        context=analysis_context(request, project),
+    )
+    response.set_cookie("current_project", project, httponly=True, samesite="lax")
     return response
 
 

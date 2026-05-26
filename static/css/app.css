@@ -17,6 +17,19 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --panel: #111827;
+  --text: #e5edf7;
+  --muted: #94a3b8;
+  --line: #334155;
+  --accent: #60a5fa;
+  --accent-dark: #3b82f6;
+  --page-title-color: #f8fafc;
+  --page-subtitle-color: #94a3b8;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -476,6 +489,63 @@ main > :where(
 
 .scroll-top-button[hidden] {
   display: none;
+}
+
+:root[data-theme="dark"] header,
+:root[data-theme="dark"] .site-footer,
+:root[data-theme="dark"] .public-shortcut-popover {
+  background: #111827;
+  border-color: var(--line);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .header-home-link,
+:root[data-theme="dark"] nav a,
+:root[data-theme="dark"] nav .nav-disabled,
+:root[data-theme="dark"] .model-subnav a,
+:root[data-theme="dark"] .logout-form button,
+:root[data-theme="dark"] .close-current-project,
+:root[data-theme="dark"] .public-header-button,
+:root[data-theme="dark"] .scroll-top-button {
+  background: #172033 !important;
+  border-color: var(--line) !important;
+  color: #dbeafe !important;
+}
+
+:root[data-theme="dark"] .header-home-link:hover,
+:root[data-theme="dark"] nav a:hover,
+:root[data-theme="dark"] .model-subnav a:hover,
+:root[data-theme="dark"] .logout-form button:hover,
+:root[data-theme="dark"] .close-current-project:hover,
+:root[data-theme="dark"] .public-header-button:hover,
+:root[data-theme="dark"] .scroll-top-button:hover {
+  background: #1e3a5f !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] nav a.active {
+  background: #1d4ed8 !important;
+  border-color: #60a5fa !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .model-subnav a.active {
+  background: #1d4ed8 !important;
+  border-color: #60a5fa !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: #0f172a;
+  border-color: var(--line);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #64748b;
 }
 
 .site-footer {

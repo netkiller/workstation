@@ -2128,6 +2128,14 @@
   scroll-padding-bottom: 48px;
 }
 
+.result-tab-panel .model-metrics-analysis {
+  margin-top: 0;
+}
+
+.model-metrics-analysis .analysis-brand {
+  margin-bottom: 4px;
+}
+
 .args-tab-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

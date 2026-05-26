@@ -1185,13 +1185,32 @@ async def uploaded_files(request: Request):
     if "multipart/form-data" not in content_type:
         return []
 
+    files = []
+    paths = []
+    file_index = 0
+    try:
+        try:
+            form = await request.form(max_files=10000, max_fields=20000)
+        except TypeError:
+            form = await request.form()
+        for field_name, value in form.multi_items():
+            if field_name == "paths":
+                paths.append(str(value or ""))
+                continue
+            if field_name != "files" or not hasattr(value, "filename") or not hasattr(value, "read"):
+                continue
+            payload = await value.read()
+            upload_name = paths[file_index] if file_index < len(paths) and paths[file_index] else value.filename
+            files.append((upload_name, payload or b""))
+            file_index += 1
+        return files
+    except Exception:
+        pass
+
     body = await request.body()
     message = BytesParser(policy=default).parsebytes(
         b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + body
     )
-    files = []
-    paths = []
-    file_index = 0
     for part in message.iter_parts():
         field_name = part.get_param("name", header="content-disposition")
         if field_name == "paths":
@@ -1726,20 +1745,23 @@ async def save_classes(directory: str, request: Request):
 
 @router.post("/project/{directory}/upload/model")
 async def upload_model(directory: str, request: Request):
-    workspace = workspace_path()
-    path = project_dir(workspace, directory)
-    if path is None or not path.is_dir():
-        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
-    files = await uploaded_files(request)
-    _run_name, error = validate_yolo_run_upload(files)
-    if error:
-        return JSONResponse({"ok": False, "error": error}, status_code=400)
-    saved = [save_upload(filename, content, path / "runs") for filename, content in files]
-    saved = [item for item in saved if item is not None]
-    append_upload_log(
-        path,
-        f"上传 YOLO run：接收 {len(files)} 个，保存 {len(saved)} 个",
-        [relative_log_entry(path, item) for item in saved],
-    )
-    build_project_index(path)
-    return {"ok": True, "saved": len(saved), "count": len(project_run_models(path))}
+    try:
+        workspace = workspace_path()
+        path = project_dir(workspace, directory)
+        if path is None or not path.is_dir():
+            return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+        files = await uploaded_files(request)
+        _run_name, error = validate_yolo_run_upload(files)
+        if error:
+            return JSONResponse({"ok": False, "error": error}, status_code=400)
+        saved = [save_upload(filename, content, path / "runs") for filename, content in files]
+        saved = [item for item in saved if item is not None]
+        append_upload_log(
+            path,
+            f"上传 YOLO run：接收 {len(files)} 个，保存 {len(saved)} 个",
+            [relative_log_entry(path, item) for item in saved],
+        )
+        build_project_index(path)
+        return {"ok": True, "saved": len(saved), "count": len(project_run_models(path))}
+    except Exception as error:
+        return JSONResponse({"ok": False, "error": f"模型上传失败：{error}"}, status_code=500)
