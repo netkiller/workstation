@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}数据集 {{ dataset.name }}{% endblock %}
+{% block title %}图像分类数据集 {{ dataset.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/dataset.css?v=20260524-detail-description-actions">
+  <link rel="stylesheet" href="/static/css/dataset.css?v=20260602-classify-detail">
 {% endblock %}
 
 {% block content %}
-  <main class="dataset-detail-main">
+  <main class="dataset-detail-main dataset-classify-main">
     <section class="dataset-detail-head" aria-labelledby="dataset-title">
       <div class="dataset-detail-title">
-        <h1 id="dataset-title">数据集 {{ dataset.name }}</h1>
+        <h1 id="dataset-title">图像分类数据集 {{ dataset.name }}</h1>
         <div class="dataset-detail-subrow">
-          <p>数据集汇总当前图片、标签和 train / val / test 划分，可用于训练、部署、下载与样本核查。</p>
+          <p>按类别目录汇总 train / val / test 图片，可用于分类训练、部署、下载与样本核查。</p>
           <div class="dataset-detail-actions">
             <button class="delete-button" type="button" data-delete-dataset data-project="{{ dataset.project_dir }}" data-task="{{ dataset.task_path }}" data-name="{{ dataset.name }}" data-has-remote="{{ '1' if dataset.deploy_target and dataset.deploy_target != '本地' else '0' }}">删除</button>
             <button class="download-button deploy-button" type="button" data-run-deploy data-project="{{ dataset.project_dir }}" data-task="{{ dataset.task_path }}" data-name="{{ dataset.name }}">部署</button>
@@ -23,21 +23,21 @@
       </div>
     </section>
 
-    <section class="dataset-summary" aria-label="数据集统计">
+    <section class="dataset-summary" aria-label="分类数据集统计">
       <div class="summary-card"><strong>{{ dataset.total_images }}</strong><span>images</span></div>
-      <div class="summary-card"><strong>{{ dataset.total_labels }}</strong><span>labels</span></div>
+      <div class="summary-card"><strong>{{ dataset.annotations.total_classes }}</strong><span>classes</span></div>
       <div class="summary-card"><strong>{{ dataset.splits.train.images }}</strong><span>train</span></div>
       <div class="summary-card"><strong>{{ dataset.splits.val.images + dataset.splits.test.images }}</strong><span>val / test</span></div>
     </section>
 
-    <section class="classes-dashboard" aria-label="classes.txt">
+    <section class="classes-dashboard dataset-classify-dashboard" aria-label="分类分布">
       {% if dataset.annotations.rows %}
         <section class="classes-card">
           <div class="classes-card-head">
-            <h2>Class 分布</h2>
-            <p>{{ dataset.annotations.total_classes }} classes · {{ dataset.annotations.total_annotations_label }} total annotations</p>
+            <h2>类别分布</h2>
+            <p>{{ dataset.annotations.total_classes }} classes · {{ dataset.annotations.total_annotations_label }} images</p>
           </div>
-          <div class="class-vertical-chart" aria-label="Class 标注分布">
+          <div class="class-vertical-chart" aria-label="类别图片分布">
             <div class="class-scale" aria-hidden="true">
               {% for value in dataset.annotations.scale %}
                 <span>{{ value }}</span>
@@ -59,43 +59,43 @@
         <section class="classes-card">
           <div class="classes-card-head">
             <h2>Classes</h2>
-            <p>{{ dataset.annotations.total_classes }} classes · {{ dataset.annotations.total_annotations_label }} annotations</p>
+            <p>按目录名统计分类图片数量</p>
           </div>
           <div class="classes-table-wrap">
             <table class="classes-table">
               <thead>
                 <tr>
                   <th>索引</th>
-                  <th>名称</th>
-                  <th>标注量</th>
+                  <th>类别</th>
+                  <th>图片数</th>
                 </tr>
               </thead>
-                <tbody>
-                  {% for item in dataset.annotations.rows %}
-                    <tr>
-                      <td>{{ item.index }}</td>
-                      <td>{{ item.name }}</td>
-                      <td>{{ item.count }}</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-                <tfoot>
+              <tbody>
+                {% for item in dataset.annotations.rows %}
                   <tr>
-                    <td colspan="2">统计</td>
-                    <td>{{ dataset.annotations.total_annotations_label }}</td>
+                    <td>{{ item.index }}</td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.count }}</td>
                   </tr>
-                </tfoot>
-              </table>
-            </div>
+                {% endfor %}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">统计</td>
+                  <td>{{ dataset.annotations.total_annotations_label }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </section>
       {% else %}
         <section class="classes-card">
-          <div class="empty">暂无 classes.txt 或标注数据</div>
+          <div class="empty">暂无分类图片</div>
         </section>
       {% endif %}
     </section>
 
-    <section class="dataset-tabs" data-dataset-tabs aria-label="数据集图片">
+    <section class="dataset-tabs" data-dataset-tabs aria-label="分类数据集图片">
       <div class="dataset-tab-list" role="tablist" aria-label="数据集 split">
         <div class="dataset-tab-buttons">
           {% for split_name, files in dataset.files.items() %}
@@ -148,7 +148,7 @@
               {% for file in files %}
                 <article class="dataset-file-card" data-file-card data-index="{{ loop.index0 }}" {% if loop.index0 >= 20 %}hidden{% endif %}>
                   <img src="{{ file.thumb }}" alt="{{ file.name }}" loading="lazy" data-preview-image data-preview-src="{{ file.media }}" data-preview-title="{{ file.name }}" data-preview-split="{{ split_name }}" data-preview-index="{{ loop.index0 }}">
-                  <span title="{{ file.name }}">{{ file.name }}{% if file.label %} · label{% endif %}</span>
+                  <span title="{{ file.name }}">{{ file.name }}</span>
                 </article>
               {% endfor %}
             </div>
@@ -157,7 +157,6 @@
           {% endif %}
         </div>
       {% endfor %}
-
     </section>
   </main>
 
@@ -251,7 +250,7 @@
             card.dataset.index = String(start + offset);
             card.innerHTML = `
               <img src="${escapeHtml(file.thumb || file.media)}" alt="${escapeHtml(file.name)}" loading="lazy" data-preview-image data-preview-src="${escapeHtml(file.media)}" data-preview-title="${escapeHtml(file.name)}" data-preview-split="${escapeHtml(split)}" data-preview-index="${start + offset}">
-              <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}${file.label ? " · label" : ""}</span>
+              <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
             `;
             grid.appendChild(card);
           });
@@ -285,7 +284,6 @@
       document.querySelectorAll("[data-split-tab]").forEach((tab) => {
         tab.addEventListener("click", () => activate(tab.dataset.splitTab));
       });
-
       pageSizeSelect?.addEventListener("change", () => {
         const panel = activePanel();
         if (!panel) return;
@@ -294,7 +292,6 @@
         updatePanel(panel);
         panel.scrollTop = 0;
       });
-
       prevButton?.addEventListener("click", () => {
         const panel = activePanel();
         if (!panel) return;
@@ -302,7 +299,6 @@
         updatePanel(panel);
         panel.scrollTop = 0;
       });
-
       nextButton?.addEventListener("click", () => {
         const panel = activePanel();
         if (!panel) return;
@@ -310,7 +306,6 @@
         updatePanel(panel);
         panel.scrollTop = 0;
       });
-
       panels.forEach((panel) => {
         panel.dataset.page = panel.dataset.page || "1";
         panel.dataset.pageSize = panel.dataset.pageSize || "20";
@@ -386,7 +381,7 @@
       document.addEventListener("click", event => {
         const button = event.target.closest("[data-delete-dataset]");
         if (!button) return;
-        deleteTarget = {project: button.dataset.project || "", task: button.dataset.task || "detect", name: button.dataset.name || "", hasRemote: button.dataset.hasRemote === "1"};
+        deleteTarget = {project: button.dataset.project || "", task: button.dataset.task || "classify", name: button.dataset.name || "", hasRemote: button.dataset.hasRemote === "1"};
         if (deleteName) deleteName.textContent = deleteTarget.name;
         if (deleteRemoteInput) deleteRemoteInput.checked = false;
         if (deleteRemoteRow) deleteRemoteRow.hidden = !deleteTarget.hasRemote;
@@ -400,7 +395,7 @@
       });
       document.querySelector("[data-confirm-delete-dataset]")?.addEventListener("click", async () => {
         if (!deleteTarget?.project || !deleteTarget?.name) return;
-        const response = await fetch(`/dataset/${encodeURIComponent(deleteTarget.project)}/${encodeURIComponent(deleteTarget.task || "detect")}/${encodeURIComponent(deleteTarget.name)}/delete`, {
+        const response = await fetch(`/dataset/${encodeURIComponent(deleteTarget.project)}/${encodeURIComponent(deleteTarget.task || "classify")}/${encodeURIComponent(deleteTarget.name)}/delete`, {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({delete_remote: Boolean(deleteRemoteInput?.checked)}),
@@ -410,7 +405,7 @@
           alert(payload.error || "删除数据集失败");
           return;
         }
-        window.location.href = `/dataset/${encodeURIComponent(deleteTarget.project)}/${encodeURIComponent(deleteTarget.task || "detect")}`;
+        window.location.href = `/dataset/${encodeURIComponent(deleteTarget.project)}/${encodeURIComponent(deleteTarget.task || "classify")}`;
       });
 
       document.addEventListener("click", async event => {
@@ -418,7 +413,7 @@
         if (!button) return;
         button.disabled = true;
         button.textContent = "部署中";
-        const response = await fetch(`/dataset/${encodeURIComponent(button.dataset.project || "")}/${encodeURIComponent(button.dataset.task || "detect")}/${encodeURIComponent(button.dataset.name || "")}/deploy/run`, {
+        const response = await fetch(`/dataset/${encodeURIComponent(button.dataset.project || "")}/${encodeURIComponent(button.dataset.task || "classify")}/${encodeURIComponent(button.dataset.name || "")}/deploy/run`, {
           method: "POST",
         });
         const payload = await response.json().catch(() => ({}));
@@ -428,7 +423,7 @@
           button.textContent = "部署";
           return;
         }
-        window.location.href = `/dataset/${encodeURIComponent(button.dataset.project || "")}/${encodeURIComponent(button.dataset.task || "detect")}`;
+        window.location.href = `/dataset/${encodeURIComponent(button.dataset.project || "")}/${encodeURIComponent(button.dataset.task || "classify")}`;
       });
     })();
   </script>

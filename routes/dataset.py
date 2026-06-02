@@ -14,13 +14,21 @@ import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from routes.project import header_context
+from routes.project import (
+    CLASSIFY_DIR,
+    PROJECT_TASK_CLASSIFY,
+    header_context,
+    project_task_type,
+    read_project_meta,
+    read_project_registry,
+)
 from routes.resources import find_resource, read_resources
 
 
@@ -29,7 +37,10 @@ templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff", ".heic", ".heif"}
 JPEG_EXTS = {".jpg", ".jpeg"}
 DATASET_NAME_PATTERN = re.compile(r"^[^\x00-\x1f\x7f/\\:]+$")
-ANNOTATE_DIR = "annotate"
+DETECT_TASK = "detect"
+CLASSIFY_TASK = "classify"
+TASK_TYPES = {DETECT_TASK, CLASSIFY_TASK}
+ANNOTATE_DIR = DETECT_TASK
 DEPLOY_MODES = {"full": "全量", "incremental": "增量", "sync": "同步", "diff": "同步"}
 DEPLOY_TARGETS = {"local": "本地", "remote": "远程"}
 DEFAULT_DATASET_ICON = "▦"
@@ -118,11 +129,62 @@ def image_files(root: Path):
     )
 
 
+def is_classify_project(project_path: Path | None):
+    if project_path is None or not project_path.is_dir():
+        return False
+    meta = read_project_meta(project_path, read_project_registry(project_path.parent))
+    return project_task_type(str(meta.get("task_type") or "")) == PROJECT_TASK_CLASSIFY
+
+
+def dataset_task_type(project_path: Path | None):
+    return PROJECT_TASK_CLASSIFY if is_classify_project(project_path) else "detect"
+
+
+def classify_image_files(root: Path):
+    return [
+        path
+        for path in image_files(root)
+        if len(path.relative_to(root).parts) >= 2
+    ]
+
+
 def split_counts(files: list[Path]):
     return {
         "images": len(files),
         "labels": sum(1 for path in files if path.with_suffix(".txt").is_file()),
     }
+
+
+def classify_split_counts(files: list[Path]):
+    return {"images": len(files), "labels": 0}
+
+
+def split_files(files: list[Path], val_percent: int, test_percent: int):
+    total = len(files)
+    test_count = round(total * test_percent / 100)
+    val_count = round(total * val_percent / 100)
+    return (
+        files[:test_count],
+        files[test_count : test_count + val_count],
+        files[test_count + val_count :],
+    )
+
+
+def split_classify_files(files: list[Path], source_root: Path, val_percent: int, test_percent: int):
+    grouped: dict[str, list[Path]] = {}
+    for path in files:
+        class_name = path.relative_to(source_root).parts[0]
+        grouped.setdefault(class_name, []).append(path)
+    test_files: list[Path] = []
+    val_files: list[Path] = []
+    train_files: list[Path] = []
+    for class_name in sorted(grouped, key=str.lower):
+        class_files = sorted(grouped[class_name], key=lambda item: item.relative_to(source_root).as_posix().lower())
+        class_test, class_val, class_train = split_files(class_files, val_percent, test_percent)
+        test_files.extend(class_test)
+        val_files.extend(class_val)
+        train_files.extend(class_train)
+    return test_files, val_files, train_files
 
 
 def dataset_chart_data(splits: dict):
@@ -156,7 +218,8 @@ def dataset_chart_data(splits: dict):
 
 
 def expected_dataset_preview(project_path: Path, task: dict):
-    files = image_files(project_path / ANNOTATE_DIR)
+    classify = str(task.get("task_type") or dataset_task_type(project_path)) == PROJECT_TASK_CLASSIFY
+    files = classify_image_files(project_path / CLASSIFY_DIR) if classify else image_files(project_path / ANNOTATE_DIR)
     total = len(files)
     try:
         val_percent = int(task.get("val_percent", 20) or 20)
@@ -164,15 +227,15 @@ def expected_dataset_preview(project_path: Path, task: dict):
     except (TypeError, ValueError):
         val_percent = 20
         test_percent = 0
-    test_count = round(total * test_percent / 100)
-    val_count = round(total * val_percent / 100)
-    test_files = files[:test_count]
-    val_files = files[test_count : test_count + val_count]
-    train_files = files[test_count + val_count :]
+    if classify:
+        test_files, val_files, train_files = split_classify_files(files, project_path / CLASSIFY_DIR, val_percent, test_percent)
+    else:
+        test_files, val_files, train_files = split_files(files, val_percent, test_percent)
+    count_fn = classify_split_counts if classify else split_counts
     splits = {
-        "train": split_counts(train_files),
-        "val": split_counts(val_files),
-        "test": split_counts(test_files),
+        "train": count_fn(train_files),
+        "val": count_fn(val_files),
+        "test": count_fn(test_files),
     }
     return {"splits": splits, **dataset_chart_data(splits)}
 
@@ -199,6 +262,13 @@ def copy_image_to_dataset(source: Path, source_root: Path, image_root: Path, lab
         shutil.copy2(label, label_target)
 
 
+def copy_classify_image_to_dataset(source: Path, source_root: Path, split_root: Path):
+    relative = source.relative_to(source_root)
+    target = split_root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+
+
 def project_classes_file(project_path: Path):
     path = project_path / ANNOTATE_DIR / "classes.txt"
     return path if path.is_file() else None
@@ -206,7 +276,22 @@ def project_classes_file(project_path: Path):
 
 def project_classes_preview(project_path: Path | None):
     if project_path is None or not project_path.is_dir():
-        return {"path": f"{ANNOTATE_DIR}/classes.txt", "exists": False, "items": []}
+        return {"path": f"{ANNOTATE_DIR}/classes.txt", "exists": False, "items": [], "kind": "detect"}
+    if is_classify_project(project_path):
+        classify_root = project_path / CLASSIFY_DIR
+        items = []
+        if classify_root.is_dir():
+            items = [
+                item.name
+                for item in sorted(classify_root.iterdir(), key=lambda child: child.name.lower())
+                if item.is_dir() and any(image_files(item))
+            ]
+        return {
+            "path": f"{CLASSIFY_DIR}/",
+            "exists": bool(items),
+            "items": items,
+            "kind": PROJECT_TASK_CLASSIFY,
+        }
     path = project_path / ANNOTATE_DIR / "classes.txt"
     items = []
     if path.is_file():
@@ -215,7 +300,7 @@ def project_classes_preview(project_path: Path | None):
             for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
             if line.strip()
         ]
-    return {"path": f"{ANNOTATE_DIR}/classes.txt", "exists": path.is_file(), "items": items}
+    return {"path": f"{ANNOTATE_DIR}/classes.txt", "exists": path.is_file(), "items": items, "kind": "detect"}
 
 
 def dataset_icon(value: str):
@@ -442,31 +527,40 @@ def build_dataset(workspace: Path, project: str, name: str, val_percent: int, te
     if project_path is None or not project_path.is_dir():
         return None, "项目不存在"
 
-    images_root = project_path / ANNOTATE_DIR
+    classify = is_classify_project(project_path)
+    images_root = project_path / (CLASSIFY_DIR if classify else ANNOTATE_DIR)
     dataset_dir = project_path / "datasets" / name
     if dataset_dir.exists():
         return None, "数据集已存在"
-    classes_file = project_classes_file(project_path)
-    if classes_file is None:
+    classes_file = None if classify else project_classes_file(project_path)
+    if not classify and classes_file is None:
         return None, f"缺少 {ANNOTATE_DIR}/classes.txt，不能创建数据集"
 
-    files = image_files(images_root)
+    files = classify_image_files(images_root) if classify else image_files(images_root)
+    if classify and not files:
+        return None, f"缺少 {CLASSIFY_DIR}/分类目录图片，不能创建图像分类数据集"
     total = len(files)
-    test_count = round(total * test_percent / 100)
-    val_count = round(total * val_percent / 100)
-    test_files = files[:test_count]
-    val_files = files[test_count : test_count + val_count]
-    train_files = files[test_count + val_count :]
+    if classify:
+        test_files, val_files, train_files = split_classify_files(files, images_root, val_percent, test_percent)
+    else:
+        test_files, val_files, train_files = split_files(files, val_percent, test_percent)
 
     for split, split_files in (("train", train_files), ("val", val_files), ("test", test_files)):
-        images_dir = dataset_dir / "images" / split
-        labels_dir = dataset_dir / "labels" / split
-        images_dir.mkdir(parents=True, exist_ok=True)
-        labels_dir.mkdir(parents=True, exist_ok=True)
-        for source in split_files:
-            copy_image_to_dataset(source, images_root, images_dir, labels_dir)
+        if classify:
+            split_dir = dataset_dir / split
+            split_dir.mkdir(parents=True, exist_ok=True)
+            for source in split_files:
+                copy_classify_image_to_dataset(source, images_root, split_dir)
+        else:
+            images_dir = dataset_dir / "images" / split
+            labels_dir = dataset_dir / "labels" / split
+            images_dir.mkdir(parents=True, exist_ok=True)
+            labels_dir.mkdir(parents=True, exist_ok=True)
+            for source in split_files:
+                copy_image_to_dataset(source, images_root, images_dir, labels_dir)
 
-    shutil.copy2(classes_file, dataset_dir / "classes.txt")
+    if classes_file is not None:
+        shutil.copy2(classes_file, dataset_dir / "classes.txt")
     write_dataset_meta(dataset_dir, icon)
 
     return {
@@ -490,41 +584,54 @@ def run_build_dataset_task(project_path: Path, task: dict):
         val_percent = int(task.get("val_percent", 20) or 20)
         test_percent = int(task.get("test_percent", 0) or 0)
         icon = task.get("icon", "")
-        source_root = project_path / ANNOTATE_DIR
+        classify = str(task.get("task_type") or dataset_task_type(project_path)) == PROJECT_TASK_CLASSIFY
+        source_root = project_path / (CLASSIFY_DIR if classify else ANNOTATE_DIR)
         dataset_path = project_path / "datasets" / name
-        files = image_files(source_root)
+        files = classify_image_files(source_root) if classify else image_files(source_root)
         total = len(files)
         append_deploy_log(log_path, f"待复制图片：{total} 个")
+        if classify and not files:
+            raise RuntimeError(f"缺少 {CLASSIFY_DIR}/分类目录图片，不能创建图像分类数据集")
         if dataset_path.exists() and previous_status != "创建中":
             raise RuntimeError("数据集已存在")
         if val_percent < 0 or test_percent < 0 or val_percent + test_percent > 100:
             raise RuntimeError("val 和 test 百分比之和不能超过 100")
-        classes_file = project_classes_file(project_path)
-        if classes_file is None:
+        classes_file = None if classify else project_classes_file(project_path)
+        if not classify and classes_file is None:
             raise RuntimeError(f"缺少 {ANNOTATE_DIR}/classes.txt，不能创建数据集")
-        test_count = round(total * test_percent / 100)
-        val_count = round(total * val_percent / 100)
+        if classify:
+            test_files, val_files, train_files = split_classify_files(files, source_root, val_percent, test_percent)
+        else:
+            test_files, val_files, train_files = split_files(files, val_percent, test_percent)
         split_groups = (
-            ("test", files[:test_count]),
-            ("val", files[test_count : test_count + val_count]),
-            ("train", files[test_count + val_count :]),
+            ("test", test_files),
+            ("val", val_files),
+            ("train", train_files),
         )
         for split, split_files in split_groups:
             append_deploy_log(log_path, f"{split}：{len(split_files)} 个")
         copied = 0
         for split, split_files in split_groups:
-            images_dir = dataset_path / "images" / split
-            labels_dir = dataset_path / "labels" / split
-            images_dir.mkdir(parents=True, exist_ok=True)
-            labels_dir.mkdir(parents=True, exist_ok=True)
+            if classify:
+                split_dir = dataset_path / split
+                split_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                images_dir = dataset_path / "images" / split
+                labels_dir = dataset_path / "labels" / split
+                images_dir.mkdir(parents=True, exist_ok=True)
+                labels_dir.mkdir(parents=True, exist_ok=True)
             for source in split_files:
-                copy_image_to_dataset(source, source_root, images_dir, labels_dir)
+                if classify:
+                    copy_classify_image_to_dataset(source, source_root, split_dir)
+                else:
+                    copy_image_to_dataset(source, source_root, images_dir, labels_dir)
                 copied += 1
                 append_deploy_log(log_path, f"{split}/{source.relative_to(source_root)}")
                 progress = 5 + round((copied / total) * 90) if total else 95
                 update_build_task(project_path, task_id, progress=min(progress, 95))
-        shutil.copy2(classes_file, dataset_path / "classes.txt")
-        append_deploy_log(log_path, "classes.txt")
+        if classes_file is not None:
+            shutil.copy2(classes_file, dataset_path / "classes.txt")
+            append_deploy_log(log_path, "classes.txt")
         write_dataset_meta(dataset_path, icon, str(task.get("created_at") or ""))
         update_build_task(project_path, task_id, status="完成", progress=100, error="")
         append_deploy_log(log_path, "数据集创建完成")
@@ -560,6 +667,7 @@ def create_build_task(
     deploy_mode: str = "sync",
     resource_id: str = "",
 ):
+    classify = is_classify_project(project_path)
     name = (name or "").strip()
     if not name or name in {".", ".."} or not DATASET_NAME_PATTERN.match(name):
         return None, "数据集名称不能包含路径分隔符、冒号或控制字符"
@@ -570,7 +678,10 @@ def create_build_task(
         return None, "数据集已存在"
     if any(task.get("name") == name and task.get("status") in {"排队中", "创建中"} for task in read_build_tasks(project_path)):
         return None, "数据集正在创建"
-    if project_classes_file(project_path) is None:
+    if classify:
+        if not classify_image_files(project_path / CLASSIFY_DIR):
+            return None, f"缺少 {CLASSIFY_DIR}/分类目录图片，不能创建图像分类数据集"
+    elif project_classes_file(project_path) is None:
         return None, f"缺少 {ANNOTATE_DIR}/classes.txt，不能创建数据集"
     if deploy_enabled:
         if deploy_mode not in {"full", "incremental", "sync"}:
@@ -588,6 +699,7 @@ def create_build_task(
         "icon": dataset_icon(icon),
         "val_percent": val_percent,
         "test_percent": test_percent,
+        "task_type": PROJECT_TASK_CLASSIFY if classify else "detect",
         "status": "排队中",
         "progress": 0,
         "error": "",
@@ -1434,6 +1546,17 @@ def read_classes_for_dataset(dataset_path: Path):
     if not path.is_file():
         path = project_classes_file(dataset_path.parent.parent) or dataset_path.parent.parent / "classes.txt"
     if not path.is_file():
+        class_names = sorted(
+            {
+                file.relative_to(dataset_path / split).parts[0]
+                for split in ("train", "val", "test")
+                for file in image_files(dataset_path / split)
+                if len(file.relative_to(dataset_path / split).parts) >= 2
+            },
+            key=str.lower,
+        )
+        if class_names:
+            return {"exists": True, "class_names": class_names, "text": "\n".join(class_names) + "\n"}
         return {"exists": False, "class_names": [], "text": ""}
     text = path.read_text(encoding="utf-8", errors="replace")
     return {
@@ -1444,6 +1567,40 @@ def read_classes_for_dataset(dataset_path: Path):
 
 
 def class_annotations(path: Path, class_names: list[str]):
+    if not (path / "labels").is_dir():
+        counts_by_name = {}
+        for split in ("train", "val", "test"):
+            split_root = path / split
+            for image in image_files(split_root):
+                relative = image.relative_to(split_root)
+                if len(relative.parts) < 2:
+                    continue
+                class_name = relative.parts[0]
+                counts_by_name[class_name] = counts_by_name.get(class_name, 0) + 1
+        if counts_by_name:
+            names = class_names or sorted(counts_by_name, key=str.lower)
+            max_count = max(counts_by_name.values(), default=0)
+            total_annotations = sum(counts_by_name.values())
+            rows = [
+                {
+                    "index": index,
+                    "name": name,
+                    "count": counts_by_name.get(name, 0),
+                    "percent": round(counts_by_name.get(name, 0) / max_count * 100, 2) if max_count else 0,
+                }
+                for index, name in enumerate(names)
+            ]
+            def scale_label(value: float):
+                return str(int(value)) if value.is_integer() else f"{value:.1f}"
+
+            scale = [scale_label(max_count * ratio) for ratio in (1, 0.75, 0.5, 0.25, 0)] if max_count else ["0"]
+            return {
+                "rows": rows,
+                "total_classes": len(names),
+                "total_annotations": total_annotations,
+                "total_annotations_label": f"{total_annotations:,}",
+                "scale": scale,
+            }
     counts = {}
     labels_root = path / "labels"
     search_root = labels_root if labels_root.is_dir() else path
@@ -1517,6 +1674,7 @@ def dataset_items(workspace: Path, project: str = ""):
                     "project": project_name(project_dir),
                     "location_label": "本地",
                     "project_dir": project_dir.name,
+                    "task_type": str(task.get("task_type") or dataset_task_type(project_dir)),
                     "splits": preview["splits"],
                     "total_images": preview["total_images"],
                     "total_labels": preview["total_labels"],
@@ -1547,6 +1705,7 @@ def dataset_items(workspace: Path, project: str = ""):
                 "val": count_dataset_split(dataset_dir, "val"),
                 "test": count_dataset_split(dataset_dir, "test"),
             }
+            task_type = dataset_task_type(project_dir)
             chart = dataset_chart_data(splits)
             deploy_task = latest_dataset_deploy_task(project_dir, dataset_dir.name)
             deploy_status = str(deploy_task.get("status") or "") if deploy_task else ""
@@ -1567,6 +1726,7 @@ def dataset_items(workspace: Path, project: str = ""):
                     "project": project_name(project_dir),
                     "location_label": location_label,
                     "project_dir": project_dir.name,
+                    "task_type": task_type,
                     "splits": splits,
                     "total_images": chart["total_images"],
                     "total_labels": chart["total_labels"],
@@ -1596,10 +1756,14 @@ def dataset_summary(path: Path, project: str, name: str):
     annotations = class_annotations(path, classes["class_names"])
     project_path = path.parent.parent
     deploy_task = latest_dataset_deploy_task(project_path, name)
+    task_type = dataset_task_type(project_path)
+    task_path = CLASSIFY_TASK if task_type == PROJECT_TASK_CLASSIFY else DETECT_TASK
     return {
         "name": name,
         "icon": read_dataset_meta(path)["icon"],
         "project_dir": project,
+        "task_type": task_type,
+        "task_path": task_path,
         "project": project_name(path.parent.parent),
         "deploy_target": str(deploy_task.get("resource_name") or "") if deploy_task else "",
         "path": path,
@@ -1618,7 +1782,8 @@ def dataset(request: Request, project: str = ""):
     ensure_dataset_worker(workspace)
     current_project = current_project_from_request(request, project)
     if current_project:
-        return RedirectResponse(url=f"/dataset/{current_project}", status_code=status.HTTP_303_SEE_OTHER)
+        task = CLASSIFY_TASK if is_classify_project(project_dir(workspace, current_project)) else DETECT_TASK
+        return RedirectResponse(url=f"/dataset/{quote(current_project, safe='')}/{task}", status_code=status.HTTP_303_SEE_OTHER)
     response = templates.TemplateResponse(
         request=request,
         name="dataset/index.html",
@@ -1640,8 +1805,7 @@ def dataset(request: Request, project: str = ""):
     return response
 
 
-@router.get("/dataset/{project}")
-def dataset_with_project(request: Request, project: str):
+def dataset_project_response(request: Request, project: str):
     workspace = workspace_path()
     ensure_dataset_worker(workspace)
     current_project_path = project_dir(workspace, project)
@@ -1665,6 +1829,22 @@ def dataset_with_project(request: Request, project: str):
     )
     response.set_cookie("current_project", project, httponly=True, samesite="lax")
     return response
+
+
+@router.get("/dataset/{project}")
+def dataset_with_project(request: Request, project: str):
+    workspace = workspace_path()
+    task = CLASSIFY_TASK if is_classify_project(project_dir(workspace, project)) else DETECT_TASK
+    return RedirectResponse(url=f"/dataset/{quote(project, safe='')}/{task}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/dataset/{project}/{task}")
+def dataset_with_project_task(request: Request, project: str, task: str):
+    if task == "deploy":
+        return dataset_deploy(request, project)
+    if task not in TASK_TYPES:
+        return dataset_detail_legacy(request, project, task)
+    return dataset_project_response(request, project)
 
 
 @router.get("/dataset/{project}/deploy")
@@ -1724,8 +1904,9 @@ async def create_dataset_deploy(request: Request, project: str, name: str = ""):
     )
 
 
+@router.post("/dataset/{project}/{task}/{name}/deploy/run")
 @router.post("/dataset/{project}/{name}/deploy/run")
-def run_dataset_deploy_from_card(project: str, name: str):
+def run_dataset_deploy_from_card(project: str, name: str, task: str = DETECT_TASK):
     workspace = workspace_path()
     current_project_path = project_dir(workspace, project)
     if current_project_path is None or not current_project_path.is_dir():
@@ -1925,8 +2106,9 @@ def dataset_build_task_retry(project: str, task_id: str):
     return {"ok": True}
 
 
+@router.post("/dataset/{project}/{task}/{name}/delete")
 @router.post("/dataset/{project}/{name}/delete")
-async def delete_dataset(request: Request, project: str, name: str):
+async def delete_dataset(request: Request, project: str, name: str, task: str = DETECT_TASK):
     workspace = workspace_path()
     current_project_path = project_dir(workspace, project)
     path = dataset_dir(workspace, project, name)
@@ -1957,14 +2139,74 @@ async def delete_dataset(request: Request, project: str, name: str):
 
 
 @router.get("/dataset/{project}/{name}")
-def dataset_detail(request: Request, project: str, name: str):
+def dataset_detail_legacy(request: Request, project: str, name: str):
     workspace = workspace_path()
     path = dataset_dir(workspace, project, name)
     if path is None:
         return JSONResponse({"ok": False, "error": "数据集不存在"}, status_code=404)
+    task = CLASSIFY_TASK if is_classify_project(path.parent.parent) else DETECT_TASK
+    return RedirectResponse(
+        url=f"/dataset/{quote(project, safe='')}/{task}/{quote(name, safe='')}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/dataset/{project}/{task}/{name}")
+def dataset_detail(request: Request, project: str, task: str, name: str):
+    if task not in TASK_TYPES:
+        if name == CLASSIFY_TASK:
+            return dataset_classify_detail_legacy(request, project, task)
+        return JSONResponse({"ok": False, "error": "任务类型不存在"}, status_code=404)
+    workspace = workspace_path()
+    path = dataset_dir(workspace, project, name)
+    if path is None:
+        return JSONResponse({"ok": False, "error": "数据集不存在"}, status_code=404)
+    if is_classify_project(path.parent.parent):
+        project_url = quote(project, safe="")
+        name_url = quote(name, safe="")
+        if task != CLASSIFY_TASK:
+            return RedirectResponse(url=f"/dataset/{project_url}/{CLASSIFY_TASK}/{name_url}", status_code=status.HTTP_303_SEE_OTHER)
+        return dataset_classify_detail(request, project, task, name)
+    if task != DETECT_TASK:
+        return RedirectResponse(
+            url=f"/dataset/{quote(project, safe='')}/{DETECT_TASK}/{quote(name, safe='')}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
     response = templates.TemplateResponse(
         request=request,
         name="dataset/detail.html",
+        context={
+            "request": request,
+            "workspace": workspace,
+            "dataset": dataset_summary(path, project, name),
+            "active_page": "dataset",
+            "current_project": project,
+            **header_context(request, workspace),
+        },
+    )
+    response.set_cookie("current_project", project, httponly=True, samesite="lax")
+    return response
+
+
+@router.get("/dataset/{project}/{name}/classify")
+def dataset_classify_detail_legacy(request: Request, project: str, name: str):
+    return RedirectResponse(
+        url=f"/dataset/{quote(project, safe='')}/{CLASSIFY_TASK}/{quote(name, safe='')}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/dataset/{project}/{task}/{name}/classify")
+def dataset_classify_detail(request: Request, project: str, task: str, name: str):
+    workspace = workspace_path()
+    path = dataset_dir(workspace, project, name)
+    if path is None:
+        return JSONResponse({"ok": False, "error": "数据集不存在"}, status_code=404)
+    if not is_classify_project(path.parent.parent):
+        return RedirectResponse(url=f"/dataset/{quote(project, safe='')}/{DETECT_TASK}/{quote(name, safe='')}", status_code=status.HTTP_303_SEE_OTHER)
+    response = templates.TemplateResponse(
+        request=request,
+        name="dataset/classify.html",
         context={
             "request": request,
             "workspace": workspace,
@@ -2032,8 +2274,9 @@ async def create_dataset(request: Request):
         )
 
 
+@router.get("/dataset/{project}/{task}/{name}/download")
 @router.get("/dataset/{project}/{name}/download")
-def download_dataset(project: str, name: str):
+def download_dataset(project: str, name: str, task: str = DETECT_TASK):
     path = dataset_dir(workspace_path(), project, name)
     if path is None:
         return JSONResponse({"ok": False, "error": "数据集不存在"}, status_code=404)

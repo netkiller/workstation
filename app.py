@@ -28,6 +28,7 @@ from routes.project import (
     current_username,
     is_inside,
     project_annotate_workspace,
+    project_classify_workspace,
     project_root_workspace,
     router as project_router,
     team_mode_enabled,
@@ -198,17 +199,37 @@ def index(request: Request):
 def annotate(request: Request):
     project = request.query_params.get("project")
     if project:
-        return RedirectResponse(url=f"/annotate/{project}")
-    return RedirectResponse(url="/annotate/")
+        return RedirectResponse(url=f"/detect/{project}")
+    return RedirectResponse(url="/detect/")
+
+
+@app.get("/detect", include_in_schema=False)
+def detect(request: Request):
+    project = request.query_params.get("project")
+    if project:
+        return RedirectResponse(url=f"/detect/{project}")
+    return RedirectResponse(url="/detect/")
+
+
+@app.get("/classify", include_in_schema=False)
+def classify(request: Request):
+    project = request.query_params.get("project")
+    if project:
+        return RedirectResponse(url=f"/classify/{project}")
+    return RedirectResponse(url="/classify/")
 
 
 def _media_workspace(request: Request, project: str = ""):
     requested_project = project or request.query_params.get("project") or request.cookies.get("current_project", "")
     if requested_project:
-        if request.url.path.startswith("/annotate/media"):
+        if request.url.path.startswith("/detect/media") or request.url.path.startswith("/annotate/media"):
             annotate_workspace = project_annotate_workspace(requested_project)
             if annotate_workspace is not None:
                 return annotate_workspace
+        if request.url.path.startswith("/classify/media"):
+            classify_workspace = project_classify_workspace(requested_project)
+            if classify_workspace is not None:
+                return classify_workspace
         project_workspace = project_root_workspace(requested_project)
         if project_workspace is not None:
             return project_workspace
@@ -538,7 +559,9 @@ def media_project_original(request: Request, project: str, path: str):
 
 
 @app.get("/media")
+@app.get("/detect/media")
 @app.get("/annotate/media")
+@app.get("/classify/media")
 def media(
     request: Request,
     path: str = "",
@@ -575,7 +598,43 @@ def create_annotate_application():
     return register_annotate_routes(annotate_app, workstation)
 
 
+def create_detect_application():
+    workstation = create_workstation()
+    detect_app = FastAPI(title="Yolo Workstation Detect")
+    detect_app.include_router(create_workstation_api_router(workstation))
+    return register_annotate_routes(
+        detect_app,
+        workstation,
+        route_prefix="detect",
+        template_section="annotate",
+        workspace_getter=project_annotate_workspace,
+        active_mode="annotate",
+        mode_label="标注",
+        mode_icon="▧",
+        error_label="Detect",
+    )
+
+
+def create_classify_application():
+    workstation = create_workstation()
+    classify_app = FastAPI(title="Yolo Workstation Classify")
+    classify_app.include_router(create_workstation_api_router(workstation))
+    return register_annotate_routes(
+        classify_app,
+        workstation,
+        route_prefix="classify",
+        template_section="classify",
+        workspace_getter=project_classify_workspace,
+        active_mode="classify",
+        mode_label="分类",
+        mode_icon="▨",
+        error_label="Classify",
+    )
+
+
+app.mount("/detect", create_detect_application())
 app.mount("/annotate", create_annotate_application())
+app.mount("/classify", create_classify_application())
 
 
 def run(host: str | None = None, port: int | None = None, reload: bool = False):

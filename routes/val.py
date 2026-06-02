@@ -287,7 +287,7 @@ def run_model_items(path: Path):
 
 
 def read_classes(path: Path):
-    candidates = [path / "annotate" / "classes.txt", path / "classes.txt", workspace_path() / "classes.txt"]
+    candidates = [path / "detect" / "classes.txt", path / "annotate" / "classes.txt", path / "classes.txt", workspace_path() / "classes.txt"]
     for file in candidates:
         if file.is_file():
             classes = [line.strip() for line in file.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -442,9 +442,10 @@ def validate(request: Request):
 
 
 @router.get("/model/{project}/val")
+@router.get("/model/{project}/{task}/val")
 @router.get("/model/val/{project}")
 @router.get("/validate/{project}")
-def validate_with_project(request: Request, project: str):
+def validate_with_project(request: Request, project: str, task: str = "detect"):
     if request.url.path.startswith("/model/val/"):
         return RedirectResponse(url=f"/model/{project}/val", status_code=status.HTTP_303_SEE_OTHER)
     workspace = workspace_path()

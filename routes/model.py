@@ -2,17 +2,32 @@ import math
 from pathlib import Path
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from routes.edition import is_community_edition
-from routes.project import header_context
+from routes.project import (
+    PROJECT_TASK_CLASSIFY,
+    header_context,
+    project_dir as project_root_dir,
+    project_task_type,
+    read_project_meta,
+    read_project_registry,
+)
 from routes.train import load_tasks as load_train_tasks, model_items as run_model_items, read_metric_rows
 from routes.val import dataset_items, project_path, read_project_name, workspace_path
 
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
+
+
+def project_task_path(project: str):
+    path = project_root_dir(workspace_path(), project)
+    if path is None or not path.is_dir():
+        return "detect"
+    meta = read_project_meta(path, read_project_registry(path.parent))
+    return "classify" if project_task_type(str(meta.get("task_type") or "")) == PROJECT_TASK_CLASSIFY else "detect"
 
 
 def _metric_number(value):
@@ -198,8 +213,12 @@ def analysis_context(request: Request, current_project: str):
 def model_index(request: Request):
     project = request.query_params.get("project", "")
     if project:
-        return RedirectResponse(url=f"/model/{project}", status_code=status.HTTP_303_SEE_OTHER)
+        task = project_task_path(project)
+        return RedirectResponse(url=f"/model/{project}/{task}", status_code=status.HTTP_303_SEE_OTHER)
     current_project = request.cookies.get("current_project", "")
+    if current_project:
+        task = project_task_path(current_project)
+        return RedirectResponse(url=f"/model/{current_project}/{task}", status_code=status.HTTP_303_SEE_OTHER)
     response = templates.TemplateResponse(
         request=request,
         name="model/index.html",
@@ -224,7 +243,8 @@ def model_analysis_index(request: Request):
 
 
 @router.get("/model/{project}/analysis")
-def model_analysis_project(request: Request, project: str):
+@router.get("/model/{project}/{task}/analysis")
+def model_analysis_project(request: Request, project: str, task: str = "detect"):
     response = templates.TemplateResponse(
         request=request,
         name="model/analysis.html",
@@ -232,6 +252,13 @@ def model_analysis_project(request: Request, project: str):
     )
     response.set_cookie("current_project", project, httponly=True, samesite="lax")
     return response
+
+
+@router.get("/model/{project}/{task}")
+def model_project_task(request: Request, project: str, task: str):
+    if task not in {"detect", "classify"}:
+        return JSONResponse({"ok": False, "error": "任务类型不存在"}, status_code=404)
+    return model_project(request, project)
 
 
 @router.get("/model/{project}")

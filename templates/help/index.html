@@ -39,7 +39,7 @@
           <h2>2. 项目</h2>
           <p>项目页展示工作目录、项目列表和刷新按钮。项目卡片展示图像、数据集、模型和测试集资源比例。打开项目后进入当前项目页。</p>
           <p>当前项目页包含资源概览、上传图片、classes.txt、测试集、模型、SFTP 和 Rsync 上传命令。刷新按钮会重新扫描项目资源，适合手动通过 SFTP 或 rsync 上传文件后使用。</p>
-          <p>项目目录约定：标注图片放在 <code>annotate</code>，测试图片放在 <code>test/images</code>，测试任务结果放在 <code>test/tasks</code>，数据集放在 <code>datasets</code>，模型文件放在 <code>models</code>。</p>
+          <p>项目目录约定：目标检测标注资源放在 <code>detect</code>，图像分类资源放在 <code>classify</code>，测试图片放在 <code>test/images</code>，测试任务结果放在 <code>test/tasks</code>，数据集放在 <code>datasets</code>，模型文件放在 <code>models</code>。</p>
         </article>
 
         <article id="annotate" class="help-card">
@@ -67,7 +67,7 @@
 
         <article id="dataset" class="help-card">
           <h2>5. 数据集</h2>
-          <p>数据集页用于从当前项目的 <code>annotate</code> 目录生成 YOLO 数据集。创建前必须存在 <code>annotate/classes.txt</code>。</p>
+          <p>数据集页用于从当前项目的 <code>detect</code> 或 <code>classify</code> 目录生成 YOLO 数据集。目标检测创建前必须存在 <code>detect/classes.txt</code>。</p>
           <p>新建数据集时可设置图标、名称、val 和 test 比例。val 默认 20%，test 默认 0%，滑块最大 80%，步进 5%。数据集生成时保留 positive、hard_negative 等子目录结构。</p>
           <p>数据集卡片展示 train、val、test 比例和生成进度。生成完成后可查看、部署和训练。删除和下载放在数据集查看页中。</p>
         </article>

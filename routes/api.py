@@ -86,6 +86,32 @@ def create_workstation_api_router(workstation):
             str(payload.get("directory", "")).strip(),
         )
 
+    @router.get("/classify/classes")
+    def classify_classes():
+        classes = workstation._classify_classes()
+        return {
+            "classes": classes,
+            "content": workstation._classify_classes_text(),
+        }
+
+    @router.post("/classify/classes")
+    async def save_classify_classes(request: Request):
+        payload = await request.json()
+        classes = workstation._save_classify_classes_text(str(payload.get("content", "")))
+        return {
+            "ok": True,
+            "classes": classes,
+            "content": workstation._classify_classes_text(),
+        }
+
+    @router.post("/classify/file/move")
+    async def move_classify_file(request: Request):
+        payload = await request.json()
+        return workstation._move_classify_image(
+            str(payload.get("path", "")).strip(),
+            str(payload.get("directory", "")).strip(),
+        )
+
     @router.get("/statistics")
     def statistics():
         return workstation._statistics()

@@ -138,11 +138,8 @@
         <div id="zoomIndicator" class="viewer-zoom">100%</div>
         <div id="lockBanner" class="viewer-lock" hidden></div>
         <div class="viewer-tools">
-          <button id="deleteAnnotation" class="tool-button" title="删除当前标注"><span class="header-icon">×</span><span>删除</span></button>
-          <button id="resetAnnotation" class="tool-button" title="重新读取标注"><span class="header-icon">↺</span><span>重置</span></button>
-          <button id="saveAnnotation" class="tool-button" title="保存当前标注"><span class="header-icon">✓</span><span>保存</span><span class="shortcut-hint">⌘S</span></button>
           <button id="showFiles" class="icon-button" title="显示文件栏">▯</button>
-          <button id="showRight" class="icon-button" title="显示标签/信息栏">☰</button>
+          <button id="showRight" class="icon-button" title="显示分类/信息栏">☰</button>
         </div>
       </div>
       <div class="canvas-wrap"><canvas id="canvas"></canvas><div id="empty" class="empty">请选择图片</div></div>
@@ -156,15 +153,15 @@
       <div id="topInfoPane" class="right-pane top-info-pane">
         <div id="labelsPane" class="labels-pane">
           <div class="pane-header">
-            <h2><span class="pane-title-icon">⌑</span>标签</h2>
+            <h2><span class="pane-title-icon">⌑</span>分类</h2>
             <div class="pane-tools">
-              <button id="editClasses" class="icon-button" title="创建 classes.txt">＋</button>
-              <button id="hideRight" class="icon-button" title="隐藏标签/信息栏">›</button>
+              <button id="editClasses" class="icon-button" title="编辑分类">＋</button>
+              <button id="hideRight" class="icon-button" title="隐藏分类/信息栏">›</button>
             </div>
           </div>
           <div id="labels" class="labels"></div>
         </div>
-        <div id="histogramSplitter" class="histogram-splitter" title="拖动调整标签和直方图比例"></div>
+        <div id="histogramSplitter" class="histogram-splitter" title="拖动调整分类和直方图比例"></div>
         <div id="histogramPane" class="histogram-pane">
           <div class="pane-header">
             <h2><span id="histogramTitleIcon" class="pane-title-icon">▥</span><span id="histogramTitleText">直方图</span></h2>
@@ -176,7 +173,7 @@
           <div id="histogram" class="histogram"><canvas id="histogramCanvas"></canvas></div>
         </div>
       </div>
-      <div id="splitter" class="splitter" title="拖动调整标签和 EXIF 面板比例"></div>
+      <div id="splitter" class="splitter" title="拖动调整分类和 EXIF 面板比例"></div>
       <div id="exifPane" class="right-pane exif-pane">
         <div class="pane-header"><h2><span class="pane-title-icon">※</span>信息</h2><button id="toggleExif" class="icon-button collapse-button" title="折叠/展开信息">⌄</button></div>
         <div id="exif" class="exif"><div class="empty">请选择图片</div></div>
@@ -187,10 +184,6 @@
     <div class="stats-left">-</div>
     <div class="stats-right">
       <span class="stat"><span class="stat-icon">▧</span>图像 <strong>-</strong></span>
-      <span class="stat"><span class="stat-icon">✓</span>已完成 <strong>-/-</strong></span>
-      <span class="stat"><span class="stat-icon">▯</span>.txt <strong>-</strong></span>
-      <span class="stat"><span class="stat-icon">⌑</span>classes.txt <strong>-</strong></span>
-      <span class="stat bad"><span class="stat-icon">✕</span>损坏图像 <strong>-</strong></span>
       <button id="shortcutButton" class="footer-button" type="button"><span class="stat-icon">⌘</span>快捷键</button>
       <button id="consoleToggle" class="footer-button" type="button"><span class="stat-icon">▤</span>控制台</button>
       <button id="helpButton" class="footer-button" type="button"><span class="stat-icon">?</span>帮助</button>
@@ -200,9 +193,9 @@
   <section id="consolePanel" class="console-panel"><pre id="consoleLog" class="console-log">控制台未打开</pre></section>
   <dialog id="classesDialog" class="classes-dialog">
     <form id="classesForm" class="classes-form">
-      <div class="shortcut-title"><span>编辑 classes.txt</span><button id="closeClassesDialog" type="button" title="关闭">×</button></div>
+      <div class="shortcut-title"><span>编辑分类</span><button id="closeClassesDialog" type="button" title="关闭">×</button></div>
       <label>
-        <span>每行一个类别</span>
+        <span>每行一个分类目录</span>
         <textarea id="classesContent" rows="12"></textarea>
       </label>
       <div class="dialog-actions">
@@ -213,8 +206,6 @@
   </dialog>
   <div id="imageContextMenu" class="context-menu" hidden>
     <button type="button" data-file-action="delete_file"><span class="menu-icon">✕</span><span>删除文件</span></button>
-    <button type="button" data-file-action="delete_txt"><span class="menu-icon">⌫</span><span>删除.txt文件</span></button>
-    <button type="button" data-file-action="create_negative_txt"><span class="menu-icon">□</span><span>创建负样本集.txt空文件</span></button>
     <button type="button" data-file-action="lowercase"><span class="menu-icon">a</span><span>文件名和扩展转小写</span></button>
     <button type="button" data-file-action="uppercase"><span class="menu-icon">A</span><span>文件名和扩展转大写</span></button>
     <button type="button" data-file-action="rename"><span class="menu-icon">✎</span><span>重命名</span></button>
@@ -222,8 +213,6 @@
   </div>
   <div id="treeContextMenu" class="context-menu" hidden>
     <button type="button" data-directory-action="delete_directory"><span class="menu-icon">✕</span><span>删除目录</span></button>
-    <button type="button" data-directory-action="delete_txt"><span class="menu-icon">⌫</span><span>删除.txt文件</span></button>
-    <button type="button" data-directory-action="create_negative_txt"><span class="menu-icon">□</span><span>创建负样本集.txt空文件</span></button>
     <button type="button" data-directory-action="lowercase"><span class="menu-icon">a</span><span>文件名和扩展转小写</span></button>
     <button type="button" data-directory-action="uppercase"><span class="menu-icon">A</span><span>文件名和扩展转大写</span></button>
     <button type="button" data-directory-action="rename"><span class="menu-icon">✎</span><span>重命名</span></button>
@@ -310,9 +299,6 @@
     const autoAnnotate = document.getElementById("autoAnnotate");
     const editModeToggle = document.getElementById("editModeToggle");
     const maskAnnotation = document.getElementById("maskAnnotation");
-    const deleteAnnotation = document.getElementById("deleteAnnotation");
-    const resetAnnotation = document.getElementById("resetAnnotation");
-    const saveAnnotation = document.getElementById("saveAnnotation");
     const toggleHistogram = document.getElementById("toggleHistogram");
     const toggleExif = document.getElementById("toggleExif");
     const shareButton = document.getElementById("shareButton");
@@ -392,6 +378,7 @@
     let contextFilePath = "";
     let contextTreePath = "";
     let contextLabel = null;
+    let draggedFilePath = "";
     let contextActionResolve = null;
     let fileSortDirection = "asc";
     let annotateMode = false;
@@ -465,6 +452,42 @@
       for (const child of node.children) renderTree(child, childrenEl);
     }
 
+    function clearTreeDropTargets() {
+      document.querySelectorAll("#tree .tree-select.drop-target")
+        .forEach(item => item.classList.remove("drop-target"));
+    }
+
+    async function moveDraggedFileToDirectory(targetDir) {
+      const path = draggedFilePath;
+      draggedFilePath = "";
+      clearTreeDropTargets();
+      if (!path || targetDir === currentDir) return;
+      const nextPath = path === currentPath ? nextFileAfterDelete(path) : null;
+      try {
+        await postJson("/api/classify/file/move", {path, directory: targetDir});
+      } catch (error) {
+        alert(error.message);
+        return;
+      }
+      if (path === currentPath) {
+        currentPath = "";
+        currentImage = null;
+        currentLabelFile = "";
+        currentBoxes = [];
+        savedBoxes = [];
+        selectedBoxIndex = -1;
+        setBoxesDirty(false);
+      }
+      await loadTree();
+      await loadLabels();
+      await refreshCurrentFiles();
+      if (nextPath && currentFiles.some(file => file.path === nextPath)) {
+        await selectImage(nextPath, fileRow(nextPath));
+      } else if (!currentPath) {
+        await selectFirstCurrentFile();
+      }
+    }
+
     function renderTree(node, parent = treeEl) {
       const wrapper = document.createElement("div");
       wrapper.className = "tree-node";
@@ -532,6 +555,18 @@
         selectDir(node.path, button);
       };
       button.oncontextmenu = event => showTreeContextMenu(event, node.path);
+      button.ondragover = event => {
+        if (!draggedFilePath) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        button.classList.add("drop-target");
+      };
+      button.ondragleave = () => button.classList.remove("drop-target");
+      button.ondrop = event => {
+        if (!draggedFilePath) return;
+        event.preventDefault();
+        moveDraggedFileToDirectory(node.path);
+      };
       row.appendChild(button);
       wrapper.appendChild(row);
       if (hasChildren) {
@@ -623,17 +658,18 @@
         const isValid = !file.damaged && file.label_status === "valid";
         if (isInvalid) row.classList.add("file-invalid");
         if (isValid) row.classList.add("file-valid");
-        const statusText = file.damaged
-          ? "损坏图像"
-          : file.label_status === "valid"
-            ? `已标注 ${file.label_count || 0}`
-            : file.label_status === "missing"
-              ? "未标注"
-              : file.label_status === "empty"
-                ? "空 .txt"
-                : "无效 .txt";
-        row.innerHTML = `<span class="file-name"><span class="file-icon">${fileIcon(file.name)}</span><span class="file-name-text">${escapeHtml(file.name)}</span></span><span class="file-meta">${statusText}</span>`;
+        row.innerHTML = `<span class="file-name"><span class="file-icon">${fileIcon(file.name)}</span><span class="file-name-text">${escapeHtml(file.name)}</span></span>`;
         row.dataset.path = file.path;
+        row.draggable = true;
+        row.ondragstart = event => {
+          draggedFilePath = file.path;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", file.path);
+        };
+        row.ondragend = () => {
+          draggedFilePath = "";
+          clearTreeDropTargets();
+        };
         row.onclick = () => selectImage(file.path, row);
         row.oncontextmenu = showContextMenu;
         filesEl.appendChild(row);
@@ -730,16 +766,13 @@
       currentLabelFile = "";
       lockedByOther = null;
       renderStatistics();
-      const annotation = await getJson(`/api/annotation?path=${encodeURIComponent(path)}`);
-      currentLabelFile = annotation.label_file || "";
-      currentBoxes = cloneBoxes(annotation.boxes);
-      savedBoxes = cloneBoxes(annotation.boxes);
+      currentBoxes = [];
+      savedBoxes = [];
       draftBox = null;
       dragStart = null;
       selectedBoxIndex = -1;
       canvasInteraction = null;
       setBoxesDirty(false);
-      if (teamMode) await acquireCurrentLock();
       loadExif(path);
       const image = new Image();
       empty.textContent = "读取中...";
@@ -754,7 +787,6 @@
         resetImageZoom();
         redrawHistogram();
         redrawImage();
-        runAutoAnnotate();
       };
       image.onerror = () => {
         currentImage = null;
@@ -771,8 +803,6 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(currentImage, 0, 0);
       boxHitAreas = [];
-      drawBoxes(currentBoxes, currentImage.naturalWidth, currentImage.naturalHeight);
-      if (draftBox) drawBoxes([draftBox], currentImage.naturalWidth, currentImage.naturalHeight, true);
     }
 
     function resetImageZoom() {
@@ -953,146 +983,9 @@
       scheduleRightPanelGoldenLayout();
     }
 
-    function boxEdges(box) {
-      return {
-        left: box.cx - box.width / 2,
-        right: box.cx + box.width / 2,
-        top: box.cy - box.height / 2,
-        bottom: box.cy + box.height / 2,
-      };
-    }
-
-    function normalizeBoxEdges(edges, template) {
-      const left = Math.min(Math.max(edges.left, 0), 1);
-      const right = Math.min(Math.max(edges.right, 0), 1);
-      const top = Math.min(Math.max(edges.top, 0), 1);
-      const bottom = Math.min(Math.max(edges.bottom, 0), 1);
-      return {
-        ...template,
-        cx: (left + right) / 2,
-        cy: (top + bottom) / 2,
-        width: Math.max(0.003, right - left),
-        height: Math.max(0.003, bottom - top),
-      };
-    }
-
-    function drawSelectedAnchors(box, imageWidth, imageHeight, color) {
-      const edges = boxEdges(box);
-      const points = [
-        [edges.left, edges.top],
-        [box.cx, edges.top],
-        [edges.right, edges.top],
-        [edges.right, box.cy],
-        [edges.right, edges.bottom],
-        [box.cx, edges.bottom],
-        [edges.left, edges.bottom],
-        [edges.left, box.cy],
-      ];
-      const size = Math.max(7, Math.round(Math.min(imageWidth, imageHeight) / 120));
-      ctx.save();
-      ctx.fillStyle = "#fff";
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      for (const [x, y] of points) {
-        ctx.fillRect(x * imageWidth - size / 2, y * imageHeight - size / 2, size, size);
-        ctx.strokeRect(x * imageWidth - size / 2, y * imageHeight - size / 2, size, size);
-      }
-      ctx.restore();
-    }
-
-    function anchorHitAreas(box, imageWidth, imageHeight) {
-      const edges = boxEdges(box);
-      const size = Math.max(10, Math.round(Math.min(imageWidth, imageHeight) / 95));
-      const halfX = size / imageWidth / 2;
-      const halfY = size / imageHeight / 2;
-      return [
-        ["nw", edges.left, edges.top],
-        ["n", box.cx, edges.top],
-        ["ne", edges.right, edges.top],
-        ["e", edges.right, box.cy],
-        ["se", edges.right, edges.bottom],
-        ["s", box.cx, edges.bottom],
-        ["sw", edges.left, edges.bottom],
-        ["w", edges.left, box.cy],
-      ].map(([name, x, y]) => ({
-        name,
-        left: x - halfX,
-        right: x + halfX,
-        top: y - halfY,
-        bottom: y + halfY,
-      }));
-    }
-
-    function drawBoxes(boxes, imageWidth, imageHeight, draft = false) {
-      ctx.lineWidth = Math.max(2, Math.round(Math.min(imageWidth, imageHeight) / 360));
-      ctx.font = `${Math.max(14, Math.round(imageWidth / 80))}px sans-serif`;
-      boxes.forEach((box, index) => {
-        const color = colors[Math.abs(box.class_id) % colors.length];
-        const x = (box.cx - box.width / 2) * imageWidth;
-        const y = (box.cy - box.height / 2) * imageHeight;
-        const width = box.width * imageWidth;
-        const height = box.height * imageHeight;
-        ctx.strokeStyle = color;
-        if (maskEnabled) {
-          ctx.save();
-          ctx.globalAlpha = draft ? 0.18 : 0.26;
-          ctx.fillStyle = color;
-          ctx.fillRect(x, y, width, height);
-          ctx.restore();
-        }
-        if (draft) ctx.setLineDash([8, 6]);
-        ctx.strokeRect(x, y, width, height);
-        ctx.setLineDash([]);
-        const text = box.label;
-        const metrics = ctx.measureText(text);
-        const labelTop = Math.max(0, y - 22);
-        const labelWidth = metrics.width + 10;
-        ctx.fillStyle = color;
-        ctx.fillRect(x, labelTop, labelWidth, 22);
-        ctx.fillStyle = "#fff";
-        ctx.fillText(text, x + 5, Math.max(16, y - 6));
-        if (!draft) {
-          boxHitAreas.push({
-            index,
-            box: {
-              left: x / imageWidth,
-              top: y / imageHeight,
-              right: (x + width) / imageWidth,
-              bottom: (y + height) / imageHeight,
-            },
-            label: {
-              left: x / imageWidth,
-              top: labelTop / imageHeight,
-              right: (x + labelWidth) / imageWidth,
-              bottom: (labelTop + 22) / imageHeight,
-            },
-            anchors: anchorHitAreas(box, imageWidth, imageHeight),
-          });
-          if (index === selectedBoxIndex) drawSelectedAnchors(box, imageWidth, imageHeight, color);
-        }
-      });
-    }
-
-    function cloneBoxes(boxes) {
-      return boxes.map(box => ({...box}));
-    }
-
     function setBoxesDirty(dirty) {
       boxesDirty = dirty;
       updateAnnotationButtons();
-    }
-
-    function deleteSelectedBox() {
-      if (selectedBoxIndex < 0 || lockedByOther) return false;
-      currentBoxes.splice(selectedBoxIndex, 1);
-      selectedBoxIndex = -1;
-      setBoxesDirty(true);
-      redrawImage();
-      return true;
-    }
-
-    function defaultBoxLabel() {
-      return selectedClassLabel || classLabels[selectedClassId] || String(selectedClassId);
     }
 
     function selectClassLabel(classId, label, row) {
@@ -1238,35 +1131,13 @@
 
     function selectAutoModel(path, row = null) {
       selectedAutoModel = path || "";
-      autoAnnotateEnabled = Boolean(selectedAutoModel);
+      autoAnnotateEnabled = false;
       document.querySelectorAll(".model-row").forEach(item => item.classList.remove("active"));
       if (row) row.classList.add("active");
       updateAutoAnnotateButton();
-      if (currentImage && !currentBoxes.length) runAutoAnnotate();
     }
 
     async function runAutoAnnotate() {
-      if (!autoAnnotateEnabled || !selectedAutoModel || !currentPath || lockedByOther || autoAnnotateRunning) return;
-      if (currentBoxes.length) return;
-      const path = currentPath;
-      const model = selectedAutoModel;
-      autoAnnotateRunning = true;
-      updateAutoAnnotateButton();
-      try {
-        const data = await postJson("/api/auto-annotate", {path, model});
-        if (path !== currentPath || model !== selectedAutoModel || !autoAnnotateEnabled) return;
-        const boxes = cloneBoxes(data.boxes || []);
-        if (!boxes.length) return;
-        currentBoxes = boxes;
-        selectedBoxIndex = -1;
-        setBoxesDirty(true);
-        redrawImage();
-      } catch (error) {
-        autoAnnotate.title = error.message || "自动识别失败";
-      } finally {
-        autoAnnotateRunning = false;
-        updateAutoAnnotateButton();
-      }
     }
 
     function labelShortcutIndex(event) {
@@ -1285,69 +1156,39 @@
     }
 
     function updateAnnotationButtons() {
-      editModeToggle.classList.toggle("annotation-mode-on", annotateMode);
-      editModeToggle.querySelector(".header-icon").textContent = "●";
-      editModeToggle.querySelector(".header-icon + span").textContent = "标注";
-      editModeToggle.title = annotateMode ? "当前为标注状态" : "当前未开启标注";
+      annotateMode = false;
       canvas.classList.toggle("annotating", annotateMode);
-      const locked = Boolean(lockedByOther);
-      saveAnnotation.disabled = annotationSaving || locked || !currentPath || (!boxesDirty && Boolean(currentLabelFile));
-      resetAnnotation.disabled = locked || !boxesDirty;
-      deleteAnnotation.disabled = locked || !currentBoxes.length;
-      editModeToggle.disabled = locked;
-      if (locked) {
-        editModeToggle.title = `团队模式：${lockedByOther.username} 正在标注该图片`;
-      }
     }
 
     async function loadLabels() {
-      const data = await getJson("/api/classes");
-      classLabels = data.classes;
+      const data = await getJson("/api/classify/classes");
+      classLabels = data.classes || [];
       classesText = data.content || "";
       if (editClasses) {
-        const hasClasses = Boolean(data.classes_file);
+        const hasClasses = classLabels.length > 0;
         editClasses.textContent = hasClasses ? "✎" : "＋";
-        editClasses.title = hasClasses ? "编辑 classes.txt" : "创建 classes.txt";
+        editClasses.title = hasClasses ? "编辑分类" : "创建分类";
       }
       labelsEl.innerHTML = "";
-      const groups = data.class_groups?.length
-        ? data.class_groups
-        : data.classes_file
-          ? [{classes_file: data.classes_file, classes: data.classes}]
-          : [];
       let selectedAssigned = false;
-      groups.forEach((group, groupIndex) => {
-        const source = document.createElement("div");
-        source.className = "label-source";
-        source.textContent = group.classes_file;
-        labelsEl.appendChild(source);
-        group.classes.forEach((label, index) => {
-          const row = document.createElement("button");
-          row.type = "button";
-          row.className = "label-row";
-          row.dataset.classId = String(index);
-          row.dataset.label = label;
-          row.dataset.classesFile = group.classes_file || "";
-          row.innerHTML = `<span class="swatch" style="background:${colors[index % colors.length]}"></span><span>${index}: ${escapeHtml(label)}</span>`;
-          row.onclick = () => selectClassLabel(index, label, row);
-          if (groupIndex === 0) {
-            row.oncontextmenu = event => showLabelContextMenu(event, {
-              index,
-              label,
-              classes_file: group.classes_file || "",
-            });
-          }
-          labelsEl.appendChild(row);
-          if (!selectedAssigned) {
-            selectClassLabel(index, label, row);
-            selectedAssigned = true;
-          }
-        });
+      classLabels.forEach((label, index) => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "label-row";
+        row.dataset.classId = String(index);
+        row.dataset.label = label;
+        row.innerHTML = `<span class="swatch" style="background:${colors[index % colors.length]}"></span><span>${index}: ${escapeHtml(label)}</span>`;
+        row.onclick = () => selectClassLabel(index, label, row);
+        labelsEl.appendChild(row);
+        if (!selectedAssigned) {
+          selectClassLabel(index, label, row);
+          selectedAssigned = true;
+        }
       });
-      if (!groups.length) {
+      if (!classLabels.length) {
         selectedClassId = 0;
         selectedClassLabel = "0";
-        labelsEl.innerHTML = '<div class="empty">未找到 classes.txt</div>';
+        labelsEl.innerHTML = '<div class="empty">暂无分类目录</div>';
       }
     }
 
@@ -1361,7 +1202,7 @@
     async function saveClasses(event) {
       event.preventDefault();
       const content = classesContent?.value || "";
-      const response = await fetch("/api/classes", {
+      const response = await fetch("/api/classify/classes", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({content})
@@ -1373,7 +1214,12 @@
       }
       classesDialog?.close();
       await loadLabels();
+      await loadTree();
       await loadStatistics();
+      const activeButton = findTreeButton(currentDir) || document.querySelector("#tree .tree-select");
+      if (activeButton) {
+        await selectDir(activeButton.dataset.path || "", activeButton);
+      }
     }
 
     async function loadStatistics() {
@@ -1604,10 +1450,6 @@
         <div class="stats-left"></div>
         <div class="stats-right">
           <span class="stat"><span class="stat-icon">▧</span>图像 <strong>${data.images}</strong></span>
-          <span class="stat"><span class="stat-icon">✓</span>已完成 <strong>${data.txt_valid}/${data.images}</strong></span>
-          <span class="stat"><span class="stat-icon">▯</span>.txt <strong>${data.txt_total}</strong></span>
-          <span class="stat"><span class="stat-icon">⌑</span>classes.txt <strong>${data.classes_files}</strong></span>
-          <span class="stat bad"><span class="stat-icon">✕</span>损坏图像 <strong>${data.images_damaged}</strong></span>
           <button id="shortcutButton" class="footer-button" type="button"><span class="stat-icon">⌘</span>快捷键</button>
           <button id="consoleToggle" class="footer-button" type="button"><span class="stat-icon">▤</span>控制台</button>
           <button id="helpButton" class="footer-button" type="button"><span class="stat-icon">?</span>帮助</button>
@@ -1699,11 +1541,6 @@
 
     function initHeaderActions() {
       annotateModeButton?.addEventListener("click", () => {});
-      editModeToggle?.addEventListener("click", () => {
-        if (lockedByOther) return;
-        annotateMode = !annotateMode;
-        updateAnnotationButtons();
-      });
       shareButton?.addEventListener("click", shareCurrentLocation);
       downloadImage?.addEventListener("click", downloadCurrentImage);
       queryButton?.addEventListener("click", showEnterpriseNotice);
@@ -1712,7 +1549,10 @@
       closeShortcuts?.addEventListener("click", () => {
         shortcutPopover.hidden = true;
       });
-      datasetButton?.addEventListener("click", showEnterpriseNotice);
+      datasetButton?.addEventListener("click", () => {
+        const project = window.yoloutilsProject || "";
+        window.location.assign(project ? `/dataset/${encodeURIComponent(project)}/classify` : "/dataset");
+      });
       modelButton?.addEventListener("click", showEnterpriseNotice);
     }
 
@@ -2222,71 +2062,7 @@
       window.addEventListener("resize", applyImageZoom);
     }
 
-    async function saveCurrentAnnotation(options = {}) {
-      const force = Boolean(options.force);
-      commitPendingCanvasInteraction();
-      if (annotationSaving || !currentPath || lockedByOther || (!force && !boxesDirty && currentLabelFile)) return false;
-      annotationSaving = true;
-      updateAnnotationButtons();
-      const savedPath = currentPath;
-      let annotation;
-      try {
-        annotation = await postJson("/api/annotation", {
-          path: currentPath,
-          client_id: clientId(),
-          username: username || "独立用户",
-          boxes: currentBoxes,
-        });
-      } catch (error) {
-        alert(error.message);
-        await acquireCurrentLock();
-        annotationSaving = false;
-        updateAnnotationButtons();
-        return false;
-      }
-      lockedByOther = null;
-      currentLabelFile = annotation.label_file || "";
-      currentBoxes = cloneBoxes(annotation.boxes);
-      savedBoxes = cloneBoxes(annotation.boxes);
-      setBoxesDirty(false);
-      redrawImage();
-      await loadStatistics();
-      await loadTree();
-      await refreshCurrentFiles();
-      const nextPath = nextAnnotationFilePath(savedPath);
-      if (nextPath) {
-        await selectImage(nextPath, fileRow(nextPath));
-      }
-      annotationSaving = false;
-      updateAnnotationButtons();
-      return true;
-    }
-
-    function isSaveShortcut(event) {
-      if (!(event.metaKey || event.ctrlKey)) return false;
-      const key = String(event.key || "").toLowerCase();
-      const code = String(event.code || "");
-      const keyCode = event.keyCode || event.which || 0;
-      return key === "s" || code === "KeyS" || keyCode === 83;
-    }
-
-    function handleSaveShortcut(event) {
-      if (!isSaveShortcut(event)) return false;
-      event.preventDefault();
-      event.stopPropagation();
-      const now = Date.now();
-      if (now - lastSaveShortcutAt < 350) return true;
-      lastSaveShortcutAt = now;
-      saveCurrentAnnotation({force: true});
-      return true;
-    }
-
     function initKeyboardShortcuts() {
-      const saveShortcutOptions = {capture: true};
-      window.addEventListener("keydown", handleSaveShortcut, saveShortcutOptions);
-      document.addEventListener("keydown", handleSaveShortcut, saveShortcutOptions);
-      window.addEventListener("keyup", handleSaveShortcut, saveShortcutOptions);
-      document.addEventListener("keyup", handleSaveShortcut, saveShortcutOptions);
       window.addEventListener("keydown", event => {
         const shortcutKey = String(event.key || "").toLowerCase();
         if (event.target instanceof Element && event.target.closest("input, textarea, select")) return;
@@ -2318,10 +2094,6 @@
           selectAdjacentImage(1);
           return;
         }
-        if (!event.metaKey && !event.ctrlKey && (event.key === "Delete" || event.key === "Backspace")) {
-          if (deleteSelectedBox()) event.preventDefault();
-          return;
-        }
         if (!(event.metaKey || event.ctrlKey)) return;
         const key = shortcutKey;
         if (key === "h") {
@@ -2336,15 +2108,6 @@
         } else if (key === "d") {
           event.preventDefault();
           downloadCurrentImage();
-        } else if (key === "a") {
-          event.preventDefault();
-          if (!editModeToggle.disabled) editModeToggle.click();
-        } else if (key === "m") {
-          event.preventDefault();
-          maskAnnotation.click();
-        } else if (key === "r") {
-          event.preventDefault();
-          if (!autoAnnotate.disabled) autoAnnotate.click();
         }
       }, true);
     }
@@ -2361,110 +2124,7 @@
       return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
     }
 
-    function hitTestBox(point) {
-      for (let areaIndex = boxHitAreas.length - 1; areaIndex >= 0; areaIndex -= 1) {
-        const area = boxHitAreas[areaIndex];
-        for (const anchor of area.anchors) {
-          if (rectContains(anchor, point)) return {type: "anchor", index: area.index, anchor: anchor.name};
-        }
-        if (rectContains(area.label, point)) return {type: "label", index: area.index};
-        if (rectContains(area.box, point)) return {type: "box", index: area.index};
-      }
-      return null;
-    }
-
-    function anchorCursor(anchor) {
-      return {
-        n: "ns-resize",
-        s: "ns-resize",
-        e: "ew-resize",
-        w: "ew-resize",
-        nw: "nwse-resize",
-        se: "nwse-resize",
-        ne: "nesw-resize",
-        sw: "nesw-resize",
-      }[anchor] || "";
-    }
-
-    function selectedAnchorHit(point) {
-      if (selectedBoxIndex < 0) return null;
-      const area = boxHitAreas.find(item => item.index === selectedBoxIndex);
-      if (!area) return null;
-      return area.anchors.find(anchor => rectContains(anchor, point)) || null;
-    }
-
-    function updateCanvasHoverCursor(event) {
-      if (!currentImage || lockedByOther || canvasInteraction) return;
-      const anchor = selectedAnchorHit(canvasPoint(event));
-      canvas.style.cursor = anchor ? anchorCursor(anchor.name) : "";
-    }
-
-    function moveBox(box, dx, dy) {
-      const halfWidth = box.width / 2;
-      const halfHeight = box.height / 2;
-      return {
-        ...box,
-        cx: Math.min(Math.max(box.cx + dx, halfWidth), 1 - halfWidth),
-        cy: Math.min(Math.max(box.cy + dy, halfHeight), 1 - halfHeight),
-      };
-    }
-
-    function resizeBox(box, anchor, point) {
-      const edges = boxEdges(box);
-      const minSize = 0.003;
-      if (anchor.includes("w")) edges.left = Math.min(point.x, edges.right - minSize);
-      if (anchor.includes("e")) edges.right = Math.max(point.x, edges.left + minSize);
-      if (anchor.includes("n")) edges.top = Math.min(point.y, edges.bottom - minSize);
-      if (anchor.includes("s")) edges.bottom = Math.max(point.y, edges.top + minSize);
-      edges.left = Math.max(0, edges.left);
-      edges.right = Math.min(1, edges.right);
-      edges.top = Math.max(0, edges.top);
-      edges.bottom = Math.min(1, edges.bottom);
-      return normalizeBoxEdges(edges, box);
-    }
-
-    function boxFromPoints(start, end) {
-      const left = Math.min(start.x, end.x);
-      const right = Math.max(start.x, end.x);
-      const top = Math.min(start.y, end.y);
-      const bottom = Math.max(start.y, end.y);
-      return {
-        class_id: selectedClassId,
-        label: defaultBoxLabel(),
-        cx: (left + right) / 2,
-        cy: (top + bottom) / 2,
-        width: right - left,
-        height: bottom - top,
-      };
-    }
-
-    function commitPendingCanvasInteraction(point = null) {
-      if (!canvasInteraction) return false;
-      let changed = false;
-      const commitPoint = point || lastCanvasPoint;
-      if (canvasInteraction.type === "create" && dragStart) {
-        const box = draftBox || (commitPoint ? boxFromPoints(dragStart, commitPoint) : null);
-        if (box && box.width >= 0.003 && box.height >= 0.003) {
-          currentBoxes.push(box);
-          selectedBoxIndex = currentBoxes.length - 1;
-          changed = true;
-        }
-      } else if (canvasInteraction.type === "move" || canvasInteraction.type === "resize") {
-        changed = true;
-      }
-      canvasInteraction = null;
-      dragStart = null;
-      draftBox = null;
-      lastCanvasPoint = null;
-      canvas.classList.remove("panning");
-      canvas.style.cursor = "";
-      if (changed) setBoxesDirty(true);
-      redrawImage();
-      return changed;
-    }
-
     function initCanvasAnnotation() {
-      canvas.addEventListener("mousemove", updateCanvasHoverCursor);
       canvas.addEventListener("mouseleave", () => {
         if (!canvasInteraction) canvas.style.cursor = "";
       });
@@ -2496,54 +2156,17 @@
       });
       canvas.addEventListener("mousedown", event => {
         hideContextMenu();
-        if (!currentImage || event.button !== 0 || lockedByOther) return;
-        const point = canvasPoint(event);
-        lastCanvasPoint = point;
-        const hit = hitTestBox(point);
-        if (hit) {
-          selectedBoxIndex = hit.index;
-          draftBox = null;
-          dragStart = null;
-          if (hit.type === "anchor") {
-            canvasInteraction = {
-              type: "resize",
-              index: hit.index,
-              anchor: hit.anchor,
-              startBox: {...currentBoxes[hit.index]},
-            };
-            canvas.style.cursor = anchorCursor(hit.anchor);
-          } else if (hit.type === "label") {
-            canvasInteraction = {
-              type: "move",
-              index: hit.index,
-              startPoint: point,
-              startBox: {...currentBoxes[hit.index]},
-            };
-          } else {
-            canvasInteraction = {type: "select"};
-          }
-          redrawImage();
-          event.preventDefault();
-          return;
-        }
-        selectedBoxIndex = -1;
-        if (annotateMode) {
-          dragStart = point;
-          draftBox = null;
-          canvasInteraction = {type: "create"};
-        } else {
-          const wrapper = canvas.parentElement;
-          canvasInteraction = {
-            type: "pan",
-            startClientX: event.clientX,
-            startClientY: event.clientY,
-            scrollLeft: wrapper.scrollLeft,
-            scrollTop: wrapper.scrollTop,
-          };
-          canvas.classList.add("panning");
-          canvas.style.cursor = "";
-        }
-        redrawImage();
+        if (!currentImage || event.button !== 0) return;
+        const wrapper = canvas.parentElement;
+        canvasInteraction = {
+          type: "pan",
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          scrollLeft: wrapper.scrollLeft,
+          scrollTop: wrapper.scrollTop,
+        };
+        canvas.classList.add("panning");
+        canvas.style.cursor = "";
         event.preventDefault();
       });
       window.addEventListener("mousemove", event => {
@@ -2554,61 +2177,16 @@
           wrapper.scrollTop = canvasInteraction.scrollTop - (event.clientY - canvasInteraction.startClientY);
           return;
         }
-        const point = canvasPoint(event);
-        lastCanvasPoint = point;
-        if (canvasInteraction.type === "create" && dragStart) {
-          draftBox = boxFromPoints(dragStart, point);
-        } else if (canvasInteraction.type === "move") {
-          const dx = point.x - canvasInteraction.startPoint.x;
-          const dy = point.y - canvasInteraction.startPoint.y;
-          currentBoxes[canvasInteraction.index] = moveBox(canvasInteraction.startBox, dx, dy);
-        } else if (canvasInteraction.type === "resize") {
-          currentBoxes[canvasInteraction.index] = resizeBox(
-            canvasInteraction.startBox,
-            canvasInteraction.anchor,
-            point,
-          );
-        }
-        redrawImage();
       });
-      window.addEventListener("mouseup", event => {
+      window.addEventListener("mouseup", () => {
         if (!canvasInteraction) return;
-        commitPendingCanvasInteraction(canvasPoint(event));
+        canvasInteraction = null;
+        canvas.classList.remove("panning");
+        canvas.style.cursor = "";
       });
     }
 
     function initViewerTools() {
-      autoAnnotate.addEventListener("click", () => {
-        if (!selectedAutoModel) return;
-        autoAnnotateEnabled = !autoAnnotateEnabled;
-        updateAutoAnnotateButton();
-        if (autoAnnotateEnabled && currentImage && !currentBoxes.length) runAutoAnnotate();
-      });
-      maskAnnotation.addEventListener("click", () => {
-        maskEnabled = !maskEnabled;
-        maskAnnotation.classList.toggle("active", maskEnabled);
-        redrawImage();
-      });
-      deleteAnnotation.addEventListener("click", () => {
-        if (!currentPath || !currentBoxes.length) return;
-        currentBoxes = [];
-        selectedBoxIndex = -1;
-        setBoxesDirty(true);
-        redrawImage();
-      });
-      resetAnnotation.addEventListener("click", () => {
-        if (!currentPath) return;
-        currentBoxes = cloneBoxes(savedBoxes);
-        draftBox = null;
-        dragStart = null;
-        selectedBoxIndex = -1;
-        canvasInteraction = null;
-        setBoxesDirty(false);
-        redrawImage();
-      });
-      saveAnnotation.addEventListener("click", () => {
-        saveCurrentAnnotation();
-      });
     }
 
     function initSplitter() {
@@ -3086,6 +2664,7 @@
         toggleExif.textContent = collapsed ? "⌃" : "⌄";
         redrawHistogram();
       });
+      scheduleRightPanelGoldenLayout();
     }
     init().catch(error => {
       document.body.innerHTML = `<pre>${error.stack || error}</pre>`;

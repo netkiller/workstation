@@ -521,6 +521,9 @@
       function updateFooterConsole(text) {
         if (text) window.yoloutilsFooterConsole?.append(text);
       }
+      function replaceFooterConsole(text) {
+        window.yoloutilsFooterConsole?.setText(text || "暂无日志");
+      }
       function hasFinalValidationMetrics(snapshot) {
         const metrics = snapshot?.metrics || [];
         return metrics.some(metric => (
@@ -602,7 +605,9 @@
         if (openConsole && !wasClosedAfterRequest) {
           openFooterConsole(data.log || "暂无日志");
         } else {
-          if (Number(data.offset || 0) === 0 && offset > 0) {
+          if (data.replace) {
+            replaceFooterConsole(data.log || "暂无日志");
+          } else if (Number(data.offset || 0) === 0 && offset > 0) {
             openFooterConsole(data.log || "暂无日志");
           } else {
             updateFooterConsole(data.log || "");

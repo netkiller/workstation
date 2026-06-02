@@ -1,6 +1,8 @@
+{% set model_task_type = header_project_task_type | default("detect") %}
+{% set model_task_path = "classify" if model_task_type == "classify" else "detect" %}
 <nav class="model-subnav" aria-label="模型子导航">
-  <a class="{% if model_active == 'train' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/train{% else %}/model/train{% endif %}">训练</a>
-  <a class="{% if model_active == 'val' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/val{% else %}/model/val{% endif %}">验证</a>
-  <a class="{% if model_active == 'predict' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/predict{% else %}/model/predict{% endif %}">预测</a>
-  <a class="{% if model_active == 'analysis' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/analysis{% else %}/model/analysis{% endif %}">分析</a>
+  <a class="{% if model_active == 'train' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/{{ model_task_path }}/train{% else %}/model/train{% endif %}">训练</a>
+  <a class="{% if model_active == 'val' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/{{ model_task_path }}/val{% else %}/model/val{% endif %}">验证</a>
+  <a class="{% if model_active == 'predict' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/{{ model_task_path }}/predict{% else %}/model/predict{% endif %}">预测</a>
+  <a class="{% if model_active == 'analysis' %}active{% endif %}" href="{% if current_project %}/model/{{ current_project }}/{{ model_task_path }}/analysis{% else %}/model/analysis{% endif %}">分析</a>
 </nav>

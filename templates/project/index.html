@@ -3,7 +3,7 @@
 {% block title %}项目{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260515-page-width-uniform">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260602-task-radio">
 {% endblock %}
 
 {% block content %}
@@ -38,20 +38,16 @@
           <div class="projects">
           {% for project in projects %}
             <article class="project-card">
-              <a class="project-link" href="/project/{{ project.directory }}" aria-label="进入 {{ project.name }} 项目页面">
+              <a class="project-link" href="{{ project.detail_url | default('/project/' ~ project.directory) }}" aria-label="进入 {{ project.name }} 项目页面">
                 <div>
                   <div class="project-title-row">
                     <span class="project-card-icon" aria-hidden="true">{{ project.icon | default("▤") }}</span>
                     <h3>{{ project.name }}</h3>
                   </div>
-                  {% if project.description %}
-                    <p class="project-description">{{ project.description }}</p>
-                  {% else %}
-                    <p class="project-description muted">暂无描述</p>
-                  {% endif %}
+                  <p class="project-description">{{ project.task_label | default("目标检测") }}</p>
                 </div>
                 <div class="folders" aria-label="项目目录">
-                  <span class="folder{% if not project.images %} missing{% endif %}">annotate</span>
+                  <span class="folder{% if not project.resource_ready %} missing{% endif %}">{{ project.resource_dir | default("detect") }}</span>
                   <span class="folder{% if not project.dataset %} missing{% endif %}">dataset</span>
                   <span class="folder{% if not project.models %} missing{% endif %}">models</span>
                 </div>
@@ -122,6 +118,35 @@
           <input name="name" type="text" autocomplete="off" required>
         </label>
       </div>
+      <fieldset class="project-task-field">
+        <legend>任务</legend>
+        <div class="project-task-options" role="radiogroup" aria-label="项目任务">
+          <label>
+            <input type="radio" name="task_type" value="detect" checked>
+            <span>目标检测</span>
+          </label>
+          <label>
+            <input type="radio" name="task_type" value="classify">
+            <span>图像分类</span>
+          </label>
+          <label class="disabled">
+            <input type="radio" name="task_type" value="segment" disabled>
+            <span>实例分割</span>
+          </label>
+          <label class="disabled">
+            <input type="radio" name="task_type" value="semantic" disabled>
+            <span>语义分割</span>
+          </label>
+          <label class="disabled">
+            <input type="radio" name="task_type" value="pose" disabled>
+            <span>姿态判断</span>
+          </label>
+          <label class="disabled">
+            <input type="radio" name="task_type" value="obb" disabled>
+            <span>旋转目标检测</span>
+          </label>
+        </div>
+      </fieldset>
       <label>
         <span>目录名</span>
         <input name="directory" type="text" autocomplete="off" required>

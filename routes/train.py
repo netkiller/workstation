@@ -22,9 +22,17 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from routes.dataset import count_dataset_split, normalize_console_log, read_deploy_tasks
+from routes.dataset import ANSI_ESCAPE_PATTERN, CONTROL_CHAR_PATTERN, count_dataset_split, read_deploy_tasks
 from routes.edition import is_community_edition
-from routes.project import compute_config, header_context
+from routes.project import (
+    PROJECT_TASK_CLASSIFY,
+    PROJECT_TASK_DETECT,
+    compute_config,
+    header_context,
+    project_task_type,
+    read_project_meta,
+    read_project_registry,
+)
 from routes.resources import find_resource, read_resources, ssh_connect_kwargs
 
 
@@ -103,12 +111,13 @@ def clean_model_size(value: str):
     return value if value in MODEL_SIZES else "N"
 
 
-def model_weight(version: str, size: str):
+def model_weight(version: str, size: str, task_type: str = PROJECT_TASK_DETECT):
     suffix = clean_model_size(size).lower()
     version = clean_model_version(version)
+    classifier = "-cls" if project_task_type(task_type) == PROJECT_TASK_CLASSIFY else ""
     if version == "YOLO26":
-        return f"yolo26{suffix}.pt"
-    return f"yolov{version.removeprefix('YOLOv')}{suffix}.pt"
+        return f"yolo26{suffix}{classifier}.pt"
+    return f"yolov{version.removeprefix('YOLOv')}{suffix}{classifier}.pt"
 
 
 def optional_int(value: str):
@@ -131,6 +140,29 @@ def display_datetime(value: str):
 def workspace_path():
     workspace = os.environ.get("YOLOUTILS_WORKSPACE")
     return Path(workspace).expanduser().resolve() if workspace else Path.cwd().resolve()
+
+
+def project_train_task_type(project: str):
+    project = (project or "").strip()
+    if not project:
+        return PROJECT_TASK_DETECT
+    workspace = workspace_path()
+    project_dir = workspace / project
+    if not project_dir.is_dir():
+        return PROJECT_TASK_DETECT
+    meta = read_project_meta(project_dir, read_project_registry(workspace))
+    return project_task_type(str(meta.get("task_type") or ""))
+
+
+def train_task_type(task):
+    stored = project_task_type(str((task or {}).get("task_type") or ""))
+    if stored != PROJECT_TASK_DETECT:
+        return stored
+    return project_train_task_type(str((task or {}).get("project") or ""))
+
+
+def is_classify_train_task(task):
+    return train_task_type(task) == PROJECT_TASK_CLASSIFY
 
 
 def demo_mode_enabled():
@@ -309,6 +341,13 @@ def append_log(task_id, text):
 
 def log_file(task_id):
     return queue_dir() / "logs" / f"{task_id}.log"
+
+
+def read_log_text(path: Path):
+    try:
+        return path.read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def is_inside(path: Path, parent: Path):
@@ -779,7 +818,29 @@ def format_epoch_metric(value: str):
 
 
 def clean_console_line(text: str):
-    return normalize_console_log(text).strip()
+    return normalize_train_console_log(text).strip()
+
+
+def normalize_train_console_log(text: str):
+    text = ANSI_ESCAPE_PATTERN.sub("", text or "")
+    text = text.replace("\r\n", "\n")
+    lines = []
+    for raw_line in text.split("\n"):
+        current = ""
+        snapshots = []
+        for segment in raw_line.split("\r"):
+            if segment:
+                current = segment
+                if segment.strip():
+                    snapshots.append(segment)
+            elif current.strip():
+                snapshots.append(current)
+        line = snapshots[-1] if snapshots else current
+        line = line.replace("\b", "")
+        line = CONTROL_CHAR_PATTERN.sub("", line)
+        if line or raw_line == "":
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def validation_metrics_from_summary(summary_line: str):
@@ -869,8 +930,8 @@ def last_epoch_from_log(task_id: str):
     path = log_file(task_id)
     if not path.is_file():
         return None
-    text = path.read_text(encoding="utf-8", errors="replace")
-    lines = [clean_console_line(line) for line in text.splitlines()]
+    text = normalize_train_console_log(read_log_text(path))
+    lines = [line.strip() for line in text.splitlines()]
     lines = [line for line in lines if line]
     last = None
     last_summary = ""
@@ -905,7 +966,7 @@ def task_has_early_stopping(task_id: str):
     path = log_file(task_id)
     if not path.is_file():
         return False
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = read_log_text(path)
     return "EarlyStopping:" in text or "Training stopped early" in text
 
 
@@ -1052,10 +1113,13 @@ def run_result_assets(task):
 
 
 def train_command(task):
-    data_value = task.get("data") or str(write_data_yaml(task))
+    yolo_task = train_task_type(task)
+    data_value = task.get("data") or (
+        str(Path(task["dataset_path"])) if yolo_task == PROJECT_TASK_CLASSIFY else str(write_data_yaml(task))
+    )
     command = [
         "yolo",
-        "detect",
+        yolo_task,
         "train",
         f"data={data_value}",
         f"model={task['model']}",
@@ -1073,12 +1137,12 @@ def train_command(task):
     return command
 
 
-def remote_train_command(task, remote_yaml: str, remote_runs_root: str):
+def remote_train_command(task, remote_data: str, remote_runs_root: str):
     command = [
         "yolo",
-        "detect",
+        train_task_type(task),
         "train",
-        f"data={remote_yaml}",
+        f"data={remote_data}",
         f"model={task['model']}",
         f"epochs={task['epochs']}",
         f"project={remote_runs_root}",
@@ -1313,7 +1377,6 @@ def run_remote_task(task):
         remote_base_dir = posixpath.join(remote_home, ".yoloutils")
         remote_work_dir = posixpath.join(remote_base_dir, "train")
         remote_runs_root = posixpath.join(remote_base_dir, "runs", task["project"])
-        remote_yaml = posixpath.join(remote_work_dir, f"{task_id}.yaml")
         remote_log = posixpath.join(remote_work_dir, f"{task_id}.log")
         remote_exit = posixpath.join(remote_work_dir, f"{task_id}.exit")
         remote_run_dir = posixpath.join(remote_runs_root, str(task.get("run_name") or task["name"]))
@@ -1321,12 +1384,17 @@ def run_remote_task(task):
         sftp_mkdirs(sftp, remote_work_dir)
         append_log(task_id, f"准备远程 runs 目录：{remote_runs_root}\n")
         sftp_mkdirs(sftp, remote_runs_root)
-        append_log(task_id, f"写入远程 data.yaml：{remote_yaml}\n")
-        with sftp.file(remote_yaml, "w") as handle:
-            handle.write(data_yaml_text(task, remote_dataset_path))
+        if is_classify_train_task(task):
+            remote_data = remote_dataset_path
+        else:
+            remote_yaml = posixpath.join(remote_work_dir, f"{task_id}.yaml")
+            append_log(task_id, f"写入远程 data.yaml：{remote_yaml}\n")
+            with sftp.file(remote_yaml, "w") as handle:
+                handle.write(data_yaml_text(task, remote_dataset_path))
+            remote_data = remote_yaml
         update_task(task_id, remote_run_path=remote_run_dir)
 
-        command = remote_train_command(task, remote_yaml, remote_runs_root)
+        command = remote_train_command(task, remote_data, remote_runs_root)
         shell_command = shell_join(command)
         session = train_session_name(task_id)
         remote_command_output(client, f": > {shlex.quote(remote_log)}; rm -f {shlex.quote(remote_exit)}")
@@ -1819,6 +1887,7 @@ async def create_train(request: Request):
 
     model_version = clean_model_version(form.get("model_version", ["YOLO26"])[0])
     model_size = clean_model_size(form.get("model_size", ["N"])[0])
+    task_type = project_train_task_type(dataset_item["project"])
     data_value = form.get("data", [""])[0].strip()
     yolo_options = {key: optional_value(form.get(key, [""])[0]) for key in YOLO_OPTION_KEYS}
     yolo_options["data"] = data_value
@@ -1846,9 +1915,10 @@ async def create_train(request: Request):
         "dataset": dataset_item["name"],
         "dataset_path": str(dataset_item["path"]),
         "train_scope": "remote" if is_remote else "local",
+        "task_type": task_type,
         "model_version": model_version,
         "model_size": model_size,
-        "model": model_weight(model_version, model_size),
+        "model": model_weight(model_version, model_size, task_type),
         "epochs": int(form.get("epochs", ["200"])[0] or 200),
         "batch": optional_int(form.get("batch", [""])[0]),
         "device": yolo_options.get("device") or "",
@@ -1886,7 +1956,8 @@ def train_task(request: Request, task_id: str):
     task = next((item for item in tasks if item["id"] == task_id), None)
     if task is None:
         return RedirectResponse(url="/model/train", status_code=status.HTTP_303_SEE_OTHER)
-    log = log_file(task_id).read_text(encoding="utf-8", errors="replace") if log_file(task_id).is_file() else ""
+    log_path = log_file(task_id)
+    log = normalize_train_console_log(read_log_text(log_path)) if log_path.is_file() else ""
     return templates.TemplateResponse(
         request=request,
         name="train/task.html",
@@ -1914,16 +1985,22 @@ def train_task_logs(task_id: str, offset: int = 0):
     size = path.stat().st_size if path.is_file() else 0
     start = max(0, min(int(offset or 0), size))
     log = ""
+    replace_log = False
     if path.is_file():
         with path.open("rb") as handle:
             handle.seek(start)
             log = handle.read().decode("utf-8", errors="replace")
+        if "\r" in log:
+            log = read_log_text(path)
+            start = 0
+            replace_log = True
     return {
         "ok": True,
         "task": task_card_view(task),
-        "log": normalize_console_log(log),
+        "log": normalize_train_console_log(log),
         "offset": start,
         "size": size,
+        "replace": replace_log,
     }
 
 
@@ -1992,9 +2069,10 @@ def rerun_task(task_id: str):
 
 
 @router.get("/model/train/{project}")
+@router.get("/model/{project}/{task}/train")
 @router.get("/model/{project}/train")
 @router.get("/train/{project}")
-def train_with_project(request: Request, project: str, tab: str = "", queue: str = "all", dataset: str = "", remote: str = "", train_dialog: str = ""):
+def train_with_project(request: Request, project: str, task: str = "detect", tab: str = "", queue: str = "all", dataset: str = "", remote: str = "", train_dialog: str = ""):
     if request.url.path.startswith("/model/train/"):
         params = []
         if queue != "all":

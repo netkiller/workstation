@@ -203,6 +203,9 @@ button.enterprise-link { width: auto; min-width: 62px; height: 30px; display: in
   }
 }
 button:hover, button.active { background: #e6f0ff; }
+body.classify-mode #autoAnnotate,
+body.classify-mode #maskAnnotation,
+body.classify-mode #editModeToggle { display: none; }
 .tree-node { position: relative; }
 .tree-row { display: flex; align-items: center; min-width: 0; }
 .tree-node.root-node > .tree-row > .tree-toggle-placeholder { display: none; }
@@ -210,6 +213,7 @@ button:hover, button.active { background: #e6f0ff; }
 .tree-toggle { flex: 0 0 12px; width: 12px; min-width: 12px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #7b8794; font-size: 12px; }
 .tree-toggle-placeholder { flex: 0 0 12px; width: 12px; min-width: 12px; }
 .tree-select { flex: 1 1 auto; display: flex; align-items: center; gap: 7px; min-width: 0; padding: 6px 8px; }
+.tree-select.drop-target { background: #dbeafe; outline: 1px solid #3b82f6; }
 .tree-icon { flex: 0 0 auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; line-height: 1; font-weight: 700; }
 .tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-meta { display: block; margin-top: 2px; color: #7b8794; font-size: 12px; }
@@ -261,6 +265,7 @@ main.right-hidden .right-panel { display: none; }
 .right-panel.histogram-collapsed .histogram-splitter { display: none; }
 .right-panel.histogram-collapsed .histogram { display: none; }
 .right-pane.exif-pane { flex: 0 0 auto; max-height: 36%; display: flex; flex-direction: column; overflow: hidden; }
+body.classify-mode .right-pane.exif-pane { max-height: none; }
 .exif { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .right-panel.exif-collapsed .top-info-pane { flex: 1 1 auto; }
 .right-panel.exif-collapsed .labels-pane { flex: 1 1 auto; }

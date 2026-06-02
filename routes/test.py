@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from routes.dataset import normalize_console_log
-from routes.dataset import prepare_remote_auth, remote_target, rsync_file_output_args, rsync_ssh_args
+from routes.dataset import is_classify_project, prepare_remote_auth, remote_target, rsync_file_output_args, rsync_ssh_args
 from routes.edition import is_community_edition
 from routes.project import (
     append_upload_log,
@@ -427,7 +427,7 @@ def test_extension_chart(project_dir: Path | None):
 
 
 def read_classes(project_dir: Path):
-    for candidate in (project_dir / TEST_DIR / "classes.txt", project_dir / "annotate" / "classes.txt", project_dir / "classes.txt"):
+    for candidate in (project_dir / TEST_DIR / "classes.txt", project_dir / "detect" / "classes.txt", project_dir / "annotate" / "classes.txt", project_dir / "classes.txt"):
         if candidate.is_file():
             items = [line.strip() for line in candidate.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
             if items:
@@ -1838,11 +1838,13 @@ def test_context(request: Request, current_project: str):
 def test_index(request: Request):
     project = request.query_params.get("project", "")
     if project:
-        return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
+        task = "classify" if is_classify_project(project_dir(workspace_path(), project)) else "detect"
+        return RedirectResponse(url=f"/test/{project}/{task}", status_code=status.HTTP_303_SEE_OTHER)
     current_project = request.cookies.get("current_project", "")
     if not current_project:
         return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
-    return RedirectResponse(url=f"/test/{current_project}", status_code=status.HTTP_303_SEE_OTHER)
+    task = "classify" if is_classify_project(project_dir(workspace_path(), current_project)) else "detect"
+    return RedirectResponse(url=f"/test/{current_project}/{task}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/test/{project}")
@@ -1854,6 +1856,15 @@ def test_with_project(request: Request, project: str):
     )
     response.set_cookie("current_project", project, httponly=True, samesite="lax")
     return response
+
+
+@router.get("/test/{project}/{task}")
+def test_with_project_task(request: Request, project: str, task: str):
+    if task == "folder":
+        return test_folder_response(request, project)
+    if task not in {"detect", "classify"}:
+        return JSONResponse({"ok": False, "error": "任务类型不存在"}, status_code=404)
+    return test_with_project(request, project)
 
 
 def test_folder_response(request: Request, project: str, set_name: str = ""):

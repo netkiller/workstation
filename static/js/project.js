@@ -746,7 +746,7 @@ async function uploadFiles(zone, files) {
       return;
     }
   }
-  if (kind === "test" || kind?.startsWith("test/")) {
+  if (kind === "test" || kind === "classify" || kind?.startsWith("test/")) {
     const before = uploads.length;
     uploads = uploads.filter(isTestImageUpload);
     if (!uploads.length) {
@@ -858,6 +858,10 @@ async function uploadFiles(zone, files) {
       document.querySelector("[data-model-count]").textContent = `${data.count} 个`;
       setActionEnabled("[data-model-action]", data.count > 0);
       window.setTimeout(() => window.location.reload(), 500);
+    } else if (kind === "classify") {
+      const counter = document.querySelector("[data-classify-count]");
+      if (counter) counter.textContent = `${data.count} 个文件`;
+      updateProjectDashboard(data.dashboard);
     } else if (kind === "classes" || kind === "test-classes") {
       const label = zone.querySelector("[data-upload-label]");
       if (label) {

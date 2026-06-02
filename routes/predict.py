@@ -391,9 +391,10 @@ def predict(request: Request):
 
 
 @router.get("/model/{project}/predict")
+@router.get("/model/{project}/{task}/predict")
 @router.get("/model/predict/{project}")
 @router.get("/predict/{project}")
-def predict_with_project(request: Request, project: str):
+def predict_with_project(request: Request, project: str, task: str = "detect"):
     if request.url.path.startswith("/model/predict/"):
         return RedirectResponse(url=f"/model/{project}/predict", status_code=status.HTTP_303_SEE_OTHER)
     response = templates.TemplateResponse(

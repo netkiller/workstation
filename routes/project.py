@@ -29,7 +29,9 @@ except ImportError:
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
 PROJECT_DIR_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
-ANNOTATE_DIR = "annotate"
+DETECT_DIR = "detect"
+ANNOTATE_DIR = DETECT_DIR
+CLASSIFY_DIR = "classify"
 TEST_DIR = "test"
 TEST_IMAGES_DIR = Path(TEST_DIR) / "images"
 IMAGE_EXTS = {
@@ -59,6 +61,9 @@ PROJECT_UPLOAD_LOG = ".project.log"
 WORKSPACE_LOG = ".workstation/workspace.log"
 PROJECT_INDEX = ".workstation/index.json"
 DEFAULT_PROJECT_ICON = "▤"
+PROJECT_TASK_DETECT = "detect"
+PROJECT_TASK_CLASSIFY = "classify"
+PROJECT_TASK_TYPES = {PROJECT_TASK_DETECT, PROJECT_TASK_CLASSIFY}
 PROJECT_ICONS = (
     DEFAULT_PROJECT_ICON,
     "▦",
@@ -405,6 +410,7 @@ def header_context(request: Request, workspace: Path):
         "share_url": share_url(request) if is_team_mode else "",
         "header_project_name": current_project_meta["name"] if current_project_meta else "",
         "header_project_icon": current_project_meta["icon"] if current_project_meta else "",
+        "header_project_task_type": current_project_meta["task_type"] if current_project_meta else PROJECT_TASK_DETECT,
     }
 
 
@@ -460,6 +466,15 @@ def project_annotate_workspace(project: str):
     return annotate_dir.resolve()
 
 
+def project_classify_workspace(project: str):
+    root = project_root_workspace(project)
+    if root is None:
+        return None
+    classify_dir = root / CLASSIFY_DIR
+    classify_dir.mkdir(parents=True, exist_ok=True)
+    return classify_dir.resolve()
+
+
 def project_display_name(project: str):
     if not project:
         return "根目录"
@@ -493,9 +508,20 @@ def project_icon(value: str):
     return (value or "").strip() or DEFAULT_PROJECT_ICON
 
 
+def project_task_type(value: str):
+    value = (value or "").strip().lower()
+    return value if value in PROJECT_TASK_TYPES else PROJECT_TASK_DETECT
+
+
 def read_project_meta(path: Path, registry: dict | None = None):
     meta_file = path / ".project"
-    fallback = {"name": path.name, "directory": path.name, "description": "", "icon": DEFAULT_PROJECT_ICON}
+    fallback = {
+        "name": path.name,
+        "directory": path.name,
+        "description": "",
+        "icon": DEFAULT_PROJECT_ICON,
+        "task_type": PROJECT_TASK_DETECT,
+    }
     if registry and isinstance(registry.get(path.name), dict):
         data = registry[path.name]
         return {
@@ -503,6 +529,7 @@ def read_project_meta(path: Path, registry: dict | None = None):
             "directory": path.name,
             "description": str(data.get("description") or ""),
             "icon": project_icon(str(data.get("icon") or "")),
+            "task_type": project_task_type(str(data.get("task_type") or "")),
         }
     if not meta_file.is_file():
         return fallback
@@ -517,15 +544,18 @@ def read_project_meta(path: Path, registry: dict | None = None):
         "directory": path.name,
         "description": str(data.get("description") or ""),
         "icon": project_icon(str(data.get("icon") or "")),
+        "task_type": project_task_type(str(data.get("task_type") or "")),
     }
 
 
-def write_project_meta(workspace: Path, path: Path, name: str, description: str, icon: str = ""):
+def write_project_meta(workspace: Path, path: Path, name: str, description: str, icon: str = "", task_type: str | None = None):
+    existing = read_project_meta(path, read_project_registry(workspace)) if path.exists() else {}
     payload = {
         "name": name.strip() or path.name,
         "directory": path.name,
         "description": description.strip(),
         "icon": project_icon(icon),
+        "task_type": project_task_type(task_type if task_type is not None else str(existing.get("task_type") or "")),
     }
     registry = read_project_registry(workspace)
     registry[path.name] = payload
@@ -687,6 +717,10 @@ def resource_chart(image_count: int, dataset_count: int, model_count: int):
     }
 
 
+def task_type_label(value: str):
+    return "图像分类" if project_task_type(value) == PROJECT_TASK_CLASSIFY else "目标检测"
+
+
 def model_page_count(project_name: str):
     try:
         from routes.train import load_tasks, model_items
@@ -739,6 +773,7 @@ def project_dataset_tags(path: Path):
     if not datasets_dir.is_dir():
         return []
     project_name = path.name
+    task_path = "classify" if project_task_type(read_project_meta(path, read_project_registry(path.parent)).get("task_type")) == PROJECT_TASK_CLASSIFY else PROJECT_TASK_DETECT
     datasets = []
     for dataset_dir in sorted((item for item in datasets_dir.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
         try:
@@ -749,7 +784,7 @@ def project_dataset_tags(path: Path):
             {
                 "name": dataset_dir.name,
                 "color": DATASET_TAG_COLORS[len(datasets) % len(DATASET_TAG_COLORS)],
-                "url": f"/dataset/{quote(project_name, safe='')}/{quote(dataset_dir.name, safe='')}",
+                "url": f"/dataset/{quote(project_name, safe='')}/{task_path}/{quote(dataset_dir.name, safe='')}",
                 "updated_at": updated_at,
             }
         )
@@ -912,8 +947,130 @@ def project_dashboard(projects: list[dict]):
     }
 
 
+def classify_summary(path: Path):
+    classify_dir = path / CLASSIFY_DIR
+    root_files = 0
+    classified_files = 0
+    class_dirs = 0
+    extension_counts: dict[str, int] = {}
+    if classify_dir.is_dir():
+        for item in classify_dir.iterdir():
+            if item.is_file() and item.suffix.lower() in IMAGE_EXTS:
+                root_files += 1
+                ext = item.suffix.lower().lstrip(".") or "unknown"
+                extension_counts[ext] = extension_counts.get(ext, 0) + 1
+            elif item.is_dir():
+                class_dirs += 1
+                for image in item.rglob("*"):
+                    if image.is_file() and image.suffix.lower() in IMAGE_EXTS:
+                        classified_files += 1
+                        ext = image.suffix.lower().lstrip(".") or "unknown"
+                        extension_counts[ext] = extension_counts.get(ext, 0) + 1
+    total_images = root_files + classified_files
+    if root_files == 0 and class_dirs > 0:
+        progress_percent = 100
+    elif total_images == 0:
+        progress_percent = 0
+    else:
+        progress_percent = max(0, min(round(classified_files / total_images * 100), 100))
+    return {
+        "root_files": root_files,
+        "classified_files": classified_files,
+        "class_dirs": class_dirs,
+        "total_images": total_images,
+        "progress_percent": progress_percent,
+        "extensions": extension_counts,
+    }
+
+
+def project_classify_dashboard(path: Path):
+    summary = classify_summary(path)
+    colors = ["#2563eb", "#16a34a", "#f97316", "#7c3aed", "#0891b2", "#db2777", "#0f766e", "#ca8a04"]
+    dataset_count = count_dataset_dirs(path)
+    model_count = model_page_count(path.name)
+    test_sets_count = len(project_test_set_tags(path))
+    resource_items = [
+        {"label": "图像资源", "count": summary["total_images"], "detail": f"{summary['total_images']} 图像", "color": colors[0]},
+        {"label": "数据集", "count": dataset_count, "detail": f"{dataset_count} 数据集", "color": colors[1]},
+        {"label": "模型资源", "count": model_count, "detail": f"{model_count} 模型", "color": colors[2]},
+        {"label": "测试集", "count": test_sets_count, "detail": f"{test_sets_count} 测试集", "color": colors[3]},
+    ]
+    resource_total = sum(item["count"] for item in resource_items)
+    resource_start = 0.0
+    resource_segments = []
+    for item in resource_items:
+        percent = (item["count"] / resource_total * 100) if resource_total else 0
+        resource_end = resource_start + percent
+        item["percent"] = f"{percent:.1f}%"
+        if item["count"]:
+            resource_segments.append(f"{item['color']} {resource_start:.2f}% {resource_end:.2f}%")
+        resource_start = resource_end
+
+    classify_items = [
+        {"label": "未分类图像", "count": summary["root_files"], "detail": f"{summary['root_files']} 图像", "color": "#f97316"},
+        {"label": "已分类图像", "count": summary["classified_files"], "detail": f"{summary['classified_files']} 图像", "color": "#16a34a"},
+        {"label": "分类目录", "count": summary["class_dirs"], "detail": f"{summary['class_dirs']} 目录", "color": "#2563eb"},
+    ]
+    classify_total = sum(item["count"] for item in classify_items)
+    classify_start = 0.0
+    classify_segments = []
+    for item in classify_items:
+        percent = (item["count"] / classify_total * 100) if classify_total else 0
+        classify_end = classify_start + percent
+        item["percent"] = f"{percent:.1f}%"
+        if item["count"]:
+            classify_segments.append(f"{item['color']} {classify_start:.2f}% {classify_end:.2f}%")
+        classify_start = classify_end
+
+    image_type_total = sum(summary["extensions"].values())
+    image_type_items = []
+    image_type_start = 0.0
+    image_type_segments = []
+    for index, (ext, count) in enumerate(sorted(summary["extensions"].items(), key=lambda item: (-item[1], item[0]))):
+        percent = (count / image_type_total * 100) if image_type_total else 0
+        image_type_end = image_type_start + percent
+        color = colors[index % len(colors)]
+        image_type_items.append({"label": f".{ext}", "count": count, "percent": f"{percent:.1f}%", "color": color})
+        if count:
+            image_type_segments.append(f"{color} {image_type_start:.2f}% {image_type_end:.2f}%")
+        image_type_start = image_type_end
+
+    return {
+        "image_count": summary["total_images"],
+        "label_count": summary["classified_files"],
+        "remaining_count": summary["root_files"],
+        "progress_percent": summary["progress_percent"],
+        "dataset_count": dataset_count,
+        "model_count": model_count,
+        "classes_count": summary["class_dirs"],
+        "resource_items": resource_items,
+        "resource_chart_style": f"conic-gradient({', '.join(resource_segments)})" if resource_segments else "#e2e8f0",
+        "annotate_items": classify_items,
+        "annotate_chart_style": f"conic-gradient({', '.join(classify_segments)})" if classify_segments else "#e2e8f0",
+        "image_type_items": image_type_items,
+        "image_type_chart_style": f"conic-gradient({', '.join(image_type_segments)})" if image_type_segments else "#e2e8f0",
+        "image_type_total": image_type_total,
+        "total_annotations": summary["classified_files"],
+        "legend": [],
+        "chart_style": f"conic-gradient({', '.join(classify_segments)})" if classify_segments else "#e2e8f0",
+    }
+
+
 def project_dashboard_payload(path: Path):
     dashboard = project_dashboard([{"path": path}])
+    return {
+        "progress_percent": dashboard["progress_percent"],
+        "resource_items": dashboard["resource_items"],
+        "resource_chart_style": dashboard["resource_chart_style"],
+        "annotate_items": dashboard["annotate_items"],
+        "annotate_chart_style": dashboard["annotate_chart_style"],
+        "image_type_items": dashboard["image_type_items"],
+        "image_type_chart_style": dashboard["image_type_chart_style"],
+    }
+
+
+def project_classify_dashboard_payload(path: Path):
+    dashboard = project_classify_dashboard(path)
     return {
         "progress_percent": dashboard["progress_percent"],
         "resource_items": dashboard["resource_items"],
@@ -931,22 +1088,30 @@ def project_items(workspace: Path):
         return projects
 
     registry = read_project_registry(workspace)
-    for path in sorted(workspace.iterdir(), key=lambda item: item.name.lower()):
+    for path in sorted(workspace.iterdir(), key=lambda item: (-item.stat().st_mtime, item.name.lower())):
         if not path.is_dir() or path.name.startswith("."):
             continue
         children = {child.name for child in path.iterdir() if child.is_dir()}
         meta = read_project_meta(path, registry)
         index = project_index(path)
-        image_count = int(index.get("annotate", {}).get("images") or 0)
+        task_type = project_task_type(meta.get("task_type"))
+        is_classify = task_type == PROJECT_TASK_CLASSIFY
+        image_count = count_files(path / CLASSIFY_DIR, IMAGE_EXTS) if is_classify else int(index.get("annotate", {}).get("images") or 0)
         test_count = int(index.get("test", {}).get("images") or 0)
         dataset_count = int(index.get("datasets", {}).get("count") or 0)
         model_count = int(index.get("models", {}).get("count") or 0)
         model_resource_count = model_page_count(path.name)
+        detail_suffix = "classify" if is_classify else "detect"
+        resource_dir = CLASSIFY_DIR if is_classify else ANNOTATE_DIR
         projects.append(
             {
                 **meta,
                 "path": path,
-                "images": ANNOTATE_DIR in children,
+                "task_label": task_type_label(task_type),
+                "detail_url": f"/project/{path.name}/{detail_suffix}",
+                "resource_dir": resource_dir,
+                "resource_ready": resource_dir in children,
+                "images": resource_dir in children,
                 "dataset": "datasets" in children or "dataset" in children,
                 "models": "models" in children,
                 "image_count": image_count,
@@ -1112,7 +1277,7 @@ async def form_fields(request: Request):
 
 
 def ensure_project_structure(path: Path):
-    for subdir in (ANNOTATE_DIR, TEST_DIR, "datasets", "models", "runs"):
+    for subdir in (ANNOTATE_DIR, CLASSIFY_DIR, TEST_DIR, "datasets", "models", "runs"):
         (path / subdir).mkdir(parents=True, exist_ok=True)
 
 
@@ -1479,6 +1644,7 @@ async def create_project(request: Request):
     )
     description = form.get("description", [""])[0]
     icon = form.get("icon", [""])[0]
+    task_type = project_task_type(form.get("task_type", [""])[0])
     if error:
         return project_redirect(error)
 
@@ -1491,8 +1657,9 @@ async def create_project(request: Request):
         return project_redirect(error)
 
     ensure_project_structure(path)
-    write_project_meta(workspace, path, name, description, icon)
-    return RedirectResponse(url=f"/project/{directory}", status_code=status.HTTP_303_SEE_OTHER)
+    write_project_meta(workspace, path, name, description, icon, task_type)
+    suffix = "classify" if task_type == PROJECT_TASK_CLASSIFY else "detect"
+    return RedirectResponse(url=f"/project/{directory}/{suffix}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/project/{directory}/edit")
@@ -1546,7 +1713,17 @@ def refresh_project_detail(directory: str, request: Request):
 
 
 @router.get("/project/{directory}")
-def project_detail(directory: str, request: Request):
+def project_entry(directory: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return project_redirect("项目不存在")
+    meta = read_project_meta(path, read_project_registry(workspace))
+    suffix = "classify" if project_task_type(meta.get("task_type")) == PROJECT_TASK_CLASSIFY else "detect"
+    return RedirectResponse(url=f"/project/{directory}/{suffix}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def project_detail_response(directory: str, request: Request, template_name: str, task_label: str):
     workspace = workspace_path()
     login_response = require_team_login(request, workspace)
     if login_response:
@@ -1563,12 +1740,14 @@ def project_detail(directory: str, request: Request):
     try:
         meta = read_project_meta(path, read_project_registry(workspace))
         index = build_project_index(path)
+        is_classify_project = project_task_type(meta.get("task_type")) == PROJECT_TASK_CLASSIFY or template_name == "project/classify.html"
         image_count = int(index.get("annotate", {}).get("images") or 0)
+        classify_count = count_files(path / CLASSIFY_DIR, IMAGE_EXTS)
         test_count = int(index.get("test", {}).get("images") or 0)
         model_count = int(index.get("models", {}).get("count") or 0)
-        dashboard = project_dashboard([{"path": path}])
+        dashboard = project_classify_dashboard(path) if is_classify_project else project_dashboard([{"path": path}])
         has_classes = (path / ANNOTATE_DIR / "classes.txt").is_file()
-        project_ready = image_count > 0
+        project_ready = classify_count > 0 if is_classify_project else image_count > 0
         projects_by_user = read_user_projects(workspace)
         project_users = [
             user
@@ -1577,14 +1756,16 @@ def project_detail(directory: str, request: Request):
         ] if is_team_mode else []
         response = templates.TemplateResponse(
             request=request,
-            name="project/detail.html",
+            name=template_name,
             context={
                 "request": request,
                 "workspace": workspace,
                 "project": {
                     **meta,
+                    "task_label": task_label,
                     "path": path,
                     "image_count": image_count,
+                    "classify_count": classify_count,
                     "test_count": test_count,
                     "model_count": model_count,
                     "has_images": image_count > 0,
@@ -1617,6 +1798,21 @@ def project_detail(directory: str, request: Request):
             f"Project detail error. See {WORKSPACE_LOG}",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/project/{directory}/detect")
+def project_detail_detect(directory: str, request: Request):
+    return project_detail_response(directory, request, "project/detail.html", "目标检测项目")
+
+
+@router.get("/project/{directory}/annotate")
+def project_detail_annotate_legacy(directory: str):
+    return RedirectResponse(url=f"/project/{quote(directory, safe='')}/detect", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/project/{directory}/classify")
+def project_detail_classify(directory: str, request: Request):
+    return project_detail_response(directory, request, "project/classify.html", "图像分类项目")
 
 
 @router.get("/project/{directory}/logs")
@@ -1700,6 +1896,39 @@ async def delete_uploaded_images(directory: str):
         "deleted": len(removed),
         "count": int(index.get("annotate", {}).get("images") or 0),
         "dashboard": project_dashboard_payload(path),
+    }
+
+
+@router.post("/project/{directory}/upload/classify")
+async def upload_classify(directory: str, request: Request):
+    workspace = workspace_path()
+    path = project_dir(workspace, directory)
+    if path is None or not path.is_dir():
+        return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+    files = await uploaded_files(request)
+    image_files = []
+    for filename, content in files:
+        relative = upload_relative_path(filename)
+        if relative is not None and relative.suffix.lower() in IMAGE_EXTS:
+            image_files.append((filename, content))
+    saved = [
+        save_upload(filename, content, path / CLASSIFY_DIR)
+        for filename, content in image_files
+    ]
+    saved = [item for item in saved if item is not None]
+    skipped = max(len(files) - len(image_files), 0)
+    append_upload_log(
+        path,
+        f"上传分类图片：接收 {len(files)} 个，保存 {len(saved)} 个，跳过非图片 {skipped} 个",
+        [relative_log_entry(path, item) for item in saved],
+    )
+    build_project_index(path)
+    return {
+        "ok": True,
+        "saved": len(saved),
+        "skipped": skipped,
+        "count": count_files(path / CLASSIFY_DIR, IMAGE_EXTS),
+        "dashboard": project_classify_dashboard_payload(path),
     }
 
 

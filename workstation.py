@@ -3,6 +3,7 @@ import json
 import shutil
 import socket
 import time
+import uuid
 from io import BytesIO
 from datetime import datetime
 from email.parser import BytesParser
@@ -175,6 +176,86 @@ class Workstation:
         self.classes_file = self.class_groups[0]["path"] if self.class_groups else None
         self.classes = self.class_groups[0]["classes"] if self.class_groups else []
         return target
+
+    def _classify_directories(self):
+        if self.workspace is None or not self.workspace.is_dir():
+            return []
+        return sorted(
+            (item for item in self.workspace.iterdir() if item.is_dir() and not item.name.startswith(".")),
+            key=lambda item: item.name.lower(),
+        )
+
+    def _classify_classes(self):
+        return [item.name for item in self._classify_directories()]
+
+    def _classify_classes_text(self):
+        classes = self._classify_classes()
+        return "\n".join(classes) + ("\n" if classes else "")
+
+    def _validate_classify_directory_name(self, name: str):
+        name = (name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="分类名称不能为空")
+        if name in (".", "..") or "/" in name or "\\" in name:
+            raise HTTPException(status_code=400, detail=f"分类名称包含非法路径字符: {name}")
+        return name
+
+    def _save_classify_classes_text(self, content: str):
+        names = [self._validate_classify_directory_name(line) for line in (content or "").splitlines() if line.strip()]
+        if len(names) != len(set(names)):
+            raise HTTPException(status_code=400, detail="分类名称不能重复")
+        old_dirs = self._classify_directories()
+        pending = []
+        for index, name in enumerate(names):
+            if index >= len(old_dirs):
+                continue
+            source = old_dirs[index]
+            if source.name == name:
+                continue
+            temp = self.workspace / f".rename-{uuid.uuid4().hex}"
+            pending.append((source, temp, self.workspace / name))
+        pending_sources = {source for source, _temp, _target in pending}
+        for _source, _temp, target in pending:
+            if target.exists() and target not in pending_sources:
+                raise HTTPException(status_code=400, detail=f"分类目录已存在: {target.name}")
+        try:
+            for source, temp, _target in pending:
+                source.rename(temp)
+            for _source, temp, target in pending:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temp.rename(target)
+            for index, name in enumerate(names):
+                if index < len(old_dirs):
+                    continue
+                (self.workspace / name).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            for source, temp, _target in pending:
+                if temp.exists():
+                    try:
+                        temp.rename(source)
+                    except OSError:
+                        pass
+            raise
+        return self._classify_classes()
+
+    def _move_classify_image(self, image_path: str, directory: str):
+        source = self._safe_path(image_path)
+        if not self._is_image(source):
+            raise HTTPException(status_code=404, detail="image not found")
+        target_dir = self._safe_path(directory)
+        if not target_dir.is_dir():
+            raise HTTPException(status_code=404, detail="directory not found")
+        if source.parent == target_dir:
+            return {"ok": True, "moved": {"from": self._relative(source), "to": self._relative(source)}}
+        target = self._unique_target(target_dir, source.name)
+        shutil.move(str(source), str(target))
+        return {
+            "ok": True,
+            "moved": {
+                "from": self._relative(source),
+                "to": self._relative(target),
+            },
+        }
 
     def _unique_target(self, target_dir: Path, filename: str):
         target = target_dir / filename

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}{{ project.task_label }} {{ project.name }}{% endblock %}
+{% block title %}图像分类项目 {{ project.name }}{% endblock %}
 
 {% block styles %}
-  <link rel="stylesheet" href="/static/css/project.css?v=20260524-annotate-model-upload-2">
+  <link rel="stylesheet" href="/static/css/project.css?v=20260602-classify-project">
 {% endblock %}
 
 {% block content %}
@@ -11,7 +11,7 @@
     <div class="project-detail-shell{% if not is_team_mode %} no-team{% endif %}">
       <section class="detail-head" aria-labelledby="project-title">
         <div>
-        <h1 id="project-title">{{ project.task_label }} {{ project.name }}</h1>
+          <h1 id="project-title">{{ project.task_label }} {{ project.name }}</h1>
           {% if project.description %}
             <p class="project-description">{{ project.description }}</p>
           {% else %}
@@ -61,12 +61,12 @@
               <h2 id="dashboard-title">项目概览</h2>
             </div>
             <div class="dashboard-progress-title" data-dashboard-progress-title>
-              <span>标注进度</span>
+              <span>分类进度</span>
               <strong data-dashboard-progress-value>{{ dashboard.progress_percent }}%</strong>
             </div>
           </div>
           <div class="dashboard-body">
-            <div class="annotation-progress dashboard-progress-block" aria-label="标注进度">
+            <div class="annotation-progress dashboard-progress-block" aria-label="分类进度">
               <div class="progress-track" aria-hidden="true">
                 <span data-dashboard-progress-bar style="width: {{ dashboard.progress_percent }}%"></span>
               </div>
@@ -84,8 +84,8 @@
                   {% endfor %}
                 </div>
               </div>
-              <div class="class-dashboard" aria-label="标注目录资源比例" data-dashboard-chart="annotate">
-                <h3>标注目录</h3>
+              <div class="class-dashboard" aria-label="图像资源比例" data-dashboard-chart="annotate">
+                <h3>图像资源</h3>
                 <span class="dashboard-pie" style="background: {{ dashboard.annotate_chart_style }}"></span>
                 <div class="dashboard-legend">
                   {% for item in dashboard.annotate_items %}
@@ -119,16 +119,16 @@
           </div>
         </section>
 
-        <section class="upload-layout" data-project="{{ project.directory }}">
+        <section class="upload-layout classify-upload-layout" data-project="{{ project.directory }}">
           <article class="upload-panel">
             <div class="panel-head">
-              <h2>上传标注资源</h2>
-              <span class="count" data-image-count>{{ project.image_count }} 个文件</span>
+              <h2>上传图像资源</h2>
+              <span class="count" data-classify-count>{{ project.classify_count }} 个文件</span>
             </div>
-            <div class="annotate-resource-grid">
-              <div class="drop-zone" data-upload-zone data-upload-kind="images" role="button" tabindex="0">
-                <input type="file" name="files" accept="image/*,.txt" multiple hidden data-file-input>
-                <input type="file" name="files" accept="image/*,.txt" multiple webkitdirectory directory hidden data-directory-input>
+            <div class="annotate-resource-grid classify-resource-grid">
+              <div class="drop-zone" data-upload-zone data-upload-kind="classify" role="button" tabindex="0">
+                <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
+                <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-directory-input>
                 <span class="upload-icon" aria-hidden="true">
                   <span class="upload-symbol">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -136,45 +136,19 @@
                     </svg>
                   </span>
                 </span>
-                <span data-upload-prompt>点击上传图片，或拖拽到这里</span>
+                <span data-upload-prompt>点击上传分类图片，或拖拽到这里</span>
                 <span class="upload-options">
-                  <a class="upload-option-icon-button upload-browse-button" href="/media/image?project={{ project.directory|urlencode }}&return_to={{ ('/project/' ~ project.directory)|urlencode }}" data-browse-media title="浏览已上传图片" aria-label="浏览已上传图片">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                  </a>
-                  <button type="button" class="upload-delete-button" data-clear-upload="images" title="删除已上传图片" aria-label="删除已上传图片">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>
-                  </button>
                   <button type="button" class="upload-option-icon-button" data-directory-button title="选择目录" aria-label="选择目录">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h7l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 10h18"></path></svg>
                   </button>
                 </span>
               </div>
-              <div class="classes-inline-panel">
-                <div class="classes-inline-upload">
-                  <div class="classes-upload-card" data-upload-zone data-upload-kind="classes" role="button" tabindex="0">
-                    <input type="file" name="files" accept=".txt,text/plain" hidden>
-                    <span class="upload-icon" aria-hidden="true">
-                      <span class="upload-symbol">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 4l8 8h-5v7H9v-7H4z"></path>
-                        </svg>
-                      </span>
-                    </span>
-                    <span data-upload-label>{% if project.has_classes %}已上传{% else %}上传 classes.txt{% endif %}</span>
-                    <button class="upload-option-icon-button classes-edit-icon-button" type="button" id="editClassesButton" title="{% if project.has_classes %}编辑 classes.txt{% else %}创建 classes.txt{% endif %}" aria-label="{% if project.has_classes %}编辑 classes.txt{% else %}创建 classes.txt{% endif %}">
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16z"></path><path d="M13.5 6.5l4 4"></path></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
             <a
-              class="action-link{% if not project.has_images %} disabled{% endif %}"
-              href="/detect/{{ project.directory }}"
-              title="{% if project.has_images %}进入标注{% else %}请先上传图片{% endif %}"
-              data-image-action
-              data-images-ready="{{ '1' if project.has_images else '0' }}"
-            >去标注</a>
+              class="action-link{% if not project.classify_count %} disabled{% endif %}"
+              href="/classify/{{ project.directory }}"
+              title="{% if project.classify_count %}进入分类{% else %}请先上传分类图片{% endif %}"
+            >去分类</a>
           </article>
 
           <article class="upload-panel model-upload-panel">
@@ -253,47 +227,30 @@
           </div>
         </section>
 
-        <section class="sftp-panel" data-sftp-path="{{ project.path }}/detect" data-remote-user="{{ remote_user }}">
+        <section class="sftp-panel" data-sftp-path="{{ project.path }}/classify" data-remote-user="{{ remote_user }}">
           <div class="panel-head">
             <h2>使用 SFTP 上传</h2>
             <button class="copy-icon-button" type="button" data-copy-sftp title="复制 SFTP URL" aria-label="复制 SFTP URL">⎘</button>
           </div>
           <div class="sftp-url-card">
-            <span data-sftp-url>sftp://{{ remote_user }}@{{ project.path }}/detect</span>
+            <span data-sftp-url>sftp://{{ remote_user }}@{{ project.path }}/classify</span>
           </div>
           <div class="sftp-command-grid">
             <div class="panel-head">
               <h2>使用 Rsync 上传</h2>
               <button class="copy-icon-button" type="button" data-copy-rsync title="复制 rsync 命令" aria-label="复制 rsync 命令">⎘</button>
             </div>
-            <code data-rsync-source="./detect/" data-rsync-path="{{ project.path }}/detect/" data-rsync-command></code>
+            <code data-rsync-source="./classify/" data-rsync-path="{{ project.path }}/classify/" data-rsync-command></code>
           </div>
         </section>
       </div>
     </div>
   </main>
 
-  <dialog id="classesDialog" class="project-dialog classes-dialog">
-    <form id="classesForm">
-      <div class="dialog-head">
-        <h2>编辑 classes.txt</h2>
-        <button type="button" class="icon-button" data-close-classes aria-label="关闭">×</button>
-      </div>
-      <label>
-        <span>每行一个类别</span>
-        <textarea name="content" rows="12">{{ project.classes_text }}</textarea>
-      </label>
-      <div class="dialog-actions">
-        <button type="button" class="secondary-button" data-close-classes>取消</button>
-        <button type="submit">保存</button>
-      </div>
-    </form>
-  </dialog>
-
   {% set footer_id = "stats" %}
   {% set footer_left = project.path %}
   {% set footer_console_url = "/project/" ~ project.directory ~ "/logs" %}
   {% include "partials/footer.html" %}
 
-  <script src="/static/js/project.js?v=20260526-model-drag-root"></script>
+  <script src="/static/js/project.js?v=20260602-classify-project"></script>
 {% endblock %}

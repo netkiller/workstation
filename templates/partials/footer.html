@@ -30,6 +30,27 @@
     <a class="footer-button" href="/help" data-public-help title="帮助（⌘H）"><span class="footer-button-icon">?</span>帮助</a>
   </div>
 </footer>
+{% if include_annotate_shortcuts %}
+{# ANNOTATE_SHORTCUTS_START #}
+<div id="shortcutPopover" class="shortcut-popover" hidden>
+  <div class="shortcut-title"><span>快捷键</span><button id="closeShortcuts" type="button" title="关闭">×</button></div>
+  <div class="shortcut-list">
+    <span class="shortcut-key">↑ / ↓</span><span class="shortcut-desc">在目录树中切换目录</span>
+    <span class="shortcut-key">← / →</span><span class="shortcut-desc">切换上一张 / 下一张图片</span>
+    <span class="shortcut-key">⌘A</span><span class="shortcut-desc">切换标注状态</span>
+    <span class="shortcut-key">⌘M</span><span class="shortcut-desc">切换 box 半透明遮罩</span>
+    <span class="shortcut-key">⌘R</span><span class="shortcut-desc">切换自动标注</span>
+    <span class="shortcut-key">⌘S</span><span class="shortcut-desc">保存当前标注</span>
+    <span class="shortcut-key">⌘D</span><span class="shortcut-desc">下载当前图片</span>
+    <span class="shortcut-key">DEL</span><span class="shortcut-desc">删除选中的 box</span>
+    <span class="shortcut-key">⌘～ / ⌘` / ⌘0-9</span><span class="shortcut-desc">选择对应索引的标签</span>
+    <span class="shortcut-key">ESC</span><span class="shortcut-desc">还原图片缩放 / 关闭快捷键窗口</span>
+    <span class="shortcut-key">滚轮</span><span class="shortcut-desc">快速放大或缩小图片</span>
+    <span class="shortcut-key">双击图像标题</span><span class="shortcut-desc">隐藏或显示左右栏</span>
+  </div>
+</div>
+{# ANNOTATE_SHORTCUTS_END #}
+{% endif %}
 <div class="public-shortcut-popover" data-public-shortcut-popover hidden>
   <div class="public-shortcut-title">
     <span>快捷键</span>
@@ -38,11 +59,12 @@
   <div class="public-shortcut-list">
     <span>↑ / ↓</span><span>在目录树中切换目录</span>
     <span>← / →</span><span>切换上一张 / 下一张图片</span>
+    <span>⌘A</span><span>切换标注状态</span>
     <span>⌘M</span><span>切换 box 半透明遮罩</span>
+    <span>⌘R</span><span>切换自动标注</span>
     <span>⌘S</span><span>保存当前标注</span>
-    <span>⌘D</span><span>删除当前标注</span>
+    <span>⌘D</span><span>下载当前图片</span>
     <span>DEL</span><span>删除选中的 box</span>
-    <span>⌘R</span><span>重置当前操作</span>
     <span>⌘～ / ⌘` / ⌘0-9</span><span>选择对应索引的标签</span>
     <span>ESC</span><span>还原图片缩放 / 关闭快捷键窗口</span>
     <span>滚轮</span><span>快速放大或缩小图片</span>
