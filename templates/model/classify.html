@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{% if project_name %}项目 {{ project_name }} 分类模型{% else %}分类模型{% endif %}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/static/css/val.css?v=20260515-page-width-uniform">
+  <link rel="stylesheet" href="/static/css/train.css?v=20260603-classify-model">
+{% endblock %}
+
+{% block content %}
+  <main class="validate-main model-overview-main">
+    <section class="validate-head" aria-labelledby="model-title">
+      <div>
+        <h1 id="model-title">{% if project_name %}项目 {{ project_name }} 分类模型{% else %}分类模型{% endif %}</h1>
+        <p>集中管理图像分类训练结果，查看分类指标，并进入训练、评估和预测流程。</p>
+      </div>
+      <div class="model-head-actions">
+        {% include "partials/model_nav.html" %}
+      </div>
+    </section>
+
+    {% if models %}
+      <section class="model-list model-overview-list" aria-label="分类训练结果列表">
+        {% for model in models %}
+          <article class="model-card{% if model.has_best or model.has_last %} has-downloads{% endif %}">
+            <a class="model-card-link" href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}" aria-label="查看分类模型 {{ model.task.name }}">
+              <div class="model-card-main">
+                <h2>{{ model.task.name }}</h2>
+                <p>{{ model.display_time }}</p>
+                {% if model.metrics %}
+                  <div class="model-metrics" aria-label="分类训练指标">
+                    {% for metric in model.metrics %}
+                      <span><b>{{ metric.label }}</b>{{ metric.value }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+              {% if model.results_image %}
+                <div class="model-card-preview">
+                  <img src="{{ model.results_image }}" alt="{{ model.task.name }} results.png">
+                </div>
+              {% else %}
+                <div class="model-card-preview model-card-empty">暂无 results.png</div>
+              {% endif %}
+            </a>
+            {% if not community_edition %}
+              <div class="model-card-actions">
+                {% if model.has_best %}
+                  <a href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}/weights/best.pt">下载 best.pt</a>
+                {% endif %}
+                {% if model.has_last %}
+                  <a href="/model/{{ model.task.project }}/metrics/{{ model.task.id }}/weights/last.pt">下载 last.pt</a>
+                {% endif %}
+              </div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </section>
+    {% else %}
+      <section class="empty">暂无分类训练结果，请先完成分类训练。</section>
+    {% endif %}
+  </main>
+
+  {% set footer_id = "stats" %}
+  {% set footer_left = workspace %}
+  {% include "partials/footer.html" %}
+{% endblock %}

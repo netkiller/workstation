@@ -1816,12 +1816,14 @@ def report_for_project(project: str, task_id: str):
 def test_context(request: Request, current_project: str):
     workspace = workspace_path()
     path = project_path(workspace, current_project)
+    task = "classify" if is_classify_project(path) else "detect"
     tasks = project_tasks(current_project) if current_project else []
     return {
         "request": request,
         "workspace": workspace,
         "active_page": "test",
         "current_project": current_project,
+        "test_task": task,
         "project_name": read_project_name(path) if path else "",
         "models": run_model_items(path) if path else [],
         "compute_options": compute_options(workspace),
@@ -1861,21 +1863,24 @@ def test_with_project(request: Request, project: str):
 @router.get("/test/{project}/{task}")
 def test_with_project_task(request: Request, project: str, task: str):
     if task == "folder":
-        return test_folder_response(request, project)
+        next_task = "classify" if is_classify_project(project_dir(workspace_path(), project)) else "detect"
+        return RedirectResponse(url=f"/test/{quote(project, safe='')}/{next_task}/folder", status_code=status.HTTP_303_SEE_OTHER)
     if task not in {"detect", "classify"}:
         return JSONResponse({"ok": False, "error": "任务类型不存在"}, status_code=404)
     return test_with_project(request, project)
 
 
-def test_folder_response(request: Request, project: str, set_name: str = ""):
+def test_folder_response(request: Request, project: str, task: str, set_name: str = ""):
     workspace = workspace_path()
     path = project_path(workspace, project)
     if path is None:
         return RedirectResponse(url="/project", status_code=status.HTTP_303_SEE_OTHER)
+    if task not in {"detect", "classify"}:
+        return JSONResponse({"ok": False, "error": "任务类型不存在"}, status_code=404)
     safe_name = safe_test_set_name(unquote(set_name)) if set_name else ""
     selected_set = test_set_detail(path, safe_name) if safe_name else None
     if safe_name and selected_set is None:
-        return RedirectResponse(url=f"/test/{project}", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url=f"/test/{quote(project, safe='')}/{task}", status_code=status.HTTP_303_SEE_OTHER)
     selected_images = test_images(path, [safe_name]) if safe_name else test_images(path)
     response = templates.TemplateResponse(
         request=request,
@@ -1885,6 +1890,8 @@ def test_folder_response(request: Request, project: str, set_name: str = ""):
             "workspace": workspace,
             "active_page": "test",
             "current_project": project,
+            "test_task": task,
+            "show_classes_upload": task != "classify",
             "project_name": read_project_name(path),
             "folder_mode": "edit" if safe_name else "new",
             "test_set": selected_set or {"name": "", "description": "", "count": 0},
@@ -1898,19 +1905,35 @@ def test_folder_response(request: Request, project: str, set_name: str = ""):
     return response
 
 
+@router.get("/test/{project}/{task}/folder")
+def new_test_folder_page_with_task(request: Request, project: str, task: str):
+    return test_folder_response(request, project, task)
+
+
+@router.get("/test/{project}/{task}/folder/{set_name}")
+def edit_test_folder_page_with_task(request: Request, project: str, task: str, set_name: str):
+    return test_folder_response(request, project, task, set_name)
+
+
 @router.get("/test/{project}/folder")
 def new_test_folder_page(request: Request, project: str):
-    return test_folder_response(request, project)
+    task = "classify" if is_classify_project(project_dir(workspace_path(), project)) else "detect"
+    return RedirectResponse(url=f"/test/{quote(project, safe='')}/{task}/folder", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/test/{project}/folder/new")
 def legacy_new_test_folder_page(project: str):
-    return RedirectResponse(url=f"/test/{project}/folder", status_code=status.HTTP_303_SEE_OTHER)
+    task = "classify" if is_classify_project(project_dir(workspace_path(), project)) else "detect"
+    return RedirectResponse(url=f"/test/{quote(project, safe='')}/{task}/folder", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/test/{project}/folder/{set_name}")
 def edit_test_folder_page(request: Request, project: str, set_name: str):
-    return test_folder_response(request, project, set_name)
+    task = "classify" if is_classify_project(project_dir(workspace_path(), project)) else "detect"
+    return RedirectResponse(
+        url=f"/test/{quote(project, safe='')}/{task}/folder/{quote(set_name, safe='')}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/project/{directory}/upload/test")

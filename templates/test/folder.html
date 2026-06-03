@@ -14,7 +14,7 @@
         <p>{% if folder_mode == "edit" %}追加测试图片并维护测试集描述。{% else %}创建一组测试图片资源，用于后续模型测试评估任务。{% endif %}</p>
       </div>
       <div class="model-head-actions">
-        <a class="secondary-button" href="/test/{{ current_project }}">返回测试</a>
+        <a class="secondary-button" href="/test/{{ current_project }}/{{ test_task }}">返回测试</a>
       </div>
     </section>
 
@@ -46,7 +46,7 @@
       </form>
       <div class="test-upload-body">
         <div class="test-upload-stack">
-          <div class="test-drop-zone" data-upload-zone data-upload-kind="test" {% if folder_mode == "edit" %}data-upload-url-template="/project/{{ current_project }}/upload/test/__SET_NAME__?flat=1&original={{ test_set.name|urlencode }}" data-flat-image-upload="true" data-redirect-after-upload="/test/{{ current_project }}"{% else %}data-upload-url-template="/project/{{ current_project }}/upload/test/__SET_NAME__"{% endif %} data-test-set-name-input="[data-test-set-name]" data-test-set-description-input="[data-test-set-description]" role="button" tabindex="0">
+          <div class="test-drop-zone" data-upload-zone data-upload-kind="test" {% if folder_mode == "edit" %}data-upload-url-template="/project/{{ current_project }}/upload/test/__SET_NAME__?flat=1&original={{ test_set.name|urlencode }}" data-flat-image-upload="true" data-redirect-after-upload="/test/{{ current_project }}/{{ test_task }}"{% else %}data-upload-url-template="/project/{{ current_project }}/upload/test/__SET_NAME__"{% endif %} data-test-set-name-input="[data-test-set-name]" data-test-set-description-input="[data-test-set-description]" role="button" tabindex="0">
             <input type="file" name="files" accept="image/*" multiple hidden data-file-input>
             {% if folder_mode != "edit" %}
               <input type="file" name="files" accept="image/*" multiple webkitdirectory directory hidden data-batch-directory-input>
@@ -68,18 +68,20 @@
             </span>
             {% endif %}
           </div>
-          <div class="test-classes-upload" data-upload-zone data-upload-kind="test-classes" role="button" tabindex="0">
-            <input type="file" name="files" accept=".txt,text/plain" hidden data-file-input>
-            <span>
-              <strong>classes.txt</strong>
-              <small>上传 classes.txt 用于测试报告标签展示。</small>
-            </span>
-            <b data-test-classes-status>{% if has_test_classes %}已上传{% else %}未上传{% endif %}</b>
-            <span class="test-classes-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path></svg>
-            </span>
-            <span data-upload-label hidden>上传 classes.txt</span>
-          </div>
+          {% if show_classes_upload %}
+            <div class="test-classes-upload" data-upload-zone data-upload-kind="test-classes" role="button" tabindex="0">
+              <input type="file" name="files" accept=".txt,text/plain" hidden data-file-input>
+              <span>
+                <strong>classes.txt</strong>
+                <small>上传 classes.txt 用于测试报告标签展示。</small>
+              </span>
+              <b data-test-classes-status>{% if has_test_classes %}已上传{% else %}未上传{% endif %}</b>
+              <span class="test-classes-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path></svg>
+              </span>
+              <span data-upload-label hidden>上传 classes.txt</span>
+            </div>
+          {% endif %}
         </div>
       </div>
     </section>
@@ -92,7 +94,7 @@
       </div>
       <div class="test-batch-progress-list" data-test-batch-progress-list></div>
       <div class="test-batch-progress-actions" data-test-batch-progress-actions hidden>
-        <a class="secondary-button" href="/test/{{ current_project }}">新建任务</a>
+        <a class="secondary-button" href="/test/{{ current_project }}/{{ test_task }}">新建任务</a>
       </div>
     </section>
   </main>

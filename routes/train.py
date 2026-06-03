@@ -424,6 +424,7 @@ def synthetic_run_task(project: str, run_dir: Path):
         "id": encode_run_id(project, run_dir.name),
         "name": run_dir.name,
         "project": project,
+        "task_type": project_train_task_type(project),
         "dataset": "runs",
         "model": "",
         "epochs": "",
@@ -456,7 +457,7 @@ def model_items(tasks, current_project: str = ""):
                 "has_best": has_best,
                 "has_last": has_last,
                 "results_image": f"/model/{task.get('project', '')}/metrics/{task['id']}/files/results.png" if (run_dir / "results.png").is_file() else "",
-                "metrics": run_metrics_summary(run_dir),
+                "metrics": run_metrics_summary(run_dir, train_task_type(task)),
                 "summary": f"{task.get('project', '')} / {task.get('dataset', '')}",
                 "updated_at": datetime.fromtimestamp(run_dir.stat().st_mtime).isoformat(timespec="seconds")
                 if run_dir.is_dir()
@@ -491,7 +492,7 @@ def model_items(tasks, current_project: str = ""):
                     "has_best": has_best,
                     "has_last": has_last,
                     "results_image": f"/model/{task.get('project', '')}/metrics/{task['id']}/files/results.png" if (run_dir / "results.png").is_file() else "",
-                    "metrics": run_metrics_summary(run_dir),
+                    "metrics": run_metrics_summary(run_dir, train_task_type(task)),
                     "summary": "",
                     "updated_at": datetime.fromtimestamp(run_dir.stat().st_mtime).isoformat(timespec="seconds"),
                     "display_time": datetime.fromtimestamp(run_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
@@ -867,7 +868,49 @@ def train_metrics_from_line(train_line: str):
     }
 
 
-def epoch_metric_items(row: dict | None, log_snapshot: dict | None):
+def classify_train_metrics_from_line(train_line: str):
+    parts = (train_line or "").split()
+    if len(parts) < 3 or not re.match(r"^\d+/\d+$", parts[0]):
+        return {}
+    return {
+        "gpu_mem": parts[1],
+        "loss": parts[2],
+    }
+
+
+def classify_validation_metrics_from_summary(summary_line: str):
+    parts = (summary_line or "").split()
+    if not parts or parts[0] != "all" or len(parts) < 3:
+        return {}
+    return {
+        "top1_acc": parts[1],
+        "top5_acc": parts[2],
+    }
+
+
+def classify_epoch_metric_items(row: dict | None, log_snapshot: dict | None):
+    train_metrics = classify_train_metrics_from_line((log_snapshot or {}).get("train_line", ""))
+    validation_metrics = classify_validation_metrics_from_summary((log_snapshot or {}).get("summary_line", ""))
+    has_row = bool(row)
+    if not has_row and not train_metrics and not validation_metrics:
+        return []
+    return [
+        {"label": "GPU_mem", "value": train_metrics.get("gpu_mem") or (log_snapshot or {}).get("gpu_mem") or "-"},
+        {"label": "loss", "value": format_epoch_metric(train_metrics.get("loss") or (row or {}).get("train/loss", ""))},
+        {
+            "label": "top1_acc",
+            "value": format_epoch_metric(validation_metrics.get("top1_acc") or (row or {}).get("metrics/accuracy_top1", "")),
+        },
+        {
+            "label": "top5_acc",
+            "value": format_epoch_metric(validation_metrics.get("top5_acc") or (row or {}).get("metrics/accuracy_top5", "")),
+        },
+    ]
+
+
+def epoch_metric_items(row: dict | None, log_snapshot: dict | None, task_type: str = PROJECT_TASK_DETECT):
+    if task_type == PROJECT_TASK_CLASSIFY:
+        return classify_epoch_metric_items(row, log_snapshot)
     log_metrics = validation_metrics_from_summary((log_snapshot or {}).get("summary_line", ""))
     train_metrics = train_metrics_from_line((log_snapshot or {}).get("train_line", ""))
     has_row = bool(row)
@@ -973,6 +1016,7 @@ def task_has_early_stopping(task_id: str):
 def task_epoch_snapshot(task: dict):
     run_dir = task_run_dir(task)
     total = task_epoch_total(task)
+    task_type = train_task_type(task)
     if str(task.get("status") or "") == "排队中":
         return {
             "epoch": 0,
@@ -998,7 +1042,7 @@ def task_epoch_snapshot(task: dict):
                 "total": snapshot_total,
                 "progress": epoch_progress(task, epoch),
                 "progress_label": f"{epoch}/{snapshot_total}" if snapshot_total else str(epoch),
-                "metrics": epoch_metric_items(row, log_snapshot),
+                "metrics": epoch_metric_items(row, log_snapshot, task_type),
                 "train_line": train_line,
                 "validation_line": "",
                 "summary_line": "",
@@ -1010,7 +1054,7 @@ def task_epoch_snapshot(task: dict):
             "total": total,
             "progress": epoch_progress(task, epoch),
             "progress_label": f"{epoch}/{total}" if total else str(epoch),
-            "metrics": epoch_metric_items(row, log_snapshot),
+            "metrics": epoch_metric_items(row, log_snapshot, task_type),
             "train_line": "",
             "validation_line": "",
             "summary_line": "",
@@ -1024,16 +1068,28 @@ def task_epoch_snapshot(task: dict):
         "total": int(log_snapshot.get("total") or total or 0),
         "progress": epoch_progress(task, epoch),
         "progress_label": f"{epoch}/{int(log_snapshot.get('total') or total or 0)}" if int(log_snapshot.get("total") or total or 0) else str(epoch),
-        "metrics": epoch_metric_items(None, log_snapshot),
+        "metrics": epoch_metric_items(None, log_snapshot, task_type),
     }
 
 
-def run_metrics_summary(run_dir: Path):
+def run_metrics_summary(run_dir: Path, task_type: str = PROJECT_TASK_DETECT):
     rows = read_metric_rows(run_dir / "results.csv")
     if not rows:
         return ""
     last = rows[-1]
     epoch = (last.get("epoch") or "-").strip()
+    if project_task_type(task_type) == PROJECT_TASK_CLASSIFY:
+        top1 = format_metric(last.get("metrics/accuracy_top1"))
+        top5 = format_metric(last.get("metrics/accuracy_top5"))
+        train_loss = format_metric(last.get("train/loss"))
+        val_loss = format_metric(last.get("val/loss"))
+        return [
+            {"label": "Epochs", "value": epoch},
+            {"label": "Top1", "value": top1},
+            {"label": "Top5", "value": top5},
+            {"label": "train/loss", "value": train_loss},
+            {"label": "val/loss", "value": val_loss},
+        ]
     precision = format_metric(last.get("metrics/precision(B)") or last.get("metrics/precision"))
     recall = format_metric(last.get("metrics/recall(B)") or last.get("metrics/recall"))
     map50 = format_metric(last.get("metrics/mAP50(B)") or last.get("metrics/mAP50"))
@@ -1105,7 +1161,7 @@ def run_result_assets(task):
         "train_command": training_command_from_args(args) if args else "",
         "csv": read_results_csv(run_dir / "results.csv"),
         "analysis_rows": read_metric_rows(run_dir / "results.csv"),
-        "metrics": run_metrics_summary(run_dir),
+        "metrics": run_metrics_summary(run_dir, train_task_type(task)),
         "images": images,
         "image_tabs": [item for item in image_tabs.values() if item["images"]],
         "files": files,

@@ -168,16 +168,31 @@ def csv_radar_context(models, metric_labels):
     return _radar_context(metric_labels, raw_series, radius=52, label_scale=1.12, center_y=70)
 
 
-def model_context(request: Request, current_project: str):
+def model_item_task(model):
+    task = model.get("task") or {}
+    task_type = str(task.get("task_type") or "")
+    if task_type:
+        return project_task_type(task_type)
+    return project_task_path(str(task.get("project") or ""))
+
+
+def filter_models_by_task(models, task: str):
+    task = "classify" if task == "classify" else "detect"
+    return [model for model in models if model_item_task(model) == task]
+
+
+def model_context(request: Request, current_project: str, task: str = "detect"):
     workspace = workspace_path()
     path = project_path(workspace, current_project)
-    models = run_model_items(load_train_tasks(), current_project) if path else []
+    task = "classify" if task == "classify" else "detect"
+    models = filter_models_by_task(run_model_items(load_train_tasks(), current_project), task) if path else []
     return {
         "request": request,
         "workspace": workspace,
         "active_page": "model",
         "model_active": "overview",
         "current_project": current_project,
+        "model_task": task,
         "project_name": read_project_name(path) if path else "",
         "models": models,
         "community_edition": is_community_edition(),
@@ -258,15 +273,23 @@ def model_analysis_project(request: Request, project: str, task: str = "detect")
 def model_project_task(request: Request, project: str, task: str):
     if task not in {"detect", "classify"}:
         return JSONResponse({"ok": False, "error": "任务类型不存在"}, status_code=404)
-    return model_project(request, project)
+    template_name = "model/classify.html" if task == "classify" else "model/index.html"
+    response = templates.TemplateResponse(
+        request=request,
+        name=template_name,
+        context=model_context(request, project, task),
+    )
+    response.set_cookie("current_project", project, httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/model/{project}")
 def model_project(request: Request, project: str):
+    task = project_task_path(project)
     response = templates.TemplateResponse(
         request=request,
-        name="model/index.html",
-        context=model_context(request, project),
+        name="model/classify.html" if task == "classify" else "model/index.html",
+        context=model_context(request, project, task),
     )
     response.set_cookie("current_project", project, httponly=True, samesite="lax")
     return response
